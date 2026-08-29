@@ -1,0 +1,138 @@
+.sales-form-card h4:has(+ .sales-choice-row:empty),
+.sales-form-card .sales-choice-row:empty { display: none; }
+
+.sales-status.pending { background: #fff4d8; color: #9c6817; }
+
+.sales-outcome-card { background: #fff; box-shadow: 0 10px 30px #232a3410; }
+.sales-status-update button { padding: 12px 18px; font-weight: 700; }
+.sales-status-update .qualified,
+.sales-status-update .qualified.chosen { border-color: #84dfaa; background: #ecfff3; color: #087743; box-shadow: 0 0 0 3px #8ff0b655; }
+.sales-status-update .lost,
+.sales-status-update .lost.chosen { border-color: #ffb8b8; background: #fff2f2; color: #c71616; box-shadow: 0 0 0 3px #ffb8b855; }
+.sales-status-update .pending,
+.sales-status-update .pending.chosen { border-color: #f2c14e; background: #fff8e6; color: #b36a00; box-shadow: 0 0 0 3px #ffd97855; }
+.sales-outcome-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; margin-bottom: 14px; }
+.sales-branch-card { background: #fff; border: 1px solid var(--line); border-top: 3px solid var(--orange); border-radius: 10px; padding: 18px 16px; color: var(--ink); }
+.sales-branch-card h3 { margin: 0 0 12px; font-size: 14px; }
+.sales-branch-card label { display: grid; gap: 6px; margin-top: 10px; color: #666b71; font-size: 10px; font-weight: 700; }
+.sales-branch-card h3 + label { margin-top: 0; }
+.sales-branch-card input,
+.sales-branch-card select,
+.sales-branch-card textarea { width: 100%; border: 1px solid #dededb; border-radius: 8px; background: #fff; color: var(--ink); padding: 11px 12px; font: 12px Arial; outline-color: var(--orange); }
+.sales-branch-card input::placeholder,
+.sales-branch-card textarea::placeholder { color: #8b9198; }
+.sales-branch-card textarea { min-height: 66px; resize: vertical; }
+.sales-branch-card .sales-choice-row { gap: 7px; margin-bottom: 8px; }
+.sales-branch-card .sales-choice-row button { background: #fff; border-color: var(--line); color: #4a5058; padding: 11px 14px; font-size: 12px; }
+.sales-branch-card .sales-choice-row button.chosen { border-color: #f49a78; background: var(--orange-soft); color: #bd4927; box-shadow: none; }
+.sales-single-branch { grid-column: 1 / -1; }
+.sales-single-branch .sales-choice-row { align-items: flex-start; }
+.sales-single-branch textarea { min-height: 80px; }
+.sales-branch-card.lost { border-top-color: #d64a4a; }
+.sales-branch-card.lost h3 { color: #b34242; }
+.sales-warning { margin: 14px 0 0; border-radius: 8px; background: #fff1f1; color: #c31212; padding: 12px; font-size: 11px; font-weight: 700; }
+.sales-detail-footer .button.lost { background: #ffe4e4; border-color: #ffb7b7; color: #bc1616; }
+.sales-detail-footer .button.qualified { background: #e7f8ee; border-color: #8dd8aa; color: #087743; }
+.sales-detail-footer .button.pending { background: #fff2cc; border-color: #ffd979; color: #a76400; }
+
+.sales-shell .sales-outcome-card,
+.sales-shell .sales-branch-card { border-color: var(--sales-outline); border-radius: 0; box-shadow: none; }
+.sales-shell .sales-branch-card { background: var(--sales-surface); border-top-color: var(--sales-primary); color: #181c1c; padding: 14px 16px; }
+.sales-shell .sales-branch-card h3 { margin-bottom: 12px; font-size: 18px; font-weight: 700; }
+.sales-shell .sales-branch-card label { gap: 5px; margin-top: 9px; color: var(--sales-muted); font-size: 13px; }
+.sales-shell .sales-branch-card h3 + label { margin-top: 0; }
+.sales-shell .sales-branch-card input,
+.sales-shell .sales-branch-card select,
+.sales-shell .sales-branch-card textarea { min-height: 40px; padding: 9px 11px; border-color: var(--sales-outline); background: var(--sales-surface); color: #181c1c; font-size: 14px; }
+.sales-shell .sales-branch-card textarea { min-height: 72px; }
+.sales-shell .sales-branch-card input::placeholder,
+.sales-shell .sales-branch-card textarea::placeholder { color: #707977; }
+.sales-shell .sales-branch-card .sales-choice-row button { padding: 8px 12px; border-color: var(--sales-outline); color: var(--sales-muted); font-size: 13px; }
+.sales-shell .sales-branch-card .sales-choice-row button.chosen { border-color: var(--sales-secondary); background: #fff0ea; color: var(--sales-secondary); }
+.sales-shell .sales-branch-card.lost { border-top-color: #ba1a1a; }
+.sales-shell .sales-warning { border: 1px solid #ffd4d4; border-radius: 0; background: #fff8f8; color: #ba1a1a; }
+
+@media(max-width:850px){.sales-outcome-grid{grid-template-columns:1fr;gap:14px}}
+
+.sales-shell.ps-shell .sales-status.pending,
+.sales-shell.ps-shell .sales-status.qualified,
+.sales-shell.ps-shell .sales-status.walkin,
+.sales-shell.ps-shell .sales-status.won {
+  background: #8db355;
+  color: #000000;
+}
+
+.sales-shell.ps-shell .sales-status.lost,
+.sales-shell.ps-shell .sales-status.unqualified {
+  background: #000000;
+  color: #ffea93;
+}
+
+.sales-shell.ps-shell .sales-status-update .qualified,
+.sales-shell.ps-shell .sales-status-update .qualified.chosen,
+.sales-shell.ps-shell .sales-status-update .pending,
+.sales-shell.ps-shell .sales-status-update .pending.chosen,
+.sales-shell.ps-shell .sales-status-update .booked,
+.sales-shell.ps-shell .sales-status-update .booked.chosen,
+.sales-shell.ps-shell .sales-status-update .retailed,
+.sales-shell.ps-shell .sales-status-update .retailed.chosen {
+  border-color: #8db355;
+  background: #ffea93;
+  color: #000000;
+  box-shadow: 0 0 0 3px rgba(141, 179, 85, .28);
+}
+
+.sales-shell.ps-shell .sales-status-update .lost,
+.sales-shell.ps-shell .sales-status-update .lost.chosen {
+  border-color: #d90000;
+  background: #d90000;
+  color: #ffea93;
+  box-shadow: 0 0 0 3px rgba(217, 0, 0, .22);
+}
+
+.sales-shell.ps-shell .sales-branch-card {
+  background: #ffea93;
+  border-color: #000000;
+  border-top-color: #8db355;
+  color: #000000;
+}
+
+.sales-shell.ps-shell .sales-branch-card.lost {
+  border-top-color: #d90000;
+}
+
+.sales-shell.ps-shell .sales-branch-card.lost h3 {
+  color: #d90000;
+}
+
+.sales-shell.ps-shell .sales-branch-card input,
+.sales-shell.ps-shell .sales-branch-card select,
+.sales-shell.ps-shell .sales-branch-card textarea,
+.sales-shell.ps-shell .sales-form-card input,
+.sales-shell.ps-shell .sales-form-card select,
+.sales-shell.ps-shell .sales-form-card textarea {
+  background: #ffea93;
+  border-color: #000000;
+  color: #000000;
+  outline-color: #d90000;
+}
+
+.sales-shell.ps-shell .sales-branch-card .sales-choice-row button {
+  background: #ffea93;
+  border-color: #000000;
+  color: #000000;
+}
+
+.sales-shell.ps-shell .sales-branch-card .sales-choice-row button.chosen {
+  border-color: #d90000;
+  background: #8db355;
+  color: #000000;
+}
+
+.sales-shell.ps-shell .sales-warning,
+.sales-shell.ps-shell .sales-detail-footer .button.lost,
+.sales-shell.ps-shell .sales-detail-footer .button.pending {
+  background: #d90000;
+  border-color: #000000;
+  color: #ffea93;
+}

@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: revera-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: bash build.sh
+    startCommand: gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker
+    healthCheckPath: /api/schema/
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: CACHE_URL
+        sync: false
+      - key: CACHE_TTL_SECONDS
+        value: "50"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: CELERY_TASK_ALWAYS_EAGER
+        value: "true"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_UPLOAD_BUCKET
+        value: crm-imports
+      - key: DJANGO_ALLOWED_HOSTS
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false

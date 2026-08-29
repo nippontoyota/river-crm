@@ -1,0 +1,158 @@
+/* ── Complaint Page Layout ────────────────────────────────────────────────── */
+.complaint-page{max-width:1400px}
+.complaint-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-bottom:22px}
+.complaint-heading h1{margin:0;font-size:36px;letter-spacing:-1.5px}
+.complaint-heading h1 span{color:var(--orange)}
+.complaint-heading .eyebrow{margin:0 0 7px}
+.complaint-heading .subtext{margin:6px 0 0}
+.complaint-heading-actions{display:flex;gap:9px;align-items:center;flex-shrink:0}
+
+/* ── Metrics Row ─────────────────────────────────────────────────────────── */
+.complaint-metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:13px;margin-bottom:16px}
+.complaint-page .sales-metric{min-height:108px;padding:16px 18px;border:1px solid #dfe5e3;border-top-width:3px;background:#fff!important;color:#111817!important}
+.complaint-page .sales-metric span{color:#65716f!important;font-size:12px!important}
+.complaint-page .sales-metric strong{color:#082f2a!important;font-size:32px!important}
+.complaint-page .sales-metric small{color:#6f7a78!important;font-size:11px!important}
+.sales-metric.open-metric{background:#fff0e7;border-color:#ffd3b0}
+
+/* ── Analytics Charts Row ────────────────────────────────────────────────── */
+.complaint-analytics-row{display:grid;grid-template-columns:1.3fr 0.9fr 1.1fr;gap:16px;margin-bottom:16px}
+.complaint-chart-card{min-height:240px}
+.complaint-chart-card header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}
+.complaint-chart-card header .eyebrow{margin:0 0 6px}
+.complaint-chart-card h2{font-size:16px;margin:0}
+.complaint-cre-performance{margin-bottom:16px}
+.complaint-cre-performance .table-scroll{overflow-x:auto}
+.complaint-cre-performance table{margin-top:14px;min-width:820px}
+
+/* Category breakdown */
+.complaint-category-list{display:grid;gap:11px}
+.complaint-cat-row{display:grid;grid-template-columns:160px 1fr 36px;align-items:center;gap:10px;font-size:11px}
+.complaint-cat-bar-wrap{height:7px;background:#f0f1f3;border-radius:99px;overflow:hidden}
+.complaint-cat-bar{height:100%;border-radius:99px;background:var(--orange);transition:width .4s ease}
+.complaint-cat-row b{font:10px ui-monospace,SFMono-Regular,Menlo,monospace;text-align:right}
+
+/* Priority distribution */
+.complaint-priority-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.complaint-priority-card{padding:16px 14px;border-radius:10px;display:flex;flex-direction:column;gap:8px}
+.complaint-priority-card span{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+.complaint-priority-card strong{font-size:28px;letter-spacing:-1px}
+.complaint-priority-card.priority-low{background:#e7f0ff;color:#2359b5}
+.complaint-priority-card.priority-medium{background:#fff8d8;color:#9c6817}
+.complaint-priority-card.priority-high{background:#fff0e2;color:#b84c1c}
+.complaint-priority-card.priority-critical{background:#ffebeb;color:#b33333}
+
+/* Trend bars */
+.complaint-trend-bars{height:120px;display:flex;align-items:flex-end;gap:6px;border-bottom:1px solid var(--line);padding:0 4px;overflow-x:auto}
+.complaint-trend-col{flex:1;min-width:24px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px}
+.complaint-trend-val{color:#69717a;font:9px ui-monospace,SFMono-Regular,Menlo,monospace}
+.complaint-trend-stack{position:relative;width:min(28px,70%);display:flex;flex-direction:column;justify-content:flex-end}
+.complaint-trend-bar{width:100%;border-radius:4px 4px 0 0;transition:height .3s ease}
+.complaint-trend-bar.opened{background:#cfe0ff}
+.complaint-trend-bar.resolved{background:var(--orange)}
+.complaint-trend-col small{color:#80868d;font-size:9px;white-space:nowrap}
+.complaint-trend-legend{display:flex;gap:14px;color:#737a82;font-size:10px;margin-top:10px}
+.complaint-trend-legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.legend-opened{background:#cfe0ff}
+.legend-resolved{background:var(--orange)}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+.complaint-toolbar-panel{padding:14px 18px;margin-bottom:14px}
+.complaint-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.complaint-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto}
+
+/* ── Complaint List ───────────────────────────────────────────────────────── */
+.complaint-list-panel{padding:0;overflow:hidden}
+.complaint-list{display:grid}
+.complaint-row{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto auto auto;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid #f0efec;transition:background .15s}
+.complaint-row:hover{background:#fff8f4}
+.complaint-row-main{display:flex;align-items:center;gap:10px;min-width:0}
+.complaint-row-main>div{min-width:0}
+.complaint-row-main b{display:block;font-size:12px;color:#24272b}
+.complaint-row-main small{display:block;font-size:10px;color:#969ba1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.complaint-ticket{font:10px ui-monospace,SFMono-Regular,Menlo,monospace;color:#8a9097;background:#f2f3f5;border-radius:5px;padding:4px 7px;white-space:nowrap;flex-shrink:0}
+.complaint-row-meta{display:flex;flex-direction:column;gap:3px;align-items:flex-end}
+.complaint-age{color:#92979e;font-size:10px;white-space:nowrap}
+.complaint-notes-count{color:#8a7fdf;font-size:10px}
+
+/* ── Category Badges ─────────────────────────────────────────────────────── */
+.complaint-cat-badge{display:inline-block;border-radius:5px;padding:4px 8px;font-size:10px;font-weight:700;white-space:nowrap}
+.cat-service-delay{background:#e7f0ff;color:#2359b5}
+.cat-product-defect{background:#ffebeb;color:#b33333}
+.cat-delivery-issue{background:#fff0e2;color:#b84c1c}
+.cat-billing-finance{background:#fff8d8;color:#9c6817}
+.cat-after-sales{background:#e8f7ee;color:#21754f}
+.cat-staff-behaviour{background:#f2e9ff;color:#6b38be}
+.cat-warranty{background:#dff7ed;color:#1f8261}
+.cat-other{background:#f2f3f5;color:#555b63}
+
+/* ── Priority Pills ──────────────────────────────────────────────────────── */
+.complaint-priority{display:inline-block;border-radius:999px;padding:5px 9px;font-size:10px;font-weight:700}
+.complaint-priority.priority-low{background:#e7f0ff;color:#2359b5}
+.complaint-priority.priority-medium{background:#fff8d8;color:#9c6817}
+.complaint-priority.priority-high{background:#fff0e2;color:#c45c18}
+.complaint-priority.priority-critical{background:#ffebeb;color:#b33333}
+
+/* ── Status Pills ─────────────────────────────────────────────────────────── */
+.complaint-status{display:inline-block;border-radius:999px;padding:5px 9px;font-size:10px;font-weight:600}
+.status-open{background:#e7f0ff;color:#2b61bf}
+.status-in-progress{background:#fff8d8;color:#9c6817}
+.status-escalated{background:#ffebeb;color:#b33333}
+.status-resolved{background:#e5f8ee;color:#21754f}
+.status-closed{background:#f2f3f5;color:#555b63}
+
+/* ── Complaint Form (modal) ──────────────────────────────────────────────── */
+.complaint-form{display:grid;gap:14px}
+.complaint-form .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+.complaint-form label{display:grid;gap:6px;color:#666b71;font-size:10px;font-weight:700}
+.complaint-form input,.complaint-form select,.complaint-form textarea{width:100%;border:1px solid #dededb;border-radius:7px;background:#fff;padding:10px 11px;font:11px Arial;color:var(--ink);outline-color:var(--orange)}
+.complaint-form textarea{resize:vertical;min-height:80px}
+.complaint-full-label{display:grid;gap:6px;color:#666b71;font-size:10px;font-weight:700}
+.complaint-form footer{display:flex;justify-content:flex-end;gap:9px;margin-top:6px;padding-top:16px;border-top:1px solid var(--line)}
+.complaint-form .subtext{margin:0}
+
+/* ── Detail Modal ────────────────────────────────────────────────────────── */
+.complaint-detail-modal{width:min(720px,100%);padding:0;overflow:hidden}
+.complaint-info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+.complaint-info-grid span{display:grid;gap:4px}
+.complaint-info-grid small{color:#858b92;font-size:10px}
+.complaint-info-grid b{color:#25292e;font-size:12px}
+.complaint-description-block{border-top:1px solid #f0efec;padding-top:12px;margin-top:4px}
+.complaint-description-block small{color:#858b92;font-size:10px;display:block;margin-bottom:6px}
+.complaint-description-block p{margin:0;font-size:11px;color:#4a5058;line-height:1.55}
+.complaint-resolution-preview{margin-top:12px;padding:10px;background:#f2f3f5;border-radius:7px}
+.complaint-resolution-preview small{color:#858b92;font-size:10px;display:block;margin-bottom:4px}
+.complaint-resolution-preview p{margin:0;font-size:11px;color:#4a5058}
+
+/* Sales form card textarea (shared usage) */
+.sales-form-card textarea{width:100%;border:1px solid #dededb;border-radius:7px;background:#fff;padding:11px;font:11px Arial;color:var(--ink);outline-color:var(--orange);resize:vertical}
+.sales-full-label{display:grid;gap:6px;color:#666b71;font-size:10px;font-weight:700}
+.sales-full-label textarea,.sales-full-label input{width:100%;border:1px solid #dededb;border-radius:7px;background:#fff;padding:11px;font:11px Arial;color:var(--ink);outline-color:var(--orange);resize:vertical}
+
+/* ── Remarks timeline ────────────────────────────────────────────────────── */
+.complaint-note-form{display:flex;gap:8px;align-items:flex-start;margin-bottom:4px}
+.complaint-note-form textarea{flex:1;border:1px solid #dededb;border-radius:7px;background:#fff;padding:9px 11px;font:11px Arial;color:var(--ink);outline-color:var(--orange);resize:none}
+.complaint-page .sales-history-row .history-dot{flex:0 0 8px;width:8px;height:8px}
+.complaint-page .sales-history-row>div:not(.history-dot){flex:1;min-width:0}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media(max-width:1200px){
+  .complaint-analytics-row{grid-template-columns:1fr 1fr}
+  .complaint-analytics-row>:last-child{grid-column:1/-1}
+  .complaint-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:900px){
+  .complaint-analytics-row{grid-template-columns:1fr}
+  .complaint-row{grid-template-columns:minmax(0,1fr) auto auto;gap:8px}
+  .complaint-row .complaint-priority,.complaint-row .complaint-status,.complaint-row .complaint-row-meta{display:none}
+}
+@media(max-width:620px){
+  .complaint-heading{flex-direction:column;align-items:flex-start;gap:12px}
+  .complaint-heading h1{font-size:28px}
+  .complaint-metrics{grid-template-columns:repeat(2,1fr)}
+  .complaint-form .form-grid{grid-template-columns:1fr}
+  .complaint-row{grid-template-columns:1fr auto}
+  .complaint-row .complaint-ticket,.complaint-row .complaint-cat-badge{display:none}
+  .complaint-info-grid{grid-template-columns:1fr 1fr}
+  .complaint-priority-grid{grid-template-columns:1fr 1fr}
+}

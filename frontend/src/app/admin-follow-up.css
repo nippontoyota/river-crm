@@ -1,0 +1,287 @@
+.admin-follow-up-modal {
+  width: min(670px, calc(100vw - 24px));
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.admin-follow-up-modal .sales-detail-header {
+  padding: 24px 28px 18px;
+  background: #fff;
+}
+
+.admin-follow-up-modal .sales-detail-header h2 {
+  color: #15243d;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.admin-follow-up-modal .sales-detail-header .subtext {
+  line-height: 1.45;
+}
+
+.admin-follow-up-modal .sales-detail-scroll {
+  max-height: min(680px, calc(100vh - 190px));
+  padding: 16px 24px 20px;
+  background: #fff;
+}
+
+.admin-follow-up-modal .sales-info-card,
+.admin-follow-up-modal .sales-form-card {
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  padding: 14px 0 18px;
+  margin: 0;
+}
+
+.admin-follow-up-modal .sales-info-card {
+  border-bottom: 1px solid #eef0f4;
+}
+
+.admin-follow-up-modal .sales-info-card h3,
+.admin-follow-up-modal .sales-form-card h3 {
+  color: #16284b;
+  font-size: 15px;
+}
+
+.admin-follow-up-modal .sales-info-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 28px;
+}
+
+.admin-follow-up-modal .sales-info-grid span,
+.admin-follow-up-modal .sales-detail-meta span,
+.admin-follow-up-grid > div {
+  min-width: 0;
+}
+
+.admin-follow-up-modal .sales-info-grid span,
+.admin-follow-up-modal .sales-detail-meta span {
+  gap: 6px;
+  line-height: 1.35;
+}
+
+.admin-follow-up-modal .sales-info-grid small,
+.admin-follow-up-modal .sales-detail-meta {
+  color: #71809c;
+  font-size: 10px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.admin-follow-up-modal .sales-info-grid b {
+  color: #17233b;
+  font-size: 13px;
+}
+
+.admin-manual-assign {
+  display: grid;
+  gap: 6px;
+  color: #71809c;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.admin-manual-assign select {
+  min-height: 38px;
+  border: 1px solid #dfe3ea;
+  border-radius: 7px;
+  background: #fff;
+  color: #17233b;
+  font: 12px Arial, sans-serif;
+  padding: 9px 10px;
+  text-transform: none;
+}
+
+.admin-manual-assign b {
+  color: #17233b;
+  font-size: 12px;
+  line-height: 1.35;
+  text-transform: none;
+}
+
+.admin-follow-up-modal .sales-detail-meta {
+  margin-top: 18px;
+  padding-top: 14px;
+}
+
+.admin-call-history {
+  border-bottom: 1px solid #eef0f4 !important;
+}
+
+.admin-history-list {
+  max-height: 150px;
+  overflow: auto;
+}
+
+.admin-history-list .sales-history-row {
+  padding: 10px 0;
+}
+
+.admin-history-outcome {
+  display: inline-block;
+  margin-top: 6px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #fff0e8;
+  color: #d45b2c;
+  font-size: 10px;
+}
+
+.admin-empty-history {
+  display: grid;
+  min-height: 66px;
+  place-items: center;
+  border-radius: 10px;
+  background: #fbfcfe;
+  color: #8994a8;
+  font-size: 12px;
+}
+
+.admin-follow-up-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.admin-follow-up-grid h4 {
+  margin: 0 0 9px;
+  color: #16284b;
+  font-size: 12px;
+}
+
+.admin-outcome-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f4f6f9;
+}
+
+.admin-outcome-row button {
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  border-right: 1px solid #fff;
+  border-radius: 0;
+  background: transparent;
+  color: #66728a;
+  font-size: 12px;
+  line-height: 1.25;
+  padding: 8px 6px;
+}
+
+.admin-outcome-row button:last-child {
+  border-right: 0;
+}
+
+.admin-outcome-row button.chosen {
+  background: #fff0e8;
+  color: #d45b2c;
+  box-shadow: inset 0 -2px #f26b35;
+}
+
+.admin-checkbox-card {
+  display: flex !important;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e1e5eb;
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: #52617a !important;
+  font-size: 12px !important;
+  line-height: 1.35;
+  font-weight: 500 !important;
+}
+
+.admin-checkbox-card input {
+  flex: 0 0 auto;
+  width: 16px !important;
+  min-height: 16px !important;
+  accent-color: #f26b35;
+}
+
+.admin-follow-up-date {
+  display: grid;
+  gap: 8px;
+  margin-top: 0;
+  color: #16284b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.admin-follow-up-date span:first-child {
+  color: #16284b;
+}
+
+.admin-follow-up-date input {
+  min-height: 44px;
+  border: 1px solid #e1e5eb;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #273754;
+  font-size: 13px;
+}
+
+.admin-follow-up-modal .sales-detail-footer {
+  padding: 14px 24px;
+}
+
+@media (max-width: 640px) {
+  .admin-follow-up-layer {
+    padding: 8px;
+    align-items: end;
+  }
+
+  .admin-follow-up-modal {
+    width: 100%;
+    max-height: calc(100vh - 16px);
+    border-radius: 16px 16px 10px 10px;
+  }
+
+  .admin-follow-up-modal .sales-detail-header {
+    padding: 20px 18px 14px;
+  }
+
+  .admin-follow-up-modal .sales-detail-header h2 {
+    font-size: 21px;
+  }
+
+  .admin-follow-up-modal .sales-detail-scroll {
+    max-height: calc(100vh - 164px);
+    padding: 10px 18px 18px;
+  }
+
+  .admin-follow-up-modal .sales-info-grid {
+    gap: 16px 12px;
+  }
+
+  .admin-follow-up-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .admin-follow-up-modal .sales-detail-footer {
+    padding: 12px 18px;
+  }
+
+  .admin-follow-up-modal .sales-detail-footer button {
+    flex: 1;
+  }
+}
+
+@media (max-width: 420px) {
+  .admin-follow-up-modal .sales-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-outcome-row button {
+    font-size: 11px;
+    padding: 8px 4px;
+  }
+}
