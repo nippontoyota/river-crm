@@ -43,7 +43,7 @@ export function LoginPage() {
 
       <section className="login-access">
         <div className="login-card">
-          <Image className="login-logo" src="/brand/river-logo.svg" alt="River" width={210} height={54} priority />
+          <Image className="login-logo" src="/brand/river-logo.svg" alt="River" width={210} height={68} priority />
           <p className="login-product">Dealer operations CRM</p>
           <div className="login-heading">
             <h1>Welcome back.</h1>
