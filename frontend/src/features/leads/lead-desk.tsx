@@ -120,6 +120,9 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
   const [importingUpload, setImportingUpload] = useState(false);
   const [submittedLead, setSubmittedLead] = useState<string | null>(null);
   const [filters, setFilters] = useState<LeadFilters>({});
+  const today = todayInIST();
+  const selectedTo = toDateInputValue(filters.date_to);
+  const historicalFromMax = selectedTo && selectedTo < today ? filters.date_to : today;
   const [models, setModels] = useState<string[]>([]);
   const [colorVariantOptions, setColorVariantOptions] = useState<string[]>([]);
   const [activeFilters, setActiveFilters] = useState<LeadFilters>({});
@@ -431,8 +434,8 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
         <div className="lead-filters-grid">
           <label>Source<select value={filters.source || ""} onChange={event => setFilters(current => ({ ...current, source: event.target.value || undefined }))}><option value="">All sources</option>{sources.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label>Model<select value={filters.model || ""} onChange={event => setFilters(current => ({ ...current, model: event.target.value || undefined }))} disabled={!models.length}><option value="">{models.length ? "Any model" : "Add models in Lists first"}</option>{models.map(model => <option key={model} value={model}>{model}</option>)}</select></label>
-          <label>From<DateInput value={filters.date_from || ""} max={filters.date_to || undefined} onChange={next => setFilters(current => { const value = next || undefined; const valueIso = toDateInputValue(value); const toIso = toDateInputValue(current.date_to); return { ...current, date_from: value, date_to: valueIso && toIso && toIso < valueIso ? value : current.date_to }; })} ariaLabel="From date, DD/MM/YYYY" /></label>
-          <label>To<DateInput value={filters.date_to || ""} min={filters.date_from || undefined} onChange={next => setFilters(current => { const value = next || undefined; const valueIso = toDateInputValue(value); const fromIso = toDateInputValue(current.date_from); return { ...current, date_to: value, date_from: valueIso && fromIso && fromIso > valueIso ? value : current.date_from }; })} ariaLabel="To date, DD/MM/YYYY" /></label>
+          <label>From<DateInput value={filters.date_from || ""} max={historicalFromMax} onChange={next => setFilters(current => { const value = next || undefined; const valueIso = toDateInputValue(value); const toIso = toDateInputValue(current.date_to); return { ...current, date_from: value, date_to: valueIso && toIso && toIso < valueIso ? value : current.date_to }; })} ariaLabel="From date, DD/MM/YYYY" /></label>
+          <label>To<DateInput value={filters.date_to || ""} min={filters.date_from || undefined} max={today} onChange={next => setFilters(current => { const value = next || undefined; const valueIso = toDateInputValue(value); const fromIso = toDateInputValue(current.date_from); return { ...current, date_to: value, date_from: valueIso && fromIso && fromIso > valueIso ? value : current.date_from }; })} ariaLabel="To date, DD/MM/YYYY" /></label>
         </div>
         <footer className="lead-filters-actions">
           <span>{Object.values(activeFilters).filter(Boolean).length || searchFilter ? `Filtered ${poolLabel.toLowerCase()}` : `All ${poolLabel.toLowerCase()}`}</span>

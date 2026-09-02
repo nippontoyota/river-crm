@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { exportSalesManagerAnalytics, getLeadDetail, getSalesManagerAnalytics, getSalesManagerPSFollowups, sourceName, statusName, type LeadDetail, type ManagerAnalytics, type ManagerFilterOption, type ManagerPerformanceRow, type ManagerPSFollowupRow, type ManagerRoleRow } from "@/lib/crm";
 import { DateInput } from "@/components/date-input";
-import { formatDate, formatDateTime, toDateInputValue } from "@/lib/dates";
+import { formatDate, formatDateTime, todayInIST, toDateInputValue } from "@/lib/dates";
 
 const tabs = [
   ["overview", "Overview"],
@@ -117,6 +117,9 @@ export function SalesManagerAnalyticsPage() {
   const [range, setRange] = useState("mtd");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const today = todayInIST();
+  const selectedTo = toDateInputValue(dateTo);
+  const historicalFromMax = selectedTo && selectedTo < today ? dateTo : today;
   const [source, setSource] = useState("");
   const [model, setModel] = useState("");
   const [cre, setCre] = useState("");
@@ -164,7 +167,7 @@ export function SalesManagerAnalyticsPage() {
   ] : [];
 
   return <section className="page manager-page">
-    <div className="sales-hero manager-hero"><div><p className="eyebrow">SALES MANAGER</p><h1>Branch analytics <span>{data?.branch || ""}</span></h1><p className="subtext">Full branch visibility across lead intake, CRE handling, PS/SO conversion, follow-up load, and lost-lead risk.</p></div><div className="sales-hero-actions"><select className="filter" value={range} onChange={event => setRange(event.target.value)}><option value="mtd">MTD vs previous MTD</option><option value="today">Today</option><option value="custom">Date range</option><option value="all">All time</option></select>{range === "custom" && <><DateInput className="date-input-filter" value={dateFrom} max={dateTo || undefined} onChange={setDateFrom} ariaLabel="Analytics start date, DD/MM/YYYY" /><DateInput className="date-input-filter" value={dateTo} min={dateFrom || undefined} onChange={setDateTo} ariaLabel="Analytics end date, DD/MM/YYYY" /></>}<button className="filter" onClick={() => void load()}>Refresh</button></div></div>
+    <div className="sales-hero manager-hero"><div><p className="eyebrow">SALES MANAGER</p><h1>Branch analytics <span>{data?.branch || ""}</span></h1><p className="subtext">Full branch visibility across lead intake, CRE handling, PS/SO conversion, follow-up load, and lost-lead risk.</p></div><div className="sales-hero-actions"><select className="filter" value={range} onChange={event => setRange(event.target.value)}><option value="mtd">MTD vs previous MTD</option><option value="today">Today</option><option value="custom">Date range</option><option value="all">All time</option></select>{range === "custom" && <><DateInput className="date-input-filter" value={dateFrom} max={historicalFromMax} onChange={setDateFrom} ariaLabel="Analytics start date, DD/MM/YYYY" /><DateInput className="date-input-filter" value={dateTo} min={dateFrom || undefined} max={today} onChange={setDateTo} ariaLabel="Analytics end date, DD/MM/YYYY" /></>}<button className="filter" onClick={() => void load()}>Refresh</button></div></div>
     {error && <div className="empty-state">{error}</div>}
     {loading && !data ? <div className="panel sales-analytics-loading">Loading branch analytics...</div> : data && <>
       <section className="manager-filter-bar panel"><label>Source<select value={source} onChange={event => setSource(event.target.value)}><option value="">All sources</option>{sources.map(item => <option value={item} key={item}>{sourceName(item)}</option>)}</select></label><label>Model<select value={model} onChange={event => setModel(event.target.value)}><option value="">All models</option>{models.map(item => <option value={item} key={item}>{item}</option>)}</select></label><label>CRE<select value={cre} onChange={event => setCre(event.target.value)}><option value="">All CRE</option>{creOptions.map(row => <option value={row.id} key={row.id}>{row.name}</option>)}</select></label><label>PS/SO<select value={ps} onChange={event => setPs(event.target.value)}><option value="">All PS/SO</option>{psOptions.map(row => <option value={row.id} key={row.id}>{row.name}</option>)}</select></label></section>
