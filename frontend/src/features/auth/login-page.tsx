@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cacheCurrentUser, login } from "@/lib/crm";
@@ -27,11 +28,15 @@ export function LoginPage() {
           <p>Incheon Mobility LLP</p>
           <h2 id="login-visual-title">Move every lead forward.</h2>
         </div>
-        <span className="login-mobility-word" aria-hidden="true">MOBILITY</span>
-        <div className="login-route" aria-hidden="true">
-          <span className="login-route-node enquiry">Enquiry</span>
-          <span className="login-route-node follow-up">Follow-up</span>
-          <span className="login-route-node delivery">Delivery</span>
+        <span className="login-incheon-word" aria-hidden="true">INCHEON</span>
+        <div className="login-scooter">
+          <Image
+            src="/brand/river-indie-blue.webp"
+            alt="River Indie electric scooter"
+            fill
+            priority
+            sizes="(max-width: 760px) 68vw, 52vw"
+          />
         </div>
       </section>
 
@@ -39,7 +44,7 @@ export function LoginPage() {
         <div className="login-card">
           <p className="login-wordmark"><strong>Incheon</strong> Mobility</p>
           <p className="login-product">Dealer operations CRM</p>
-          <p className="login-dealer"><span aria-hidden="true" />Authorized River Dealer</p>
+          <p className="login-dealer">Authorized River Dealer</p>
           <div className="login-heading">
             <h1>Welcome back.</h1>
             <p>Sign in with the account created by your administrator.</p>
