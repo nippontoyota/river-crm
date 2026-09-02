@@ -154,7 +154,7 @@ export default function CaptureLeadPage() {
 
         <div className="capture-form-grid">
             <label>
-              River Model Interested *
+              Model Interested *
               <select name="model_interest" value={formData.model_interest} onChange={handleChange} required disabled={!modelOptions.length}>
                 <option value="">{modelOptions.length ? "Select model" : "Add models in Lists first"}</option>
                 {modelOptions.map(m => (

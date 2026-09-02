@@ -29,7 +29,7 @@ export type CurrentUser = { id: number; first_name: string; last_name: string; e
 type ApiOptions = RequestInit & { skipCsrf?: boolean };
 
 let csrfToken = "";
-const currentUserCacheKey = "river.currentUser";
+const currentUserCacheKey = "incheon.currentUser";
 let currentUserRequest: Promise<{ user: CurrentUser }> | null = null;
 let systemConfigRequest: Promise<SystemConfig> | null = null;
 let systemConfigCache: SystemConfig | null = null;
@@ -131,7 +131,7 @@ export async function getOfficers(location = "") { const query = location ? `?${
 export const getAdminAnalytics = () => api<Analytics>("/api/analytics/admin/");
 export const getMyAnalytics = () => api<Metrics>("/api/analytics/me/");
 export async function getMyAnalyticsDashboard(range = "mtd", dateFrom = "", dateTo = "") { const from = toDateInputValue(dateFrom); const to = toDateInputValue(dateTo); const query = new URLSearchParams({ range, ...(from ? { date_from: from } : {}), ...(to ? { date_to: to } : {}) }).toString(); return api<PersonalAnalytics>(`/api/analytics/me/?${query}`); }
-export const exportMyAnalytics = () => download("/api/analytics/me/export/", "river-my-analytics.csv");
+export const exportMyAnalytics = () => download("/api/analytics/me/export/", "incheon-my-analytics.csv");
 export type ManagerSummary = { total: number; untouched: number; contacted: number; open: number; qualified: number; walkin: number; booked: number; retailed: number; lost: number; flagged: number; lead_to_qualified_rate: number; lead_to_retail_rate: number; qualified_to_booked_rate: number; booked_to_retail_rate: number; followups_due: number; stale_untouched: number; delta: Record<string, number> };
 export type ManagerRoleRow = { id: number; name: string; email: string; location: string; total: number; untouched: number; qualified: number; booked: number; retailed: number; lost: number; calls: number; followups: number; last_activity: string | null; conversion_rate: number; qualification_rate: number };
 export type ManagerPerformanceRow = { total: number; qualified: number; booked: number; retailed: number; lost: number; conversion_rate: number };
@@ -143,7 +143,7 @@ export type ManagerAnalytics = { range: string; date_from: string | null; date_t
 const managerParams = ({ date_from, date_to, ...params }: Record<string, string>) => ({ ...params, ...(toDateInputValue(date_from) ? { date_from: toDateInputValue(date_from) } : {}), ...(toDateInputValue(date_to) ? { date_to: toDateInputValue(date_to) } : {}) });
 export async function getSalesManagerAnalytics(params: Record<string, string>) { const query = new URLSearchParams(managerParams(params)).toString(); return api<ManagerAnalytics>(`/api/analytics/sales-manager/${query ? `?${query}` : ""}`); }
 export async function getSalesManagerPSFollowups(params: Record<string, string>) { const query = new URLSearchParams(managerParams(params)).toString(); return api<ManagerPSFollowups>(`/api/analytics/sales-manager/ps-followups/${query ? `?${query}` : ""}`); }
-export function exportSalesManagerAnalytics(section: string, params: Record<string, string>) { const query = new URLSearchParams({ ...managerParams(params), section }).toString(); return download(`/api/analytics/sales-manager/export/?${query}`, `river-sales-manager-${section}.csv`); }
+export function exportSalesManagerAnalytics(section: string, params: Record<string, string>) { const query = new URLSearchParams({ ...managerParams(params), section }).toString(); return download(`/api/analytics/sales-manager/export/?${query}`, `incheon-sales-manager-${section}.csv`); }
 export async function getManagerLeads(query = "") { return getLeadsPage(`manager-leads/${query.startsWith("?") ? query : query ? `?${query}` : ""}`); }
 export const assignLead = (leadId: number, officerId: number) => api<Lead>(`/api/leads/${leadId}/assign/`, { method: "POST", body: JSON.stringify({ sales_officer_id: officerId }) });
 export const assignPsLead = (leadId: number, officerId: number) => api<Lead>(`/api/leads/${leadId}/assign-ps/`, { method: "POST", body: JSON.stringify({ sales_officer_id: officerId }) });

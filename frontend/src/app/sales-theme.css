@@ -32,6 +32,9 @@
   letter-spacing: -0.8px;
 }
 
+.sales-shell .sidebar-wordmark-full { color: #17211f; }
+.sales-shell .sidebar-wordmark-full strong { color: #0b8c6b; }
+
 .sales-shell .brand-mark {
   width: 38px;
   height: 38px;
@@ -140,12 +143,15 @@
   .sales-shell .sidebar { width: 72px; padding: 24px 10px; }
   .sales-shell .main-content { margin-left: 72px; }
   .sales-shell .brand { justify-content: center; }
-  .sales-shell .brand-word,.sales-shell .workspace-label,.sales-shell .nav-link b,.sales-shell .sidebar-footer { display: none; }
+  .sales-shell .brand-word,.sales-shell .sidebar-wordmark-full,.sales-shell .workspace-label,.sales-shell .nav-link b,.sales-shell .sidebar-footer { display: none; }
+  .sales-shell .sidebar-wordmark-short { display: grid; }
   .sales-shell .nav-link { justify-content: center; }
   .sales-shell .page { padding: 24px 20px; }
   .sales-hero-banner { padding: 30px; }
   .sales-hero-art { opacity: .3; right: -70px; }
 }
+
+.sales-shell.ps-shell .sidebar-wordmark-short { color: #fff; }
 
 /* SO readability pass: Montserrat throughout, with a calmer but larger working scale. */
 .sales-shell,
@@ -272,6 +278,8 @@
 .sales-shell.ps-shell .lead-pagination b {
   color: #000000;
 }
+
+.sales-shell.ps-shell .sidebar-wordmark-full strong { color: #0b8c6b; }
 
 .sales-shell.ps-shell .brand-mark,
 .sales-shell.ps-shell .button.primary {

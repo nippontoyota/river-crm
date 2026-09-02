@@ -41,7 +41,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {"anon": "30/minute", "user": "120/minute"},
 }
 SIMPLE_JWT = {"ACCESS_TOKEN_LIFETIME": timedelta(minutes=15), "REFRESH_TOKEN_LIFETIME": timedelta(days=7), "ROTATE_REFRESH_TOKENS": True, "BLACKLIST_AFTER_ROTATION": True}
-SPECTACULAR_SETTINGS = {"TITLE": "River CRM API", "VERSION": "1.0.0", "SERVE_INCLUDE_SCHEMA": False}
+SPECTACULAR_SETTINGS = {"TITLE": "Incheon Mobility CRM API", "VERSION": "1.0.0", "SERVE_INCLUDE_SCHEMA": False}
 
 CORS_ALLOWED_ORIGINS = [value for value in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",") if value] + ["https://frontend-alysajads-projects.vercel.app"]
 CORS_ALLOWED_ORIGIN_REGEXES = [

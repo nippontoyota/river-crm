@@ -9,8 +9,9 @@ import "./responsive.css";
 import "./complaint.css";
 
 export const metadata: Metadata = {
-  title: "River Lead Control",
-  description: "Operations CRM for River Scooter",
+  title: "Incheon Mobility CRM",
+  description: "Dealer operations CRM for Incheon Mobility LLP",
+  applicationName: "Incheon Mobility CRM",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -153,7 +153,7 @@ export function ListsPage() {
           background: #fff;
           color: var(--ink);
           font: 11px Arial, sans-serif;
-          outline-color: var(--orange);
+          outline-color: var(--accent);
           padding: 10px;
         }
         .list-items {

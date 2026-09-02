@@ -1,4 +1,4 @@
-# River CRM API
+# Incheon Mobility CRM API
 
 Run locally:
 

@@ -405,7 +405,7 @@ class MyAnalyticsExportView(APIView):
         owner_filter = {"assigned_so": request.user} if request.user.role == User.Role.CRE else {"assigned_ps": request.user}
         queryset = Lead.objects.filter(deleted_at__isnull=True, **owner_filter).order_by("-enquiry_date")
         response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = 'attachment; filename="river-my-analytics.csv"'
+        response["Content-Disposition"] = 'attachment; filename="incheon-my-analytics.csv"'
         writer = csv.writer(response)
         writer.writerow(["Lead", "Phone", "Source", "Model", "Status", "Sales outcome", "Enquiry date", "Branch"])
         writer.writerows([[csv_value(value) for value in row] for row in queryset.values_list("name", "phone", "source", "model_interest", "status", "sales_outcome", "enquiry_date", "branch")])
@@ -470,7 +470,7 @@ class SalesManagerAnalyticsExportView(APIView):
             data = ps_followup_payload(request)
             rows = data["leads"] or data["rows"]
             response = HttpResponse(content_type="text/csv")
-            response["Content-Disposition"] = 'attachment; filename="river-sales-manager-ps-followups.csv"'
+            response["Content-Disposition"] = 'attachment; filename="incheon-sales-manager-ps-followups.csv"'
             writer = csv.writer(response)
             if rows:
                 keys = list(rows[0].keys())
@@ -481,7 +481,7 @@ class SalesManagerAnalyticsExportView(APIView):
             return response
         data = manager_payload(request)
         response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = f'attachment; filename="river-sales-manager-{section}.csv"'
+        response["Content-Disposition"] = f'attachment; filename="incheon-sales-manager-{section}.csv"'
         writer = csv.writer(response)
         rows = data.get(section, [])
         if section in {"cre", "ps", "source", "models", "lost_reasons", "stale_leads"} and isinstance(rows, list) and rows:

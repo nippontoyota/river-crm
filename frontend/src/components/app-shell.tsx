@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -112,8 +111,9 @@ export function AppShell({ children, role }: AppShellProps) {
 
   return <div className={`app-shell ${["Sales officer", "Sales manager"].includes(role) ? "sales-shell" : ""} ${shellRoleClass}`}>
     <aside className="sidebar">
-      <Link className="brand" href={homeHref} aria-label="River home">
-        <Image className="sidebar-brand-logo" src="/brand/river-logo.svg" alt="River" width={210} height={68} priority />
+      <Link className="brand" href={homeHref} aria-label="Incheon Mobility home">
+        <span className="sidebar-wordmark-full"><strong>Incheon</strong> Mobility</span>
+        <span className="sidebar-wordmark-short" aria-hidden="true">IM</span>
       </Link>
       <p className="workspace-label">{role === "Admin" ? "SALES CONTROL" : `${workspaceRole} WORKSPACE`}</p>
       <nav className="nav" aria-label="Main navigation">
@@ -125,7 +125,7 @@ export function AppShell({ children, role }: AppShellProps) {
       </div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><div><b>{role === "Admin" ? "Lead control" : role === "Sales manager" ? "Branch command" : role === "Receptionist" ? "Front Desk" : user?.role === "COMPLAINTS" ? "Complaint queue" : `${workspaceRole} pipeline`}</b><small>{formatWeekday(new Date())}, {formatDate(new Date())}</small></div><div className="top-actions">{role === "Admin" && <button className="button primary" onClick={() => ["/leads", "/all-leads"].includes(pathname) ? window.dispatchEvent(new Event("river:add-lead")) : router.push("/leads?addLead=1")}>＋ Add lead</button>}{["Sales officer", "Sales manager"].includes(role) && <span className="sales-topbar-mark" aria-hidden="true">◌</span>}<button className="mobile-signout" onClick={() => void signOut()} aria-label="Sign out" title="Sign out">↪</button></div></header>
+      <header className="topbar"><div><b>{role === "Admin" ? "Lead control" : role === "Sales manager" ? "Branch command" : role === "Receptionist" ? "Front Desk" : user?.role === "COMPLAINTS" ? "Complaint queue" : `${workspaceRole} pipeline`}</b><small>{formatWeekday(new Date())}, {formatDate(new Date())}</small></div><div className="top-actions">{role === "Admin" && <button className="button primary" onClick={() => ["/leads", "/all-leads"].includes(pathname) ? window.dispatchEvent(new Event("incheon:add-lead")) : router.push("/leads?addLead=1")}>＋ Add lead</button>}{["Sales officer", "Sales manager"].includes(role) && <span className="sales-topbar-mark" aria-hidden="true">◌</span>}<button className="mobile-signout" onClick={() => void signOut()} aria-label="Sign out" title="Sign out">↪</button></div></header>
       {children}
     </main>
   </div>;
