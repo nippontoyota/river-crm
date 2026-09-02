@@ -6,13 +6,16 @@
 @font-face{font-family:"Noto Sans Incheon";src:url("/fonts/noto-sans-latin.woff2") format("woff2");font-style:normal;font-weight:400 600;font-display:swap}
 
 .login-page{--incheon-graphite:#17211f;--incheon-emerald:#0b8c6b;--incheon-mint:#dff2eb;--incheon-paper:#f8f8f4;min-height:100svh;display:grid;grid-template-columns:minmax(0,.72fr) minmax(500px,1fr);background:var(--incheon-paper);font-family:"Noto Sans Incheon",Arial,sans-serif}
-.login-visual{position:relative;min-height:100svh;overflow:hidden;background:var(--incheon-graphite);color:#fff}
-.login-visual-copy{position:absolute;z-index:3;top:clamp(38px,6vw,82px);left:clamp(34px,5vw,72px)}
+.login-visual{position:relative;min-height:100svh;overflow:hidden;background-color:var(--incheon-graphite);background-image:linear-gradient(#8ce0c614 1px,transparent 1px),linear-gradient(90deg,#8ce0c614 1px,transparent 1px);background-size:58px 58px;color:#fff}
+.cursor-grid{position:absolute;z-index:0;inset:0;overflow:hidden}
+.cursor-grid canvas{display:block;width:100%;height:100%}
+.login-visual-copy{position:absolute;z-index:3;top:clamp(38px,6vw,82px);left:clamp(34px,5vw,72px);pointer-events:none}
 .login-visual-copy p{margin:0 0 13px;color:#8ce0c6;font-size:15px;font-weight:600;letter-spacing:.15em;text-transform:uppercase}
 .login-visual-copy h2{max-width:430px;margin:0;font-size:clamp(38px,4.6vw,70px);font-weight:400;letter-spacing:-.06em;line-height:1.02}
-.login-visual-brand{position:absolute;inset:36% 24px auto;display:grid;justify-items:center;color:#fff;font-size:clamp(48px,5.6vw,84px);font-weight:400;letter-spacing:-.065em;line-height:.92;text-align:center}
+.login-visual-brand{position:absolute;z-index:2;top:36%;left:50%;display:grid;justify-items:start;width:max-content;max-width:calc(100% - 48px);transform:translateX(-50%);color:#fff;font-size:clamp(48px,5.6vw,84px);font-weight:400;letter-spacing:-.065em;line-height:.92;text-align:left;pointer-events:none}
 .login-visual-brand strong{color:#8ce0c6;font-weight:600}
-.login-visual-brand small{font-size:.18em;font-weight:600;letter-spacing:.18em;vertical-align:middle}
+.login-visual-brand span{display:flex;align-items:baseline;gap:.16em}
+.login-visual-brand small{font-size:.18em;font-weight:600;letter-spacing:.18em}
 .login-access{min-height:100svh;display:grid;place-items:center;padding:clamp(40px,7vw,96px);background:var(--incheon-paper)}
 .login-card{width:min(100%,430px)}
 .login-wordmark{margin:0;color:var(--incheon-graphite);font-size:clamp(38px,3vw,44px);font-weight:400;letter-spacing:-.045em;line-height:1}
@@ -44,7 +47,7 @@
   .login-visual-copy{top:28px;left:26px}
   .login-visual-copy p{margin-bottom:8px;font-size:12px}
   .login-visual-copy h2{max-width:270px;font-size:34px}
-  .login-visual-brand{inset:58% 20px auto;font-size:44px}
+  .login-visual-brand{top:58%;font-size:44px}
   .login-access{min-height:auto;place-items:start center;padding:42px 26px 48px}
   .login-wordmark{font-size:33px}
   .login-product{margin-top:12px}

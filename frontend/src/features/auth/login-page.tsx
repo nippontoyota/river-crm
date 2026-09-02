@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cacheCurrentUser, login } from "@/lib/crm";
+import { CursorGrid } from "./cursor-grid";
 
 export function LoginPage() {
   const router = useRouter();
@@ -23,13 +24,24 @@ export function LoginPage() {
   return (
     <main className="login-page">
       <section className="login-visual" aria-labelledby="login-visual-title">
+        <CursorGrid
+          cellSize={58}
+          radius={150}
+          holdTime={260}
+          fadeDuration={850}
+          lineWidth={1.3}
+          maxOpacity={0.82}
+          fillOpacity={0.04}
+          gridOpacity={0}
+          pulseSpeed={620}
+        />
         <div className="login-visual-copy">
           <p>Incheon Mobility LLP</p>
           <h2 id="login-visual-title">Move every lead forward.</h2>
         </div>
         <div className="login-visual-brand" aria-hidden="true">
           <strong>Incheon</strong>
-          <span>Mobility <small>LLP</small></span>
+          <span>Mobility<small>LLP</small></span>
         </div>
       </section>
 
