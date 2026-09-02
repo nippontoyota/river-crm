@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -111,7 +112,9 @@ export function AppShell({ children, role }: AppShellProps) {
 
   return <div className={`app-shell ${["Sales officer", "Sales manager"].includes(role) ? "sales-shell" : ""} ${shellRoleClass}`}>
     <aside className="sidebar">
-      <Link className="brand" href={homeHref}><span className="brand-mark">R</span><span className="brand-word">river<span>.</span></span></Link>
+      <Link className="brand" href={homeHref} aria-label="River home">
+        <Image className="sidebar-brand-logo" src="/brand/river-logo.svg" alt="River" width={210} height={68} priority />
+      </Link>
       <p className="workspace-label">{role === "Admin" ? "SALES CONTROL" : `${workspaceRole} WORKSPACE`}</p>
       <nav className="nav" aria-label="Main navigation">
         {links.map(([href, label, icon]) => <Link key={href} className={`nav-link ${pathname === href ? "active" : ""}`} href={href}><span>{icon}</span><b>{label}</b></Link>)}

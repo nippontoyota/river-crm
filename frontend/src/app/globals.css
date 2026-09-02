@@ -65,3 +65,11 @@
 @media(prefers-reduced-motion:reduce){
   .login-page .auth-form input,.login-submit{transition:none}
 }
+
+.sidebar .brand{min-height:34px;padding:0 10px}
+.sidebar-brand-logo{display:block;width:118px;height:auto;filter:brightness(0) invert(1)}
+
+@media(max-width:820px){
+  .sidebar .brand{padding:0}
+  .sidebar-brand-logo{width:40px}
+}
