@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cacheCurrentUser, login } from "@/lib/crm";
@@ -28,15 +27,9 @@ export function LoginPage() {
           <p>Incheon Mobility LLP</p>
           <h2 id="login-visual-title">Move every lead forward.</h2>
         </div>
-        <span className="login-incheon-word" aria-hidden="true">INCHEON</span>
-        <div className="login-scooter">
-          <Image
-            src="/brand/river-indie-blue.webp"
-            alt="River Indie electric scooter"
-            fill
-            priority
-            sizes="(max-width: 760px) 68vw, 52vw"
-          />
+        <div className="login-visual-brand" aria-hidden="true">
+          <strong>Incheon</strong>
+          <span>Mobility <small>LLP</small></span>
         </div>
       </section>
 
