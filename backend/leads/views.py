@@ -137,9 +137,12 @@ class LeadViewSet(viewsets.ModelViewSet):
         queryset = Lead.objects.filter(deleted_at__isnull=True, **owner_filter)
         open_followup = Q(follow_ups__id__isnull=False, follow_ups__resolved_at__isnull=True)
         due_followup = open_followup & Q(follow_ups__scheduled_for__date__lte=today)
+        missed_followup = open_followup & Q(follow_ups__scheduled_for__date__lt=today)
         followup_filter = due_followup
+        missed_filter = missed_followup
         if is_cre:
             followup_filter = due_followup & Q(status=Lead.Status.PENDING, call_logs__outcome="Call Me Back")
+            missed_filter = missed_followup & Q(status=Lead.Status.PENDING, call_logs__outcome="Call Me Back")
         pending_status = Q(status__in=[Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.PENDING])
         called_status = Q(status__in=[Lead.Status.RNR, Lead.Status.SWITCHED_OFF])
         date_range = request.query_params.get("range", "all")
@@ -164,6 +167,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             total=Count("id", distinct=True),
             fresh=Count("id", filter=fresh_filter, distinct=True),
             followups=Count("id", filter=followup_filter, distinct=True),
+            missed=Count("id", filter=missed_filter, distinct=True),
             pending=Count("id", filter=pending_filter, distinct=True),
             qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED), distinct=True),
             walkin=Count("id", filter=Q(status=Lead.Status.WALKIN), distinct=True),
@@ -185,6 +189,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             "all": Q(),
             "fresh": Q(status=Lead.Status.FRESH),
             "followups": followup_filter,
+            "missed": missed_filter,
             "pending": pending_status,
             "qualified": Q(status=Lead.Status.QUALIFIED),
             "walkin": Q(status=Lead.Status.WALKIN),

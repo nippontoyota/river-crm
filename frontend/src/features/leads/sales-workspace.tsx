@@ -6,7 +6,7 @@ import { createLead, getCurrentUser, getLeadDetail, getMyDashboard, getOfficers,
 import { DateInput } from "@/components/date-input";
 import { addDays, formatDate, formatDateTime, parseDate, todayInIST, toApiDate } from "@/lib/dates";
 
-type Section = "all" | "fresh" | "followups" | "pending" | "qualified" | "walkin" | "won" | "lost" | "won_lost" | "active";
+type Section = "all" | "fresh" | "followups" | "missed" | "pending" | "qualified" | "walkin" | "won" | "lost" | "won_lost" | "active";
 type WonLostFilter = "all" | "won" | "lost";
 type PsOutcome = { label: string; tone: "qualified" | "lost"; status: string };
 type Draft = {
@@ -173,6 +173,8 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const activeOutcomeLabels = isPs ? psOutcomeLabels : outcomeLabels;
   const branchOptions = branches;
   const selectedLocation = draft ? draft.city.trim() : "";
+
+  useEffect(() => { if (initialSection) setSection(initialSection); }, [initialSection]);
 
   useEffect(() => {
     void getCurrentUser().then(result => {
@@ -362,7 +364,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const psVisibleSections = allLeadsOnly ? psAllSections : [];
   const metrics: { label: string; value: number; tone: string; section: Section; href?: string }[] = isPs
     ? followUpsOnly
-      ? [{label:"TODAY'S FOLLOW-UPS", value:summary?.followups ?? 0, tone:"blue", section:"followups", href:"/follow-ups"}]
+      ? [{label:"TODAY'S FOLLOW-UPS", value:summary?.followups ?? 0, tone:"blue", section:"followups", href:"/follow-ups"}, {label:"MISSED FOLLOW-UPS", value:summary?.missed ?? 0, tone:"red", section:"missed", href:"/follow-ups?section=missed"}]
       : [{label:"FRESH LEADS", value:summary?.fresh ?? 0, tone:"blue", section:"fresh", href:"/my-leads"}, {label:"BOOKED", value:summary?.walkin ?? 0, tone:"green", section:"walkin", href:"/all-my-leads?section=walkin"}, {label:"RETAILED", value:summary?.won ?? 0, tone:"green", section:"won", href:"/all-my-leads?section=won"}, {label:"LOST", value:summary?.lost ?? 0, tone:"red", section:"lost", href:"/all-my-leads?section=lost"}]
     : [{label:"Fresh leads", value:summary?.fresh ?? 0, tone:"blue", section:"fresh"}, {label:"Today's follow-ups", value:summary?.followups ?? 0, tone:"yellow", section:"followups"}, {label:"Pending leads", value:summary?.pending ?? 0, tone:"orange", section:"pending"}, {label:"Qualified leads", value:summary?.qualified ?? 0, tone:"green", section:"qualified"}, {label:"Won leads", value:summary?.won ?? 0, tone:"mint", section:"won"}, {label:"Lost leads", value:summary?.lost ?? 0, tone:"red", section:"lost"}];
   const displayStatus = (lead: SalesLead) => !isPs && ["RNR", "SWITCHED_OFF", "CALLBACK"].includes(lead.statusCode) ? "Pending" : lead.status;
@@ -372,7 +374,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
 
   return <section className="page sales-workspace">
     <div className="sales-hero"><div>{!isPs && <p className="eyebrow">CRE WORKSPACE</p>}<h1>{isPs ? followUpsOnly ? "Today's follow-ups" : allLeadsOnly ? "All leads" : "Fresh leads" : "My queue"}</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions"><button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{!isPs && <button className="button primary" onClick={() => { setAddLeadError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
-    <section className={`sales-metrics ${isPs && followUpsOnly ? "single" : ""}`}>{metrics.map(metric => isPs && metric.href ? <Link className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-current={section === metric.section ? "page" : undefined} href={metric.href} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></Link> : <button type="button" className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-pressed={section === metric.section} onClick={() => { setSection(metric.section); setCategory(""); setSource(""); setQuery(""); setWonLostFilter("all"); }} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></button>)}</section>
+    <section className={`sales-metrics ${isPs && followUpsOnly ? "compact" : ""}`}>{metrics.map(metric => isPs && metric.href ? <Link className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-current={section === metric.section ? "page" : undefined} href={metric.href} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></Link> : <button type="button" className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-pressed={section === metric.section} onClick={() => { setSection(metric.section); setCategory(""); setSource(""); setQuery(""); setWonLostFilter("all"); }} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></button>)}</section>
     
     {isPs ? (
       <section className="panel sales-table-panel" style={{ background: "transparent", border: "none", boxShadow: "none", padding: 0 }}>

@@ -363,9 +363,12 @@ class LeadAccessTests(TestCase):
         self.client.force_authenticate(self.ps_so)
 
         response = self.client.get("/api/leads/my-dashboard/?section=followups")
+        missed = self.client.get("/api/leads/my-dashboard/?section=missed")
 
         self.assertEqual(response.data["summary"]["followups"], 2)
+        self.assertEqual(response.data["summary"]["missed"], 1)
         self.assertEqual({lead["id"] for lead in response.data["results"]}, {yesterday.id, today.id})
+        self.assertEqual({lead["id"] for lead in missed.data["results"]}, {yesterday.id})
 
     def test_ps_dashboard_filters_all_fresh_booked_retailed_and_lost(self):
         fresh = Lead.objects.create(name="Fresh PS", phone="7305198434", assigned_ps=self.ps_so, status=Lead.Status.QUALIFIED)
