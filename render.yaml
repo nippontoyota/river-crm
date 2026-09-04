@@ -16,6 +16,8 @@ services:
         value: "50"
       - key: DJANGO_SECRET_KEY
         generateValue: true
+      - key: JWT_SIGNING_KEY
+        generateValue: true
       - key: DJANGO_DEBUG
         value: "false"
       - key: CELERY_TASK_ALWAYS_EAGER
