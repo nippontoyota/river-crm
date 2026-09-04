@@ -1241,6 +1241,14 @@ input[type="radio"] {
   font-size: 13px;
 }
 
+.sales-shell.ps-shell .sales-workspace .sales-metrics .sales-metric {
+  align-items: center;
+  border-right: 1px solid #000;
+  border-bottom: 1px solid #000;
+  border-left: 1px solid #000;
+  text-align: center;
+}
+
 @media (max-width: 767px) {
   .followup-overview {
     grid-template-columns: 1fr;
