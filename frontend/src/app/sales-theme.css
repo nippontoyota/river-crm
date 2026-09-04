@@ -64,8 +64,6 @@
 .sales-shell .topbar { height: 82px; padding: 0 40px; background: rgba(247,250,249,.9); border-bottom-color: var(--sales-outline); }
 .sales-shell .topbar > div > b { font-family: "Space Grotesk", Arial, sans-serif; font-size: 19px; font-weight: 500; }
 .sales-shell .topbar > div > small { color: var(--sales-muted); font-family: "JetBrains Mono", monospace; font-size: 10px; }
-.sales-topbar-mark { color: var(--sales-secondary); font-size: 28px; }
-
 .sales-shell .page { max-width: 1500px; padding: 40px; }
 .sales-shell .sales-hero { margin-bottom: 28px; }
 .sales-shell .sales-hero .eyebrow { margin: 0 0 10px; color: #707977; font-family: "JetBrains Mono", monospace; }
@@ -289,7 +287,6 @@
 
 .sales-shell.ps-shell .brand-word span,
 .sales-shell.ps-shell .sales-hero h1 span,
-.sales-shell.ps-shell .sales-topbar-mark,
 .sales-shell.ps-shell .user-card button {
   color: #d90000;
 }

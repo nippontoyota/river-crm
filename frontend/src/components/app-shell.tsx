@@ -126,7 +126,7 @@ export function AppShell({ children, role }: AppShellProps) {
       </div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><div><b>{role === "Admin" ? "Lead control" : role === "Sales manager" ? "Branch command" : role === "Receptionist" ? "Front Desk" : user?.role === "COMPLAINTS" ? "Complaint queue" : user?.role === "SO" ? displayName : `${workspaceRole} pipeline`}</b><small>{formatWeekday(new Date())}, {formatDate(new Date())}</small></div><div className="top-actions">{role === "Admin" && <button className="button primary" onClick={() => ["/leads", "/all-leads"].includes(pathname) ? window.dispatchEvent(new Event("incheon:add-lead")) : router.push("/leads?addLead=1")}>＋ Add lead</button>}{["Sales officer", "Sales manager"].includes(role) && <span className="sales-topbar-mark" aria-hidden="true">◌</span>}<button className="mobile-signout" onClick={() => void signOut()} aria-label="Sign out" title="Sign out">↪</button></div></header>
+      <header className="topbar"><div><b>{role === "Admin" ? "Lead control" : role === "Sales manager" ? "Branch command" : role === "Receptionist" ? "Front Desk" : user?.role === "COMPLAINTS" ? "Complaint queue" : user?.role === "SO" ? displayName : `${workspaceRole} pipeline`}</b><small>{formatWeekday(new Date())}, {formatDate(new Date())}</small></div><div className="top-actions">{role === "Admin" && <button className="button primary" onClick={() => ["/leads", "/all-leads"].includes(pathname) ? window.dispatchEvent(new Event("incheon:add-lead")) : router.push("/leads?addLead=1")}>＋ Add lead</button>}<button className="mobile-signout" onClick={() => void signOut()} aria-label="Sign out" title="Sign out">↪</button></div></header>
       {children}
     </main>
   </div>;
