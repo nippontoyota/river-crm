@@ -5,7 +5,7 @@ from .models import Complaint, ComplaintNote
 
 
 class ComplaintNoteSerializer(serializers.ModelSerializer):
-    author_name = serializers.CharField(source="author.get_full_name", read_only=True)
+    author_name = serializers.CharField(source="author.history_display_name", read_only=True)
 
     class Meta:
         model = ComplaintNote
@@ -14,12 +14,12 @@ class ComplaintNoteSerializer(serializers.ModelSerializer):
 
 
 class ComplaintListSerializer(serializers.ModelSerializer):
-    logged_by_name = serializers.CharField(source="logged_by.get_full_name", read_only=True)
+    logged_by_name = serializers.CharField(source="logged_by.history_display_name", read_only=True)
     assigned_to_name = serializers.SerializerMethodField()
     note_count = serializers.SerializerMethodField()
 
     def get_assigned_to_name(self, obj):
-        return obj.assigned_to.get_full_name() if obj.assigned_to else ""
+        return obj.assigned_to.history_display_name if obj.assigned_to else ""
 
     def get_note_count(self, obj):
         if hasattr(obj, "_note_count"):

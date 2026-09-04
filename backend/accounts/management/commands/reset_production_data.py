@@ -8,7 +8,7 @@ from django.core.management.color import no_style
 from django.db import connection, transaction
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
-from accounts.models import User
+from accounts.models import User, UserLifecycleEvent
 from complaints.models import Complaint, ComplaintNote
 from leads.models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from notifications.models import Notification
@@ -17,6 +17,7 @@ from uploads.storage import delete_paths
 
 
 DELETE_MODELS = [
+    UserLifecycleEvent,
     ComplaintNote,
     Notification,
     UploadRow,

@@ -17,7 +17,7 @@ from accounts.models import User
 from accounts.permissions import IsAdmin, IsAdminOrReceptionist, IsAdminReceptionistOrCRE, IsSalesManager
 from notifications.models import Notification
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
-from .serializers import CALL_OUTCOME_STATUS_OPTIONS, PS_CALL_OUTCOME_STATUS_OPTIONS, AssignmentSerializer, BulkDistributeSerializer, FollowUpSerializer, LeadDetailSerializer, LeadSerializer, LeadUpdateSerializer, PSAssignmentSerializer, SOLeadListSerializer, SOLeadUpdateSerializer, SystemConfigSerializer
+from .serializers import CALL_OUTCOME_STATUS_OPTIONS, PS_CALL_OUTCOME_STATUS_OPTIONS, AssignmentSerializer, BulkDistributeSerializer, FollowUpReviewSerializer, FollowUpSerializer, LeadDetailSerializer, LeadSerializer, LeadUpdateSerializer, PSAssignmentSerializer, SOLeadListSerializer, SOLeadUpdateSerializer, SystemConfigSerializer
 
 FORWARD_TRANSITIONS = {
     Lead.Status.FRESH: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.LOST},
@@ -28,12 +28,15 @@ FORWARD_TRANSITIONS = {
     Lead.Status.QUALIFIED: {Lead.Status.WALKIN, Lead.Status.WON, Lead.Status.LOST},
     Lead.Status.WALKIN: {Lead.Status.WON, Lead.Status.LOST},
 }
+CLOSED_STATUSES = {Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED}
 
 def apply_lead_filters(queryset, filters):
     if value := filters.get("source"):
         queryset = queryset.filter(source=value)
     if value := filters.get("status"):
         queryset = queryset.filter(status=value)
+    if value := filters.get("branch"):
+        queryset = queryset.filter(branch__iexact=value.strip())
     if value := filters.get("sales_outcome"):
         queryset = queryset.filter(sales_outcome=value)
     for key, field in (("model", "model_interest"), ("city", "city"), ("campaign", "campaign")):
@@ -71,9 +74,16 @@ class LeadViewSet(viewsets.ModelViewSet):
         elif not self.request.user.is_admin:
             queryset = queryset.filter(assigned_ps=self.request.user)
         elif self.request.query_params.get("unassigned") == "true":
-            queryset = queryset.filter(assigned_so__isnull=True)
+            queryset = queryset.filter(assigned_so__isnull=True, needs_cre_reassignment=False)
         elif self.request.query_params.get("ps_unassigned") == "true":
-            queryset = queryset.filter(status=Lead.Status.QUALIFIED, assigned_ps__isnull=True)
+            queryset = queryset.filter(status=Lead.Status.QUALIFIED, assigned_ps__isnull=True, needs_so_reassignment=False)
+        if value := self.request.query_params.get("needs_reassignment"):
+            if value == "CRE":
+                queryset = queryset.filter(needs_cre_reassignment=True)
+            elif value == "SO":
+                queryset = queryset.filter(needs_so_reassignment=True)
+            elif value == "true":
+                queryset = queryset.filter(Q(needs_cre_reassignment=True) | Q(needs_so_reassignment=True))
         if value := self.request.query_params.get("assigned_so"):
             queryset = queryset.filter(assigned_so=value)
         if value := self.request.query_params.get("assigned_ps"):
@@ -94,15 +104,31 @@ class LeadViewSet(viewsets.ModelViewSet):
             # Walk-in leads bypass CRE – go directly to PS/SO as qualified
             lead = serializer.save(status=Lead.Status.QUALIFIED)
         elif not self.request.user.is_admin and getattr(self.request.user, "role", None) == User.Role.CRE:
-            lead = serializer.save(assigned_so=self.request.user)
+            with transaction.atomic():
+                owner = User.objects.select_for_update().filter(
+                    pk=self.request.user.pk,
+                    role=User.Role.CRE,
+                    is_active=True,
+                    deleted_at__isnull=True,
+                ).first()
+                if not owner:
+                    raise ValidationError({"detail": "Your account is no longer active."})
+                lead = serializer.save(assigned_so=owner)
         else:
             lead = serializer.save()
         LeadAudit.objects.create(lead=lead, actor=self.request.user, event="created")
 
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            instance = Lead.objects.select_for_update().get(pk=instance.pk)
+            instance.deleted_at = timezone.now()
+            instance.save(update_fields=["deleted_at", "updated_at"])
+            LeadAudit.objects.create(lead=instance, actor=self.request.user, event="deleted")
+
     def get_permissions(self):
         if getattr(self.request.user, "role", None) == User.Role.SALES_MANAGER and self.request.method not in SAFE_METHODS:
             return [IsAdmin()]
-        if self.action in {"assign", "assign_ps", "bulk_assign", "bulk_assign_ps", "bulk_distribute", "auto_assign", "reopen", "destroy"}:
+        if self.action in {"assign", "assign_ps", "bulk_assign", "bulk_assign_ps", "bulk_distribute", "bulk_reassign", "auto_assign", "reopen", "destroy"}:
             return [IsAdmin()]
         if self.action == "create":
             return [IsAdminReceptionistOrCRE()]
@@ -216,6 +242,7 @@ class LeadViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["patch"], url_path="so-update")
     def so_update(self, request, pk=None):
         lead = self.get_object()
+        lead_updated_at = lead.updated_at
         user_field = "assigned_so_id" if request.user.role == User.Role.CRE else "assigned_ps_id"
         if not request.user.is_admin and getattr(lead, user_field) != request.user.id:
             return Response({"detail": "This lead is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
@@ -275,6 +302,40 @@ class LeadViewSet(viewsets.ModelViewSet):
         editable_fields = ("name", "phone", "email", "source", "source_label", "campaign", "model_interest", "city", "branch", "enquiry_date", "flagged_to_manager")
         before = {field: audit_value(getattr(lead, field)) for field in ("status", "category", "sales_outcome", *editable_fields)}
         with transaction.atomic():
+            if not request.user.is_admin:
+                actor = User.objects.select_for_update().filter(
+                    pk=request.user.pk,
+                    is_active=True,
+                    deleted_at__isnull=True,
+                ).first()
+                if not actor:
+                    return Response(
+                        {"detail": "Your account is no longer active. Refresh the page."},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+            if ps_officer and request.user.role == User.Role.CRE:
+                ps_officer = User.objects.select_for_update().filter(
+                    pk=ps_officer.pk,
+                    role=User.Role.SALES_OFFICER,
+                    is_active=True,
+                    deleted_at__isnull=True,
+                ).first()
+                if not ps_officer:
+                    return Response(
+                        {"detail": "That PS/SO is no longer active. Refresh and choose again."},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+            lead = Lead.objects.select_for_update().get(pk=lead.pk)
+            if lead.updated_at != lead_updated_at:
+                return Response(
+                    {"detail": "This lead changed while you were editing it. Refresh and try again."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if not request.user.is_admin and getattr(lead, user_field) != request.user.id:
+                return Response(
+                    {"detail": "This lead is no longer assigned to you. Refresh the page."},
+                    status=status.HTTP_409_CONFLICT,
+                )
             lead.status = next_status
             for field in ("category", "sales_outcome", *editable_fields):
                 if field in data:
@@ -309,11 +370,29 @@ class LeadViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         officer = serializer.validated_data["sales_officer"]
         with transaction.atomic():
+            officer = User.objects.select_for_update().filter(
+                pk=officer.pk,
+                role=User.Role.CRE,
+                is_active=True,
+                deleted_at__isnull=True,
+            ).first()
+            if not officer:
+                return Response(
+                    {"detail": "That CRE is no longer active. Refresh and choose again."},
+                    status=status.HTTP_409_CONFLICT,
+                )
             lead = Lead.objects.select_for_update().get(pk=lead.pk)
             if lead.assigned_so_id:
                 return Response({"detail": "This lead is already assigned."}, status=status.HTTP_409_CONFLICT)
             lead.assigned_so = officer
-            lead.save(update_fields=["assigned_so", "updated_at"])
+            lead.needs_cre_reassignment = False
+            lead.save(update_fields=["assigned_so", "needs_cre_reassignment", "updated_at"])
+            FollowUp.objects.filter(
+                lead=lead,
+                so__role=User.Role.CRE,
+                resolved_at__isnull=True,
+                reminder_held=True,
+            ).update(so=officer)
             LeadAudit.objects.create(lead=lead, actor=request.user, event="assigned_cre", after={"assigned_so": officer.id})
             Notification.objects.create(user=officer, lead=lead, kind=Notification.Kind.ASSIGNMENT, message=f"You have a new lead: {lead.name}.")
         return Response(self.get_serializer(lead).data)
@@ -325,13 +404,31 @@ class LeadViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         officer = serializer.validated_data["sales_officer"]
         with transaction.atomic():
+            officer = User.objects.select_for_update().filter(
+                pk=officer.pk,
+                role=User.Role.SALES_OFFICER,
+                is_active=True,
+                deleted_at__isnull=True,
+            ).first()
+            if not officer:
+                return Response(
+                    {"detail": "That PS/SO is no longer active. Refresh and choose again."},
+                    status=status.HTTP_409_CONFLICT,
+                )
             lead = Lead.objects.select_for_update().get(pk=lead.pk)
             if lead.status != Lead.Status.QUALIFIED:
                 return Response({"detail": "Only qualified leads can be assigned to PS/SO."}, status=status.HTTP_400_BAD_REQUEST)
             if lead.assigned_ps_id:
                 return Response({"detail": "This lead is already assigned to PS/SO."}, status=status.HTTP_409_CONFLICT)
             lead.assigned_ps = officer
-            lead.save(update_fields=["assigned_ps", "updated_at"])
+            lead.needs_so_reassignment = False
+            lead.save(update_fields=["assigned_ps", "needs_so_reassignment", "updated_at"])
+            FollowUp.objects.filter(
+                lead=lead,
+                so__role=User.Role.SALES_OFFICER,
+                resolved_at__isnull=True,
+                reminder_held=True,
+            ).update(so=officer)
             LeadAudit.objects.create(lead=lead, actor=request.user, event="assigned_ps", after={"assigned_ps": officer.id})
             Notification.objects.create(user=officer, lead=lead, kind=Notification.Kind.ASSIGNMENT, message=f"You have a qualified lead: {lead.name}.")
         return Response(self.get_serializer(lead).data)
@@ -344,9 +441,20 @@ class LeadViewSet(viewsets.ModelViewSet):
         if not isinstance(filters, dict):
             raise ValidationError({"filters": "Expected an object of filter values."})
         officer = serializer.validated_data["sales_officer"]
-        leads = Lead.objects.filter(deleted_at__isnull=True, assigned_so__isnull=True, assigned_ps__isnull=True)
+        leads = Lead.objects.filter(deleted_at__isnull=True, assigned_so__isnull=True, assigned_ps__isnull=True, needs_cre_reassignment=False, needs_so_reassignment=False)
         leads = apply_lead_filters(leads, filters)
         with transaction.atomic():
+            officer = User.objects.select_for_update().filter(
+                pk=officer.pk,
+                role=User.Role.CRE,
+                is_active=True,
+                deleted_at__isnull=True,
+            ).first()
+            if not officer:
+                return Response(
+                    {"detail": "That CRE is no longer active. Refresh and choose again."},
+                    status=status.HTTP_409_CONFLICT,
+                )
             leads = list(leads.select_for_update().order_by("created_at"))
             now = timezone.now()
             for lead in leads:
@@ -367,9 +475,20 @@ class LeadViewSet(viewsets.ModelViewSet):
         if not isinstance(filters, dict):
             raise ValidationError({"filters": "Expected an object of filter values."})
         officer = serializer.validated_data["sales_officer"]
-        leads = Lead.objects.filter(deleted_at__isnull=True, status=Lead.Status.QUALIFIED, assigned_ps__isnull=True)
+        leads = Lead.objects.filter(deleted_at__isnull=True, status=Lead.Status.QUALIFIED, assigned_ps__isnull=True, needs_so_reassignment=False)
         leads = apply_lead_filters(leads, filters)
         with transaction.atomic():
+            officer = User.objects.select_for_update().filter(
+                pk=officer.pk,
+                role=User.Role.SALES_OFFICER,
+                is_active=True,
+                deleted_at__isnull=True,
+            ).first()
+            if not officer:
+                return Response(
+                    {"detail": "That PS/SO is no longer active. Refresh and choose again."},
+                    status=status.HTTP_409_CONFLICT,
+                )
             leads = list(leads.select_for_update().order_by("created_at"))
             now = timezone.now()
             for lead in leads:
@@ -390,9 +509,24 @@ class LeadViewSet(viewsets.ModelViewSet):
         if not isinstance(filters, dict):
             raise ValidationError({"filters": "Expected an object of filter values."})
         officers = serializer.validated_data["sales_officer_ids"]
-        leads = Lead.objects.filter(deleted_at__isnull=True, assigned_so__isnull=True, assigned_ps__isnull=True)
+        leads = Lead.objects.filter(deleted_at__isnull=True, assigned_so__isnull=True, assigned_ps__isnull=True, needs_cre_reassignment=False, needs_so_reassignment=False)
         leads = apply_lead_filters(leads, filters)
         with transaction.atomic():
+            locked_officers = {
+                officer.id: officer
+                for officer in User.objects.select_for_update().filter(
+                    id__in=[officer.id for officer in officers],
+                    role=User.Role.CRE,
+                    is_active=True,
+                    deleted_at__isnull=True,
+                )
+            }
+            if len(locked_officers) != len(officers):
+                return Response(
+                    {"detail": "A selected CRE is no longer active. Refresh and choose again."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            officers = [locked_officers[officer.id] for officer in officers]
             leads = list(leads.select_for_update().order_by("created_at"))
             distribution = defaultdict(int)
             audits = []
@@ -409,17 +543,92 @@ class LeadViewSet(viewsets.ModelViewSet):
                 Notification.objects.bulk_create([Notification(user=officer, kind=Notification.Kind.ASSIGNMENT, message=f"You have {distribution[officer.id]} new lead(s) assigned.") for officer in officers if distribution[officer.id]])
         return Response({"assigned": len(leads), "distribution": [{"sales_officer_id": officer.id, "name": officer.get_full_name() or officer.email, "assigned": distribution[officer.id]} for officer in officers]})
 
+    @action(detail=False, methods=["post"], url_path="bulk-reassign")
+    def bulk_reassign(self, request):
+        role = request.data.get("role")
+        lead_ids = request.data.get("lead_ids", [])
+        recipient_ids = request.data.get("recipient_ids", [])
+        if role not in {User.Role.CRE, User.Role.SALES_OFFICER}:
+            raise ValidationError({"role": "Choose CRE or PS/SO."})
+        if not isinstance(lead_ids, list) or not lead_ids:
+            raise ValidationError({"lead_ids": "Select at least one lead."})
+        if not isinstance(recipient_ids, list) or not recipient_ids:
+            raise ValidationError({"recipient_ids": "Choose at least one replacement."})
+        if not all(str(value).isdigit() for value in [*lead_ids, *recipient_ids]):
+            raise ValidationError({"detail": "Lead and replacement IDs must be numbers."})
+        lead_ids = list(dict.fromkeys(int(value) for value in lead_ids))
+        recipient_ids = [int(value) for value in recipient_ids]
+        recipient_ids = list(dict.fromkeys(recipient_ids))
+        owner_field, queue_field, relation = (
+            ("assigned_so", "needs_cre_reassignment", "assigned_leads")
+            if role == User.Role.CRE else
+            ("assigned_ps", "needs_so_reassignment", "ps_leads")
+        )
+        with transaction.atomic():
+            recipients = list(User.objects.select_for_update().filter(id__in=recipient_ids, role=role, is_active=True, deleted_at__isnull=True).order_by("id"))
+            if len(recipients) != len(recipient_ids):
+                return Response({"detail": "A selected replacement is no longer eligible. Refresh and choose again."}, status=status.HTTP_409_CONFLICT)
+            leads = list(Lead.objects.select_for_update().filter(id__in=lead_ids, deleted_at__isnull=True, **{queue_field: True}).order_by("created_at", "id"))
+            active_filter = Q(**{f"{relation}__deleted_at__isnull": True}) & ~Q(**{f"{relation}__status__in": CLOSED_STATUSES})
+            loads = {officer.id: officer.load for officer in User.objects.filter(id__in=recipient_ids).annotate(load=Count(relation, filter=active_filter, distinct=True))}
+            distribution = defaultdict(int)
+            assigned = []
+            audits = []
+            now = timezone.now()
+            for lead in leads:
+                eligible = recipients
+                if role == User.Role.SALES_OFFICER:
+                    eligible = [officer for officer in recipients if lead.branch.strip() and officer.location.strip().casefold() == lead.branch.strip().casefold()]
+                if not eligible:
+                    continue
+                officer = min(eligible, key=lambda candidate: (loads.get(candidate.id, 0), candidate.id))
+                before = getattr(lead, f"{owner_field}_id")
+                setattr(lead, owner_field, officer)
+                setattr(lead, queue_field, False)
+                lead.updated_at = now
+                assigned.append(lead)
+                loads[officer.id] = loads.get(officer.id, 0) + 1
+                distribution[officer.id] += 1
+                audits.append(LeadAudit(lead=lead, actor=request.user, event="reassignment_completed", before={owner_field: before, queue_field: True}, after={owner_field: officer.id, queue_field: False}))
+                FollowUp.objects.filter(
+                    lead=lead,
+                    so__role=role,
+                    resolved_at__isnull=True,
+                    reminder_held=True,
+                ).update(so=officer)
+            if assigned:
+                Lead.objects.bulk_update(assigned, [owner_field, queue_field, "updated_at"], batch_size=1000)
+                LeadAudit.objects.bulk_create(audits, batch_size=1000)
+                Notification.objects.bulk_create([
+                    Notification(user_id=officer_id, kind=Notification.Kind.ASSIGNMENT, message=f"You have {count} reassigned lead(s).")
+                    for officer_id, count in distribution.items()
+                ])
+        return Response({"assigned": len(assigned), "skipped": len(leads) - len(assigned), "distribution": distribution})
+
     @action(detail=False, methods=["post"], url_path="auto-assign")
     def auto_assign(self, request):
         lead_ids = request.data.get("lead_ids", [])
         with transaction.atomic():
-            leads = Lead.objects.select_for_update().filter(deleted_at__isnull=True, assigned_so__isnull=True, assigned_ps__isnull=True)
+            officers = list(
+                User.objects.select_for_update().filter(
+                    role=User.Role.CRE,
+                    is_active=True,
+                    deleted_at__isnull=True,
+                ).order_by("id")
+            )
+            if not officers:
+                return Response({"detail": "No active CRE users."}, status=status.HTTP_400_BAD_REQUEST)
+            loads = dict(
+                Lead.objects.filter(
+                    deleted_at__isnull=True,
+                    assigned_so_id__in=[officer.id for officer in officers],
+                ).values_list("assigned_so_id").annotate(total=Count("id"))
+            )
+            officers.sort(key=lambda officer: (loads.get(officer.id, 0), officer.id))
+            leads = Lead.objects.select_for_update().filter(deleted_at__isnull=True, assigned_so__isnull=True, assigned_ps__isnull=True, needs_cre_reassignment=False, needs_so_reassignment=False)
             if lead_ids:
                 leads = leads.filter(id__in=lead_ids)
             leads = list(leads.order_by("created_at"))
-            officers = list(User.objects.filter(role=User.Role.CRE, is_active=True).annotate(load=Count("assigned_leads", filter=Q(assigned_leads__deleted_at__isnull=True))).order_by("load", "id"))
-            if not officers:
-                return Response({"detail": "No active CRE users."}, status=status.HTTP_400_BAD_REQUEST)
             if not leads:
                 return Response({"assigned": 0, "distribution": {}})
             distribution = defaultdict(int)
@@ -461,13 +670,21 @@ class LeadViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def reopen(self, request, pk=None):
-        lead = self.get_object()
-        if lead.status not in {Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED}:
-            return Response({"detail": "Only closed leads can be reopened."}, status=status.HTTP_400_BAD_REQUEST)
-        previous = lead.status
-        lead.status = Lead.Status.QUALIFIED
-        lead.save(update_fields=["status", "updated_at"])
-        LeadAudit.objects.create(lead=lead, actor=request.user, event="reopened", before={"status": previous}, after={"status": lead.status})
+        with transaction.atomic():
+            lead = Lead.objects.select_for_update().select_related("assigned_so", "assigned_ps").get(pk=self.get_object().pk)
+            if lead.status not in CLOSED_STATUSES:
+                return Response({"detail": "Only closed leads can be reopened."}, status=status.HTTP_400_BAD_REQUEST)
+            before = {"status": lead.status, "assigned_so": lead.assigned_so_id, "assigned_ps": lead.assigned_ps_id}
+            lead.status = Lead.Status.QUALIFIED
+            if lead.assigned_so and (not lead.assigned_so.is_active or lead.assigned_so.deleted_at):
+                lead.assigned_so = None
+                lead.needs_cre_reassignment = True
+            if lead.assigned_ps and (not lead.assigned_ps.is_active or lead.assigned_ps.deleted_at):
+                lead.assigned_ps = None
+                lead.needs_so_reassignment = True
+            lead.save(update_fields=["status", "assigned_so", "assigned_ps", "needs_cre_reassignment", "needs_so_reassignment", "updated_at"])
+            FollowUp.objects.filter(lead=lead, resolved_at__isnull=True, so__is_active=False).update(reminder_held=True)
+            LeadAudit.objects.create(lead=lead, actor=request.user, event="reopened", before=before, after={"status": lead.status, "assigned_so": lead.assigned_so_id, "assigned_ps": lead.assigned_ps_id, "needs_cre_reassignment": lead.needs_cre_reassignment, "needs_so_reassignment": lead.needs_so_reassignment})
         return Response(self.get_serializer(lead).data)
 
 
@@ -479,6 +696,40 @@ class FollowUpViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         if not self.request.user.is_admin:
             queryset = queryset.filter(so=self.request.user)
         return queryset.order_by("scheduled_for")
+
+    @action(detail=True, methods=["patch"], permission_classes=[IsAdmin], url_path="review")
+    def review(self, request, pk=None):
+        serializer = FollowUpReviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        action_name = serializer.validated_data["action"]
+        current = self.get_object()
+        with transaction.atomic():
+            User.objects.select_for_update().get(pk=current.so_id)
+            followup = FollowUp.objects.select_for_update().select_related("lead", "so").filter(
+                pk=current.pk,
+                resolved_at__isnull=True,
+            ).first()
+            if not followup:
+                return Response({"detail": "This follow-up was already resolved. Refresh the lead."}, status=status.HTTP_409_CONFLICT)
+            if followup.so_id != current.so_id:
+                return Response({"detail": "This follow-up changed owner. Refresh the lead and review it again."}, status=status.HTTP_409_CONFLICT)
+            if not followup.reminder_held:
+                return Response({"detail": "This reminder is no longer awaiting review. Refresh the lead."}, status=status.HTTP_409_CONFLICT)
+            before = {"scheduled_for": followup.scheduled_for.isoformat(), "reminder_held": followup.reminder_held}
+            if action_name == "RESOLVE":
+                followup.resolved_at = timezone.now()
+                fields = ["resolved_at"]
+            else:
+                if not followup.so.is_active or followup.so.deleted_at:
+                    return Response({"detail": "Assign this lead to an active owner before approving its reminder."}, status=status.HTTP_400_BAD_REQUEST)
+                if scheduled_for := serializer.validated_data.get("scheduled_for"):
+                    followup.scheduled_for = scheduled_for
+                followup.reminder_held = False
+                followup.notified_at = None
+                fields = ["scheduled_for", "reminder_held", "notified_at"]
+            followup.save(update_fields=fields)
+            LeadAudit.objects.create(lead=followup.lead, actor=request.user, event="followup_reviewed", before=before, after={"action": action_name, "scheduled_for": followup.scheduled_for.isoformat(), "reminder_held": followup.reminder_held})
+        return Response(self.get_serializer(followup).data)
 
 class SystemConfigView(APIView):
     def get(self, request):

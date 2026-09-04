@@ -5,8 +5,44 @@
 }
 
 .admin-follow-up-modal .sales-detail-header {
+  align-items: flex-start;
   padding: 24px 28px 18px;
   background: #fff;
+}
+
+.admin-lead-header-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-lead-header-actions .modal-close {
+  position: static;
+}
+
+.admin-delete-lead {
+  min-height: 28px;
+  border: 1px solid #efcaca;
+  border-radius: 6px;
+  background: #fff8f8;
+  color: #b43d3d;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-delete-lead:hover,
+.admin-delete-lead:focus-visible {
+  border-color: #cf5656;
+  background: #b43d3d;
+  color: #fff;
+}
+
+.admin-delete-lead:disabled {
+  opacity: .55;
+  cursor: wait;
 }
 
 .admin-follow-up-modal .sales-detail-header h2 {
@@ -128,6 +164,164 @@
   background: #fff0e8;
   color: #d45b2c;
   font-size: 10px;
+}
+
+.reassignment-console {
+  margin-bottom: 16px;
+  border-left: 4px solid #d59a2d;
+}
+
+.reassignment-console > header,
+.reassignment-controls,
+.reassignment-controls > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reassignment-console > header .eyebrow {
+  margin: 0 0 5px;
+}
+
+.reassignment-role-tabs {
+  display: flex;
+  padding: 3px;
+  border-radius: 7px;
+  background: #f0f2f0;
+}
+
+.reassignment-role-tabs button {
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #747b80;
+  padding: 8px 13px;
+  font: 700 10px Arial, sans-serif;
+}
+
+.reassignment-role-tabs button.active {
+  background: #fff;
+  color: #17211f;
+  box-shadow: 0 1px 4px #1f29251a;
+}
+
+.reassignment-controls {
+  align-items: flex-end;
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 1px solid #eceeeb;
+}
+
+.reassignment-controls > div:first-child {
+  align-items: flex-start;
+  flex-direction: column;
+  flex: 0 0 auto;
+}
+
+.reassignment-recipient-list {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.reassignment-recipient-list label {
+  display: flex;
+  min-width: 145px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #e1e4e1;
+  border-radius: 7px;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.reassignment-recipient-list label.selected {
+  border-color: #70bda6;
+  background: #eef9f5;
+}
+
+.reassignment-recipient-list input {
+  accent-color: var(--accent);
+}
+
+.reassignment-recipient-list b,
+.reassignment-recipient-list small {
+  display: block;
+  white-space: nowrap;
+}
+
+.reassignment-recipient-list b { font-size: 10px; }
+.reassignment-recipient-list small { margin-top: 2px; color: #8b9195; font-size: 9px; }
+.reassignment-note { margin: 10px 0 0; color: #8a6c35; font-size: 10px; }
+
+.reassignment-badges {
+  display: flex;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.reassignment-badges em {
+  border-radius: 4px;
+  background: #fff4d8;
+  color: #91620d;
+  padding: 3px 5px;
+  font: normal 8px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.admin-lead-pool .lead-row.reassignment-row {
+  grid-template-columns: 22px minmax(190px, 1.4fr) minmax(90px, .45fr) minmax(110px, .7fr) minmax(100px, .55fr) auto;
+}
+
+.admin-lead-pool .lead-row.reassignment-row > input {
+  justify-self: center;
+  accent-color: var(--accent);
+}
+
+.held-followup-review {
+  border-left: 4px solid #d59a2d !important;
+  background: #fffdf7 !important;
+}
+
+.held-followup-review > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.held-followup-review > header .eyebrow { margin: 0 0 4px; color: #9b741e; }
+.held-followup-review > header span { border-radius: 12px; background: #f2dfad; color: #78550b; padding: 4px 8px; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.held-followup-review > p { margin: 8px 0 14px; color: #7f7358; font-size: 11px; }
+.held-followup-list { display: grid; gap: 8px; }
+
+.held-followup-list article {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(180px, .9fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #eadfca;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.held-followup-list b,
+.held-followup-list small { display: block; }
+.held-followup-list b { font-size: 11px; }
+.held-followup-list small { margin-top: 3px; color: #8b8579; font-size: 9px; }
+.held-followup-list input { min-width: 0; border: 1px solid #dededb; border-radius: 6px; padding: 8px; font: 10px Arial, sans-serif; }
+.held-followup-list article > div:last-child { display: flex; gap: 6px; }
+.held-followup-list .button, .held-followup-list .filter { padding: 8px 9px; white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .reassignment-controls { align-items: stretch; flex-direction: column; }
+  .reassignment-recipient-list { width: 100%; }
+  .held-followup-list article { grid-template-columns: 1fr; }
+  .admin-lead-pool .lead-row.reassignment-row { grid-template-columns: 22px 1fr auto; }
+  .admin-lead-pool .lead-row.reassignment-row > .badge,
+  .admin-lead-pool .lead-row.reassignment-row > .model,
+  .admin-lead-pool .lead-row.reassignment-row > .status { display: none; }
 }
 
 .admin-empty-history {

@@ -65,8 +65,8 @@ class QualificationSerializer(serializers.ModelSerializer):
 
 
 class LeadSerializer(serializers.ModelSerializer):
-    assigned_so_name = serializers.CharField(source="assigned_so.get_full_name", read_only=True)
-    assigned_ps_name = serializers.CharField(source="assigned_ps.get_full_name", read_only=True)
+    assigned_so_name = serializers.CharField(source="assigned_so.history_display_name", read_only=True)
+    assigned_ps_name = serializers.CharField(source="assigned_ps.history_display_name", read_only=True)
     next_follow_up = serializers.SerializerMethodField()
     call_count = serializers.SerializerMethodField()
     qualification = serializers.SerializerMethodField()
@@ -95,12 +95,12 @@ class LeadSerializer(serializers.ModelSerializer):
     def validate_model_interest(self, value):
         return validate_configured_choice(value, "models", "vehicle model")
 
-    ps_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True), source="assigned_ps", required=False, write_only=True)
+    ps_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True, deleted_at__isnull=True), source="assigned_ps", required=False, write_only=True)
 
     class Meta:
         model = Lead
-        fields = ["id", "uid", "name", "phone", "email", "source", "source_label", "campaign", "model_interest", "city", "branch", "enquiry_date", "status", "category", "sales_outcome", "assigned_so", "assigned_so_name", "assigned_ps", "assigned_ps_name", "ps_officer_id", "next_follow_up", "call_count", "qualification", "qualification_input", "flagged_to_manager", "profession", "created_at", "updated_at"]
-        read_only_fields = ["uid", "assigned_so", "assigned_ps", "created_at", "updated_at"]
+        fields = ["id", "uid", "name", "phone", "email", "source", "source_label", "campaign", "model_interest", "city", "branch", "enquiry_date", "status", "category", "sales_outcome", "assigned_so", "assigned_so_name", "assigned_ps", "assigned_ps_name", "ps_officer_id", "next_follow_up", "call_count", "qualification", "qualification_input", "flagged_to_manager", "needs_cre_reassignment", "needs_so_reassignment", "profession", "created_at", "updated_at"]
+        read_only_fields = ["uid", "assigned_so", "assigned_ps", "needs_cre_reassignment", "needs_so_reassignment", "created_at", "updated_at"]
 
     def create(self, validated_data):
         qualification_data = validated_data.pop("qualification_input", None)
@@ -128,14 +128,14 @@ class LeadDetailSerializer(LeadSerializer):
         return FollowUpSerializer(obj.follow_ups.select_related("so").order_by("-scheduled_for"), many=True).data
 
     def get_audit_history(self, obj):
-        return [{"event": event.event, "before": event.before, "after": event.after, "actor": event.actor.get_full_name() if event.actor else "System", "created_at": event.created_at} for event in obj.audit_events.select_related("actor").order_by("-created_at")[:30]]
+        return [{"event": event.event, "before": event.before, "after": event.after, "actor": event.actor.history_display_name if event.actor else "System", "created_at": event.created_at} for event in obj.audit_events.select_related("actor").order_by("-created_at")[:30]]
 
     class Meta(LeadSerializer.Meta):
         fields = LeadSerializer.Meta.fields + ["call_history", "follow_up_history", "audit_history"]
 
 
 class CallLogSerializer(serializers.ModelSerializer):
-    so_name = serializers.CharField(source="so.get_full_name", read_only=True)
+    so_name = serializers.CharField(source="so.history_display_name", read_only=True)
 
     class Meta:
         model = CallLog
@@ -180,7 +180,7 @@ class SOLeadUpdateSerializer(serializers.Serializer):
     call_outcome = serializers.CharField(max_length=50, required=False, allow_blank=True)
     follow_up_at = serializers.DateTimeField(required=False, allow_null=True)
     qualification = QualificationSerializer(required=False)
-    ps_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True), source="ps_officer", required=False)
+    ps_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True, deleted_at__isnull=True), source="ps_officer", required=False)
     flagged_to_manager = serializers.BooleanField(required=False)
 
     def validate_model_interest(self, value):
@@ -211,11 +211,11 @@ class SOLeadUpdateSerializer(serializers.Serializer):
 
 
 class AssignmentSerializer(serializers.Serializer):
-    sales_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.CRE, is_active=True), source="sales_officer")
+    sales_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.CRE, is_active=True, deleted_at__isnull=True), source="sales_officer")
 
 
 class BulkDistributeSerializer(serializers.Serializer):
-    sales_officer_ids = serializers.ListField(child=serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.CRE, is_active=True)), min_length=1)
+    sales_officer_ids = serializers.ListField(child=serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.CRE, is_active=True, deleted_at__isnull=True)), min_length=1)
 
     def validate_sales_officer_ids(self, officers):
         seen = set()
@@ -228,15 +228,27 @@ class BulkDistributeSerializer(serializers.Serializer):
 
 
 class PSAssignmentSerializer(serializers.Serializer):
-    sales_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True), source="sales_officer")
+    sales_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True, deleted_at__isnull=True), source="sales_officer")
 
 
 class FollowUpSerializer(serializers.ModelSerializer):
     customer = serializers.CharField(source="lead.name", read_only=True)
+    so_name = serializers.CharField(source="so.history_display_name", read_only=True)
+    so_active = serializers.BooleanField(source="so.is_active", read_only=True)
 
     class Meta:
         model = FollowUp
-        fields = ["id", "lead", "customer", "scheduled_for", "resolved_at", "notified_at"]
+        fields = ["id", "lead", "customer", "so_name", "so_active", "scheduled_for", "resolved_at", "notified_at", "reminder_held"]
+
+
+class FollowUpReviewSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=["APPROVE", "RESOLVE"])
+    scheduled_for = serializers.DateTimeField(required=False)
+
+    def validate_scheduled_for(self, value):
+        if value <= timezone.now():
+            raise serializers.ValidationError("Choose a future time when changing the schedule.")
+        return value
 
 class SystemConfigSerializer(serializers.ModelSerializer):
     class Meta:

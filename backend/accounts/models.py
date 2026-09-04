@@ -35,6 +35,7 @@ class User(AbstractUser):
     location = models.CharField(max_length=100, blank=True, db_index=True)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.CRE)
     is_active = models.BooleanField(default=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     USERNAME_FIELD = "email"
@@ -48,3 +49,31 @@ class User(AbstractUser):
     @property
     def is_sales_manager(self):
         return self.role == self.Role.SALES_MANAGER
+
+    @property
+    def lifecycle_status(self):
+        if self.deleted_at:
+            return "DELETED"
+        return "ACTIVE" if self.is_active else "DISABLED"
+
+    @property
+    def history_display_name(self):
+        name = self.get_full_name() or self.email
+        return f"{name} · Deleted" if self.deleted_at else name
+
+
+class UserLifecycleEvent(models.Model):
+    class Action(models.TextChoices):
+        DISABLED = "DISABLED", "Disabled"
+        ENABLED = "ENABLED", "Enabled"
+        DELETED = "DELETED", "Deleted"
+
+    user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="lifecycle_events")
+    actor = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name="performed_lifecycle_events")
+    action = models.CharField(max_length=10, choices=Action.choices)
+    reason = models.CharField(max_length=500, blank=True)
+    summary = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]

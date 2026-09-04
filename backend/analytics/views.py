@@ -51,7 +51,19 @@ def team_metrics(users, lead_relation):
         won=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__status": Lead.Status.WON}), distinct=True),
         lost=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__status__in": [Lead.Status.LOST, Lead.Status.UNQUALIFIED]}), distinct=True),
     ):
-        rows.append({"id": user.id, "name": user.get_full_name() or user.email, "total_assigned": user.total_assigned, "total_called": user.total_called, "calls_today": user.calls_today, "qualified": user.qualified, "walkins": user.walkins, "won": user.won, "lost": user.lost, "conversion_rate": round((user.won / user.total_assigned) * 100, 1) if user.total_assigned else 0})
+        rows.append({
+            "id": user.id,
+            "name": user.get_full_name() or user.email,
+            "lifecycle_status": user.lifecycle_status,
+            "total_assigned": user.total_assigned,
+            "total_called": user.total_called,
+            "calls_today": user.calls_today,
+            "qualified": user.qualified,
+            "walkins": user.walkins,
+            "won": user.won,
+            "lost": user.lost,
+            "conversion_rate": round((user.won / user.total_assigned) * 100, 1) if user.total_assigned else 0,
+        })
     return rows
 
 

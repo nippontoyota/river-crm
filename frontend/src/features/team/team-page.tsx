@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, FormEvent } from "react";
-import { getUsers, createUser, disableUser, getSystemConfig, type CurrentUser } from "@/lib/crm";
+import { createUser, disableUser, enableUser, getOffboardingImpact, getSystemConfig, getUsers, permanentlyDeleteUser, type CurrentUser, type OffboardingImpact, type OffboardingRoute } from "@/lib/crm";
 
 const roleOptions = [
   { value: "ADMIN", label: "Administrator" },
@@ -25,6 +25,10 @@ export function TeamPage() {
   const [branchFilter, setBranchFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ACTIVE");
   const [query, setQuery] = useState("");
+  const [offboarding, setOffboarding] = useState<{ user: CurrentUser; action: "DISABLE" | "DELETE"; impact: OffboardingImpact } | null>(null);
+  const [routes, setRoutes] = useState<Partial<Record<string, OffboardingRoute>>>({});
+  const [reason, setReason] = useState("");
+  const [lifecycleBusy, setLifecycleBusy] = useState("");
 
   const loadUsers = useCallback(() => {
     getUsers()
@@ -78,14 +82,55 @@ export function TeamPage() {
     }
   };
 
-  const handleDisable = async (id: number) => {
-    if (!confirm("Disable this user?")) return;
+  const openOffboarding = async (user: CurrentUser, action: "DISABLE" | "DELETE") => {
+    setLifecycleBusy(`${action}-${user.id}`); setError("");
     try {
-      await disableUser(id);
-      loadUsers();
+      const impact = await getOffboardingImpact(user.id);
+      setRoutes({});
+      setReason("");
+      setOffboarding({ user, action, impact });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to disable user.");
-    }
+      setError(err instanceof Error ? err.message : "Could not inspect this employee's workload.");
+    } finally { setLifecycleBusy(""); }
+  };
+
+  const handleEnable = async (user: CurrentUser) => {
+    if (!confirm(`Enable ${`${user.first_name} ${user.last_name}`.trim() || user.email}? Previously routed work will not return.`)) return;
+    setLifecycleBusy(`ENABLE-${user.id}`); setError("");
+    try { await enableUser(user.id); loadUsers(); }
+    catch (err) { setError(err instanceof Error ? err.message : "Failed to enable user."); }
+    finally { setLifecycleBusy(""); }
+  };
+
+  const setDestination = (status: string, destination: OffboardingRoute["destination"]) => {
+    setRoutes(current => ({ ...current, [status]: { status, destination, recipient_ids: destination === "POOL" ? [] : current[status]?.recipient_ids || [] } }));
+  };
+
+  const toggleRecipient = (status: string, recipientId: number) => {
+    setRoutes(current => {
+      const route = current[status];
+      if (!route) return current;
+      const recipient_ids = route.recipient_ids.includes(recipientId) ? route.recipient_ids.filter(id => id !== recipientId) : [...route.recipient_ids, recipientId];
+      return { ...current, [status]: { ...route, recipient_ids } };
+    });
+  };
+
+  const confirmOffboarding = async () => {
+    if (!offboarding) return;
+    const payload = offboarding.impact.lead_groups.map(group => routes[group.status]).filter((route): route is OffboardingRoute => Boolean(route));
+    setLifecycleBusy(`${offboarding.action}-${offboarding.user.id}`); setError("");
+    try {
+      if (offboarding.action === "DELETE") await permanentlyDeleteUser(offboarding.user.id, offboarding.impact.version, payload, reason.trim());
+      else await disableUser(offboarding.user.id, offboarding.impact.version, payload);
+      setOffboarding(null); loadUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to ${offboarding.action === "DELETE" ? "delete" : "disable"} user.`);
+      try {
+        const impact = await getOffboardingImpact(offboarding.user.id);
+        setOffboarding(current => current ? { ...current, impact } : current);
+        setRoutes({});
+      } catch { /* The account may have completed in another session. */ }
+    } finally { setLifecycleBusy(""); }
   };
 
   const displayRole = (role: string) => {
@@ -220,6 +265,7 @@ export function TeamPage() {
             <div className="team-users-scroll">
               {filteredUsers.length ? filteredUsers.map(user => {
                 const isActive = user.is_active !== false;
+                const managed = ["CRE", "SO"].includes(user.role);
                 return (
                   <div className="team-user-row" key={user.id}>
                     <div className="team-user-main">
@@ -229,7 +275,10 @@ export function TeamPage() {
                     <span>{displayRole(user.role)}</span>
                     <span>{branchLabel(user)}</span>
                     <span className={`team-status ${isActive ? "active" : "disabled"}`}>{isActive ? "Active" : "Disabled"}</span>
-                    {isActive ? <button className="button" onClick={() => handleDisable(user.id)}>Disable</button> : <span className="team-muted">No action</span>}
+                    {managed ? <div className="team-row-actions">
+                      {isActive ? <button className="filter" disabled={Boolean(lifecycleBusy)} onClick={() => void openOffboarding(user, "DISABLE")}>Disable</button> : <button className="filter team-enable" disabled={Boolean(lifecycleBusy)} onClick={() => void handleEnable(user)}>Enable</button>}
+                      <button className="filter team-delete" disabled={Boolean(lifecycleBusy)} onClick={() => void openOffboarding(user, "DELETE")}>{lifecycleBusy === `DELETE-${user.id}` ? "Loading…" : "Delete"}</button>
+                    </div> : <span className="team-muted">Not available</span>}
                   </div>
                 );
               }) : <div className="empty-state">No users match these filters.</div>}
@@ -237,6 +286,43 @@ export function TeamPage() {
           </div>
         </article>
       </div>
+
+      {offboarding && <div className="modal-layer" role="presentation"><section className="modal team-offboarding-modal" role="dialog" aria-modal="true" aria-labelledby="offboarding-title">
+        <button className="modal-close" onClick={() => setOffboarding(null)} aria-label="Close">×</button>
+        <p className="eyebrow">{offboarding.action === "DELETE" ? "PERMANENT ACCOUNT REMOVAL" : "TEMPORARY ACCESS PAUSE"}</p>
+        <h2 id="offboarding-title">{offboarding.action === "DELETE" ? "Delete" : "Disable"} {`${offboarding.user.first_name} ${offboarding.user.last_name}`.trim() || offboarding.user.email}</h2>
+        <p className="team-offboarding-copy">Lead stages and history stay unchanged. Decide where each active status group goes before access is removed.</p>
+        <div className="team-impact-strip">
+          <span><b>{offboarding.impact.actionable_count}</b> active leads</span>
+          <span><b>{offboarding.impact.closed_count}</b> closed retained</span>
+          <span><b>{offboarding.impact.followup_count}</b> follow-ups held</span>
+          <span><b>{offboarding.impact.complaint_count}</b> complaints pooled</span>
+        </div>
+        <div className="team-route-list">
+          {offboarding.impact.lead_groups.map(group => {
+            const route = routes[group.status];
+            return <article className="team-route-card" key={group.status}>
+              <header><div><span className="team-route-status">{group.label}</span><b>{group.count} lead{group.count === 1 ? "" : "s"}</b></div><small>{group.branches.join(" · ")}</small></header>
+              <div className="team-route-choice">
+                <button className={route?.destination === "POOL" ? "active" : ""} onClick={() => setDestination(group.status, "POOL")}>Needs reassignment pool</button>
+                <button className={route?.destination === "DISTRIBUTE" ? "active" : ""} onClick={() => setDestination(group.status, "DISTRIBUTE")}>Distribute now</button>
+              </div>
+              {route?.destination === "DISTRIBUTE" && <div className="team-recipient-grid">
+                {offboarding.impact.eligible_users.length ? offboarding.impact.eligible_users.map(candidate => <label key={candidate.id} className={route.recipient_ids.includes(candidate.id) ? "selected" : ""}>
+                  <input type="checkbox" checked={route.recipient_ids.includes(candidate.id)} onChange={() => toggleRecipient(group.status, candidate.id)} />
+                  <span><b>{candidate.name}</b><small>{offboarding.impact.assignment_role === "SO" ? candidate.location || "No branch" : `${candidate.load} active leads`}</small></span>
+                  <em>{candidate.load}</em>
+                </label>) : <p>No active same-role replacements are available. Use the pool.</p>}
+              </div>}
+              {route?.destination === "DISTRIBUTE" && offboarding.impact.assignment_role === "SO" && <p className="team-route-note">Only branch-matched PS/SO employees receive leads; unmatched branches stay in the pool.</p>}
+            </article>;
+          })}
+          {!offboarding.impact.lead_groups.length && <div className="team-no-work">No active leads need routing. Closed history remains attached to this employee.</div>}
+        </div>
+        {offboarding.action === "DELETE" && <label className="team-delete-reason">Reason for permanent deletion *<textarea maxLength={500} value={reason} onChange={event => setReason(event.target.value)} placeholder="Record why this account is being permanently removed" /></label>}
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <footer><button className="filter" onClick={() => setOffboarding(null)}>Cancel</button><button className={`button ${offboarding.action === "DELETE" ? "team-confirm-delete" : "primary"}`} disabled={Boolean(lifecycleBusy) || (offboarding.action === "DELETE" && !reason.trim()) || offboarding.impact.lead_groups.some(group => !routes[group.status] || (routes[group.status]?.destination === "DISTRIBUTE" && !routes[group.status]?.recipient_ids.length))} onClick={() => void confirmOffboarding()}>{lifecycleBusy ? "Working…" : offboarding.action === "DELETE" ? "Permanently delete" : "Disable account"}</button></footer>
+      </section></div>}
 
       <style>{`
         .team-admin-page {
@@ -331,7 +417,7 @@ export function TeamPage() {
         .team-user-head,
         .team-user-row {
           display: grid;
-          grid-template-columns: minmax(210px, 1.5fr) minmax(115px, .75fr) minmax(115px, .75fr) 86px 88px;
+          grid-template-columns: minmax(190px, 1.35fr) minmax(105px, .65fr) minmax(105px, .65fr) 78px minmax(146px, .85fr);
           gap: 12px;
           align-items: center;
         }
@@ -384,6 +470,38 @@ export function TeamPage() {
           color: #999da3;
           font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
         }
+        .team-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+        .team-row-actions .filter { padding: 7px 9px; }
+        .team-row-actions .team-enable { color: #257453; border-color: #b9dfcf; }
+        .team-row-actions .team-delete { color: #ae3f3f; border-color: #eccaca; }
+        .team-offboarding-modal { width: min(760px, 100%); max-height: min(90vh, 820px); overflow: auto; padding: 28px; }
+        .team-offboarding-modal h2 { margin-bottom: 8px; padding-right: 38px; }
+        .team-offboarding-copy { margin: 0; color: #687078; font-size: 12px; line-height: 1.55; }
+        .team-impact-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin: 20px 0; overflow: hidden; border: 1px solid #e3e5e2; border-radius: 8px; background: #e3e5e2; }
+        .team-impact-strip span { display: grid; gap: 4px; background: #fbfbf8; padding: 12px; color: #777e85; font-size: 10px; }
+        .team-impact-strip b { color: #20272a; font-size: 18px; }
+        .team-route-list { display: grid; gap: 10px; }
+        .team-route-card { border: 1px solid #e3e5e2; border-left: 4px solid #d59a2d; border-radius: 8px; padding: 14px; }
+        .team-route-card header { display: flex; justify-content: space-between; gap: 14px; align-items: center; }
+        .team-route-card header div { display: flex; align-items: center; gap: 9px; }
+        .team-route-card header small { color: #8a9095; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
+        .team-route-status { border-radius: 4px; background: #fff5dd; color: #92630e; padding: 5px 7px; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
+        .team-route-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 12px; padding: 4px; border-radius: 7px; background: #f2f3f1; }
+        .team-route-choice button { border: 0; border-radius: 5px; background: transparent; padding: 9px; color: #757c82; font: 700 10px Arial, sans-serif; cursor: pointer; }
+        .team-route-choice button.active { background: #fff; color: #17211f; box-shadow: 0 1px 4px #1f29251a; }
+        .team-recipient-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+        .team-recipient-grid label { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; border: 1px solid #e1e4e1; border-radius: 7px; padding: 9px; cursor: pointer; }
+        .team-recipient-grid label.selected { border-color: #70bda6; background: #eef9f5; }
+        .team-recipient-grid input { accent-color: var(--accent); }
+        .team-recipient-grid b, .team-recipient-grid small { display: block; }
+        .team-recipient-grid b { color: #2c3234; font-size: 10px; }
+        .team-recipient-grid small { margin-top: 3px; color: #8b9195; font-size: 9px; }
+        .team-recipient-grid em { border-radius: 10px; background: #e8f1ed; padding: 3px 6px; color: #34735e; font: normal 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .team-route-note, .team-recipient-grid p { margin: 9px 0 0; color: #8a6c35; font-size: 10px; }
+        .team-no-work { border-radius: 8px; background: #f4f7f5; color: #587067; padding: 15px; font-size: 11px; }
+        .team-delete-reason { display: grid; gap: 6px; margin-top: 16px; color: #6d7277; font-size: 10px; font-weight: 700; }
+        .team-delete-reason textarea { min-height: 74px; border: 1px solid #dededb; border-radius: 6px; padding: 10px; resize: vertical; font: 11px Arial, sans-serif; }
+        .button.team-confirm-delete { background: #a63d3d; }
         @media (max-width: 1100px) {
           .team-workspace {
             grid-template-columns: 1fr;
@@ -413,9 +531,11 @@ export function TeamPage() {
             grid-column: 1 / -1;
           }
           .team-user-row .button,
+          .team-user-row .team-row-actions,
           .team-user-row .team-muted {
             justify-self: end;
           }
+          .team-impact-strip { grid-template-columns: 1fr 1fr; }
         }
         @media (max-width: 560px) {
           .team-name-fields,
@@ -423,6 +543,9 @@ export function TeamPage() {
           .team-filters {
             grid-template-columns: 1fr;
           }
+          .team-recipient-grid { grid-template-columns: 1fr; }
+          .team-route-card header { align-items: flex-start; flex-direction: column; }
+          .team-route-card header small { text-align: left; }
         }
       `}</style>
     </section>

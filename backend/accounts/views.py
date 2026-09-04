@@ -2,12 +2,15 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.middleware.csrf import get_token
 from rest_framework import permissions, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .permissions import IsAdmin
 from .serializers import TeamMemberSerializer, UserSerializer, LoginSerializer
+from .models import UserLifecycleEvent
+from .offboarding import enable_user, offboard_user, offboarding_impact
 
 
 def set_auth_cookies(response, refresh):
@@ -70,25 +73,36 @@ class CsrfView(APIView):
         return Response({"csrfToken": get_token(request)})
 
 
+class UserLifecycleHistoryView(APIView):
+    permission_classes = [IsAdmin]
+
+    def get(self, request, user_id):
+        user = get_user_model().objects.filter(pk=user_id, role__in=[get_user_model().Role.CRE, get_user_model().Role.SALES_OFFICER]).first()
+        if not user:
+            return Response({"detail": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
+        events = [{
+            "action": event.action,
+            "reason": event.reason,
+            "actor": (event.actor.get_full_name() or event.actor.email) if event.actor else "System",
+            "summary": event.summary,
+            "created_at": event.created_at,
+        } for event in user.lifecycle_events.select_related("actor")]
+        return Response({"id": user.id, "name": user.get_full_name() or user.email, "lifecycle_status": user.lifecycle_status, "account_history": events})
+
+
 class RoleUserViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdmin]
     serializer_class = TeamMemberSerializer
     role = None
 
     def get_queryset(self):
-        return get_user_model().objects.filter(role=self.role).order_by("first_name", "email")
+        return get_user_model().objects.filter(role=self.role, is_active=True, deleted_at__isnull=True).order_by("first_name", "email")
 
     def get_serializer_context(self):
         return {**super().get_serializer_context(), "role": self.role}
 
     def destroy(self, request, *args, **kwargs):
-        user = self.get_object()
-        active = user.assigned_leads if self.role == get_user_model().Role.CRE else user.ps_leads
-        if active.filter(deleted_at__isnull=True).exists():
-            return Response({"detail": "Reassign this user's active leads before deactivation."}, status=status.HTTP_400_BAD_REQUEST)
-        user.is_active = False
-        user.save(update_fields=["is_active"])
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({"detail": "Use the explicit Disable or Permanent Delete action."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
 class CREViewSet(RoleUserViewSet):
@@ -114,14 +128,39 @@ class SalesOfficerViewSet(RoleUserViewSet):
 class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdmin]
     serializer_class = TeamMemberSerializer
-    queryset = get_user_model().objects.all().order_by("first_name", "email")
+    queryset = get_user_model().objects.filter(deleted_at__isnull=True).order_by("first_name", "email")
 
     def destroy(self, request, *args, **kwargs):
-        user = self.get_object()
-        active = user.assigned_leads.all() | user.ps_leads.all()
-        if active.filter(deleted_at__isnull=True).exists():
-            return Response({"detail": "Reassign this user's active leads before deactivation."}, status=status.HTTP_400_BAD_REQUEST)
-        user.is_active = False
-        user.save(update_fields=["is_active"])
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({"detail": "Use the explicit Disable or Permanent Delete action."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
+    @action(detail=True, methods=["get"], url_path="offboarding-impact")
+    def impact(self, request, pk=None):
+        return Response(offboarding_impact(self.get_object()))
+
+    @action(detail=True, methods=["post"])
+    def disable(self, request, pk=None):
+        summary = offboard_user(
+            self.get_object().id,
+            request.user,
+            UserLifecycleEvent.Action.DISABLED,
+            request.data.get("impact_version", ""),
+            request.data.get("routes", []),
+        )
+        return Response({"status": "DISABLED", "summary": summary})
+
+    @action(detail=True, methods=["post"])
+    def enable(self, request, pk=None):
+        user = enable_user(self.get_object().id, request.user)
+        return Response(self.get_serializer(user).data)
+
+    @action(detail=True, methods=["post"], url_path="permanent-delete")
+    def permanent_delete(self, request, pk=None):
+        summary = offboard_user(
+            self.get_object().id,
+            request.user,
+            UserLifecycleEvent.Action.DELETED,
+            request.data.get("impact_version", ""),
+            request.data.get("routes", []),
+            request.data.get("reason", ""),
+        )
+        return Response({"status": "DELETED", "summary": summary})

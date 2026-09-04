@@ -108,6 +108,22 @@ class LeadAccessTests(TestCase):
         self.assertIsNone(lead.assigned_so)
         self.assertEqual(lead.status, Lead.Status.FRESH)
 
+    def test_only_admin_can_delete_a_lead_without_losing_its_history(self):
+        call = CallLog.objects.create(lead=self.first_lead, so=self.first_so, status=Lead.Status.FRESH)
+        self.client.force_authenticate(self.first_so)
+        denied = self.client.delete(f"/api/leads/{self.first_lead.id}/")
+        self.assertEqual(denied.status_code, 403)
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.delete(f"/api/leads/{self.first_lead.id}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.first_lead.refresh_from_db()
+        self.assertIsNotNone(self.first_lead.deleted_at)
+        self.assertTrue(CallLog.objects.filter(pk=call.pk).exists())
+        self.assertTrue(LeadAudit.objects.filter(lead=self.first_lead, actor=self.admin, event="deleted").exists())
+        self.assertEqual(self.client.get("/api/leads/").data["count"], 1)
+
     def test_admin_models_limit_new_lead_models(self):
         SystemConfig.objects.create(id=1, lists={"models": ["r7"]})
         self.client.force_authenticate(self.admin)
@@ -735,3 +751,23 @@ class LeadAccessTests(TestCase):
 
         response = self.client.patch(f"/api/leads/{self.first_lead.id}/so-update/", {"qualification": {"variant": "R9 Plus"}}, format="json")
         self.assertEqual(response.status_code, 403)
+
+    def test_reopening_closed_lead_queues_inactive_owners(self):
+        self.first_so.is_active = False
+        self.first_so.save(update_fields=["is_active"])
+        self.ps_so.is_active = False
+        self.ps_so.save(update_fields=["is_active"])
+        self.first_lead.status = Lead.Status.WON
+        self.first_lead.assigned_ps = self.ps_so
+        self.first_lead.save(update_fields=["status", "assigned_ps"])
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.post(f"/api/leads/{self.first_lead.id}/reopen/")
+
+        self.assertEqual(response.status_code, 200)
+        self.first_lead.refresh_from_db()
+        self.assertEqual(self.first_lead.status, Lead.Status.QUALIFIED)
+        self.assertIsNone(self.first_lead.assigned_so)
+        self.assertIsNone(self.first_lead.assigned_ps)
+        self.assertTrue(self.first_lead.needs_cre_reassignment)
+        self.assertTrue(self.first_lead.needs_so_reassignment)

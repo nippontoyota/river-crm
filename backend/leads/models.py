@@ -56,6 +56,8 @@ class Lead(models.Model):
     assigned_ps = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="ps_leads")
     duplicate_flag = models.BooleanField(default=False)
     flagged_to_manager = models.BooleanField(default=False)
+    needs_cre_reassignment = models.BooleanField(default=False, db_index=True)
+    needs_so_reassignment = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -81,6 +83,7 @@ class FollowUp(models.Model):
     scheduled_for = models.DateTimeField(db_index=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
     notified_at = models.DateTimeField(null=True, blank=True)
+    reminder_held = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
 
@@ -107,4 +110,3 @@ class LeadAudit(models.Model):
 class SystemConfig(models.Model):
     lists = models.JSONField(default=dict, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
-

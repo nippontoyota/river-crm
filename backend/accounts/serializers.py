@@ -5,9 +5,11 @@ from .models import User
 
 
 class UserSerializer(serializers.ModelSerializer):
+    lifecycle_status = serializers.CharField(read_only=True)
+
     class Meta:
         model = User
-        fields = ["id", "first_name", "last_name", "email", "phone", "location", "role", "is_active"]
+        fields = ["id", "first_name", "last_name", "email", "phone", "location", "role", "is_active", "deleted_at", "lifecycle_status"]
 
 
 class LoginSerializer(serializers.Serializer):
@@ -24,18 +26,23 @@ class LoginSerializer(serializers.Serializer):
 
 class TeamMemberSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, min_length=6)
+    lifecycle_status = serializers.CharField(read_only=True)
 
     class Meta:
         model = User
-        fields = ["id", "first_name", "last_name", "email", "phone", "location", "role", "is_active", "password"]
+        fields = ["id", "first_name", "last_name", "email", "phone", "location", "role", "is_active", "deleted_at", "lifecycle_status", "password"]
+        read_only_fields = ["is_active", "deleted_at", "lifecycle_status"]
 
     def create(self, validated_data):
         password = validated_data.pop("password")
-        role = validated_data.get("role") or self.context.get("role") or User.Role.CRE
+        role = self.context.get("role") or validated_data.get("role") or User.Role.CRE
+        validated_data["role"] = role
         return User.objects.create_user(password=password, **validated_data)
 
     def validate(self, attrs):
-        role = attrs.get("role") or self.context.get("role") or getattr(self.instance, "role", User.Role.CRE)
+        role = self.context.get("role") or attrs.get("role") or getattr(self.instance, "role", User.Role.CRE)
+        if self.instance and "role" in attrs and attrs["role"] != self.instance.role:
+            raise serializers.ValidationError({"role": "Create a new account instead of changing an employee's role."})
         if role == User.Role.SALES_MANAGER and not (attrs.get("location") or getattr(self.instance, "location", "")).strip():
             raise serializers.ValidationError({"location": "Choose the manager branch."})
         return attrs

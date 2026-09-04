@@ -4,28 +4,36 @@ import { formatDate, toApiDate, toDateInputValue } from "@/lib/dates";
 type Paginated<T> = { count?: number; next?: string | null; previous?: string | null; results: T[] };
 type ApiLead = {
   id: number; name: string; phone: string; email: string; source: string; source_label: string; campaign: string; model_interest: string; city: string;
-  branch: string; enquiry_date: string | null; status: string; category: string; sales_outcome: string; assigned_so: number | null; assigned_so_name: string; assigned_ps: number | null; assigned_ps_name: string; next_follow_up: string | null; call_count: number; qualification: LeadQualification | null; created_at: string;
+  branch: string; enquiry_date: string | null; status: string; category: string; sales_outcome: string; assigned_so: number | null; assigned_so_name: string; assigned_ps: number | null; assigned_ps_name: string; needs_cre_reassignment: boolean; needs_so_reassignment: boolean; next_follow_up: string | null; call_count: number; qualification: LeadQualification | null; created_at: string;
 };
 type ApiSalesLead = { id: number; status: string; name: string; phone: string; source: string; flagged_to_manager: boolean };
 type ApiOfficer = { id: number; first_name: string; last_name: string; email: string; phone: string; location: string; is_active: boolean };
 
 export type Lead = {
   id: number; name: string; phone: string; source: string; sourceCode: string; model: string; city: string; enquiryDate: string | null; enquiredAt: string;
-  branch: string; campaign: string; category: string; salesOutcome: string; nextFollowUp: string | null; callCount: number; statusCode: string; status: string; assignedSoId: number | null; assignedSoName: string; assignedPsId: number | null; assignedPsName: string;
+  branch: string; campaign: string; category: string; salesOutcome: string; nextFollowUp: string | null; callCount: number; statusCode: string; status: string; assignedSoId: number | null; assignedSoName: string; assignedPsId: number | null; assignedPsName: string; needsCreReassignment: boolean; needsSoReassignment: boolean;
 };
 export type SalesLead = { id: number; status: string; statusCode: string; name: string; phone: string; source: string; sourceCode: string; flagged_to_manager: boolean };
 export type LeadInput = { name: string; phone: string; email?: string; source: string; source_label?: string; campaign?: string; model_interest?: string; city?: string; branch?: string; enquiry_date?: string; profession?: string; ps_officer_id?: number; status?: string; category?: string; qualification?: LeadQualification; qualification_input?: LeadQualification };
-export type LeadFilters = { source?: string; status?: string; model?: string; city?: string; source_label?: string; date_from?: string; date_to?: string; q?: string };
+export type LeadFilters = { source?: string; status?: string; branch?: string; model?: string; city?: string; source_label?: string; date_from?: string; date_to?: string; q?: string };
 export type LeadQualification = { variant: string; buying_timeline: string; finance_type: string; trade_in: boolean | null; test_drive: string; notes: string; updated_at?: string };
 export type CallHistory = { id: number; status: string; outcome: string; remarks: string; so_name: string; created_at: string; call_status?: string };
-export type FollowUpHistory = { id: number; lead: number; customer: string; scheduled_for: string; resolved_at: string | null; notified_at: string | null };
+export type FollowUpHistory = { id: number; lead: number; customer: string; so_name: string; so_active: boolean; scheduled_for: string; resolved_at: string | null; notified_at: string | null; reminder_held: boolean };
 export type LeadDetail = Lead & { email: string; sourceLabel: string; campaign: string; qualification: LeadQualification | null; callHistory: CallHistory[]; followUpHistory: FollowUpHistory[]; auditHistory: { event: string; before: Record<string, unknown>; after: Record<string, unknown>; actor: string; created_at: string }[] };
 export type SalesDashboard = { summary: { total: number; fresh: number; followups: number; missed: number; pending: number; qualified: number; walkin: number; won: number; lost: number; won_lost: number; untouched: number; called: number; scheduled: number }; section: string; results: SalesLead[] };
 export type PersonalAnalytics = { range: string; summary: { total: number; assigned: number; qualified: number; booked: number; lost: number; retailed: number; conversion_rate: number }; status_counts: { status: string; count: number }[]; source: { source: string; total: number; qualified: number; booked: number; retailed: number }[]; models: { model_interest: string; total: number; qualified: number; booked: number }[]; monthly: { month: string; total: number; qualified: number; booked: number; retailed: number }[] };
 export type Officer = { id: number; name: string; initials: string; color: "blue" | "green" | "violet" | "orange"; location: string; assigned: number; calls: number; qualified: number; won: number };
 export type Metrics = { total_assigned: number; total_called: number; calls_today?: number; qualified: number; walkins: number; won: number; lost: number; conversion_rate: number };
-export type Analytics = { summary: Metrics; source: { source: string; total: number; qualified: number; won: number }[]; cre: (Metrics & { id: number; name: string })[]; officers: (Metrics & { id: number; name: string })[] };
-export type CurrentUser = { id: number; first_name: string; last_name: string; email: string; role: "ADMIN" | "CRE" | "SO" | "SALES_MANAGER" | "RECEPTIONIST" | "COMPLAINTS"; is_active?: boolean; location?: string };
+export type LifecycleEvent = { action: "DISABLED" | "ENABLED" | "DELETED"; reason: string; actor: string; summary: Record<string, unknown>; created_at: string };
+export type AnalyticsOfficer = Metrics & { id: number; name: string; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; account_history?: LifecycleEvent[] };
+export type Analytics = { summary: Metrics; source: { source: string; total: number; qualified: number; won: number }[]; cre: AnalyticsOfficer[]; officers: AnalyticsOfficer[] };
+export type CurrentUser = { id: number; first_name: string; last_name: string; email: string; role: "ADMIN" | "CRE" | "SO" | "SALES_MANAGER" | "RECEPTIONIST" | "COMPLAINTS"; is_active?: boolean; deleted_at?: string | null; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; location?: string };
+export type OffboardingRoute = { status: string; destination: "POOL" | "DISTRIBUTE"; recipient_ids: number[] };
+export type OffboardingImpact = {
+  version: string; assignment_role: "CRE" | "SO"; actionable_count: number; closed_count: number; followup_count: number; complaint_count: number;
+  lead_groups: { status: string; label: string; count: number; branches: string[] }[];
+  eligible_users: { id: number; name: string; location: string; load: number }[];
+};
 type ApiOptions = RequestInit & { skipCsrf?: boolean };
 
 let csrfToken = "";
@@ -114,7 +122,7 @@ const colors: Officer["color"][] = ["blue", "green", "violet", "orange"];
 export const sourceName = (source: string) => sourceNames[source] || source;
 export const statusName = (status: string) => statusNames[status] || status;
 export const sourceClass = (source: string) => sourceName(source).toLowerCase().replaceAll(" ", "-");
-export const toLead = (lead: ApiLead): Lead => ({ ...lead, source: sourceName(lead.source), sourceCode: lead.source, model: lead.model_interest || "—", enquiryDate: lead.enquiry_date, enquiredAt: formatDate(lead.enquiry_date || lead.created_at), statusCode: lead.status, status: statusName(lead.status), category: lead.category, salesOutcome: lead.sales_outcome, nextFollowUp: lead.next_follow_up, callCount: lead.call_count, assignedSoId: lead.assigned_so, assignedSoName: lead.assigned_so_name, assignedPsId: lead.assigned_ps, assignedPsName: lead.assigned_ps_name });
+export const toLead = (lead: ApiLead): Lead => ({ ...lead, source: sourceName(lead.source), sourceCode: lead.source, model: lead.model_interest || "—", enquiryDate: lead.enquiry_date, enquiredAt: formatDate(lead.enquiry_date || lead.created_at), statusCode: lead.status, status: statusName(lead.status), category: lead.category, salesOutcome: lead.sales_outcome, nextFollowUp: lead.next_follow_up, callCount: lead.call_count, assignedSoId: lead.assigned_so, assignedSoName: lead.assigned_so_name, assignedPsId: lead.assigned_ps, assignedPsName: lead.assigned_ps_name, needsCreReassignment: lead.needs_cre_reassignment, needsSoReassignment: lead.needs_so_reassignment });
 const toSalesLead = (lead: ApiSalesLead): SalesLead => ({ id: lead.id, name: lead.name, phone: lead.phone, source: sourceName(lead.source), sourceCode: lead.source, statusCode: lead.status, status: statusName(lead.status), flagged_to_manager: lead.flagged_to_manager });
 const toLeadDetail = (lead: ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"] }): LeadDetail => ({ ...toLead(lead), email: lead.email, sourceLabel: lead.source_label, campaign: lead.campaign, qualification: lead.qualification, callHistory: lead.call_history, followUpHistory: lead.follow_up_history, auditHistory: lead.audit_history });
 export const toOfficer = (officer: ApiOfficer, metrics?: Metrics): Officer => ({ id: officer.id, name: `${officer.first_name} ${officer.last_name}`.trim() || officer.email, initials: `${officer.first_name[0] || ""}${officer.last_name[0] || ""}` || officer.email.slice(0, 2).toUpperCase(), color: colors[officer.id % colors.length], location: officer.location, assigned: metrics?.total_assigned || 0, calls: metrics?.calls_today || 0, qualified: metrics?.qualified || 0, won: metrics?.won || 0 });
@@ -123,6 +131,7 @@ export async function getLeadsPage(query = "") { const data = await api<Paginate
 export async function getLeads(query = "") { return (await getLeadsPage(query)).results; }
 export async function getMyDashboard(params: Record<string, string>) { const query = new URLSearchParams(params).toString(); const data = await api<{ summary: SalesDashboard["summary"]; section: string; results: ApiSalesLead[] }>(`/api/leads/my-dashboard/${query ? `?${query}` : ""}`); return { ...data, results: data.results.map(toSalesLead) }; }
 export async function getLeadDetail(id: number) { const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"] }>(`/api/leads/${id}/`); return toLeadDetail(data); }
+export const deleteLead = (id: number) => api<void>(`/api/leads/${id}/`, { method: "DELETE" });
 const withApiDate = <T extends { enquiry_date?: string | null }>(payload: T): T => payload.enquiry_date === undefined ? payload : { ...payload, enquiry_date: toApiDate(payload.enquiry_date) };
 export async function updateMyLead(id: number, payload: { name?: string; phone?: string; email?: string; source?: string; source_label?: string; campaign?: string; model_interest?: string; city?: string; branch?: string; enquiry_date?: string | null; status?: string; category?: string; sales_outcome?: string; remarks?: string; call_status?: string; call_outcome?: string; follow_up_at?: string | null; ps_officer_id?: number; qualification?: LeadQualification; flagged_to_manager?: boolean }) { const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"] }>(`/api/leads/${id}/so-update/`, { method: "PATCH", body: JSON.stringify(withApiDate(payload)) }); return toLeadDetail(data); }
 export const createLead = (payload: LeadInput) => api<ApiLead>("/api/leads/", { method: "POST", body: JSON.stringify(withApiDate(payload)) });
@@ -150,6 +159,7 @@ export const assignPsLead = (leadId: number, officerId: number) => api<Lead>(`/a
 const withApiDateFilters = (filters: LeadFilters): LeadFilters => ({ ...filters, date_from: toDateInputValue(filters.date_from) || undefined, date_to: toDateInputValue(filters.date_to) || undefined });
 export const assignFilteredLeads = (officerId: number, filters: LeadFilters) => api<{ assigned: number }>("/api/leads/bulk-assign/", { method: "POST", body: JSON.stringify({ sales_officer_id: officerId, filters: withApiDateFilters(filters) }) });
 export const assignFilteredPsLeads = (officerId: number, filters: LeadFilters) => api<{ assigned: number }>("/api/leads/bulk-assign-ps/", { method: "POST", body: JSON.stringify({ sales_officer_id: officerId, filters: withApiDateFilters(filters) }) });
+export const reassignLeads = (role: "CRE" | "SO", leadIds: number[], recipientIds: number[]) => api<{ assigned: number; skipped: number }>("/api/leads/bulk-reassign/", { method: "POST", body: JSON.stringify({ role, lead_ids: leadIds, recipient_ids: recipientIds }) });
 export const distributeFilteredLeads = (officerIds: number[], filters: LeadFilters) => api<{ assigned: number; distribution: { sales_officer_id: number; name: string; assigned: number }[] }>("/api/leads/bulk-distribute/", { method: "POST", body: JSON.stringify({ sales_officer_ids: officerIds, filters: withApiDateFilters(filters) }) });
 export const autoAssignLeads = () => api<{ assigned: number }>("/api/leads/auto-assign/", { method: "POST", body: JSON.stringify({}) });
 export const logCall = (leadId: number, payload: { status: string; remarks?: string; follow_up_at?: string }) => api<Lead>(`/api/leads/${leadId}/log-call/`, { method: "POST", body: JSON.stringify(payload) });
@@ -179,7 +189,12 @@ export async function updateSystemConfig(lists: SystemConfig["lists"]) {
 }
 export const getUsers = async () => { const data = await api<any>("/api/auth/users/"); return (data.results || data) as CurrentUser[]; };
 export const createUser = (payload: any) => api<CurrentUser>("/api/auth/users/", { method: "POST", body: JSON.stringify(payload) });
-export const disableUser = (userId: number) => api<void>(`/api/auth/users/${userId}/`, { method: "DELETE" });
+export const getOffboardingImpact = (userId: number) => api<OffboardingImpact>(`/api/auth/users/${userId}/offboarding-impact/`);
+export const getUserLifecycleHistory = (userId: number) => api<{ id: number; name: string; lifecycle_status: "ACTIVE" | "DISABLED" | "DELETED"; account_history: LifecycleEvent[] }>(`/api/auth/users/${userId}/lifecycle-history/`);
+export const disableUser = (userId: number, impactVersion: string, routes: OffboardingRoute[]) => api<{ status: string }>(`/api/auth/users/${userId}/disable/`, { method: "POST", body: JSON.stringify({ impact_version: impactVersion, routes }) });
+export const enableUser = (userId: number) => api<CurrentUser>(`/api/auth/users/${userId}/enable/`, { method: "POST", body: JSON.stringify({}) });
+export const permanentlyDeleteUser = (userId: number, impactVersion: string, routes: OffboardingRoute[], reason: string) => api<{ status: string }>(`/api/auth/users/${userId}/permanent-delete/`, { method: "POST", body: JSON.stringify({ impact_version: impactVersion, routes, reason }) });
+export const reviewFollowUp = (followUpId: number, action: "APPROVE" | "RESOLVE", scheduledFor?: string) => api<FollowUpHistory>(`/api/follow-ups/${followUpId}/review/`, { method: "PATCH", body: JSON.stringify({ action, ...(scheduledFor ? { scheduled_for: scheduledFor } : {}) }) });
 
 export type ReceptionistAnalytics = { summary: { total: number; walkin: number; digital: number }; so_breakdown: { name: string; count: number }[] };
 export const getReceptionistAnalytics = () => api<ReceptionistAnalytics>("/api/analytics/receptionist/");
