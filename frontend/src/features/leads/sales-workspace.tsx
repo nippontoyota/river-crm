@@ -375,7 +375,7 @@ export function SalesWorkspace({ followUpsOnly = false }: { followUpsOnly?: bool
   const saveTone = draft?.call_outcome && lostPsOutcomes.has(draft.call_outcome) ? "lost" : draft?.call_outcome ? "qualified" : "";
 
   return <section className="page sales-workspace">
-    <div className="sales-hero"><div><p className="eyebrow">{isPs ? "PS/SO WORKSPACE" : "CRE WORKSPACE"}</p><h1>My queue</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions"><button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{!isPs && <button className="button primary" onClick={() => { setAddLeadError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
+    <div className="sales-hero"><div>{!isPs && <p className="eyebrow">CRE WORKSPACE</p>}<h1>My queue</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions"><button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{!isPs && <button className="button primary" onClick={() => { setAddLeadError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
     <section className="sales-metrics">{metrics.map(metric => <button type="button" className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-pressed={section === metric.section} onClick={() => { setSection(metric.section); setCategory(""); setSource(""); setQuery(""); setWonLostFilter("all"); }} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></button>)}</section>
     
     {isPs ? (
