@@ -183,7 +183,6 @@ export function SalesWorkspace({ followUpsOnly = false }: { followUpsOnly?: bool
   useEffect(() => {
     void getCurrentUser().then(result => {
       setUser(result.user);
-      if (result.user.role === "SO" && !followUpsOnly) setSection("all");
     }).catch(() => setUser(null)).finally(() => setAuthChecked(true));
     void getSystemConfig()
       .then(config => {
@@ -367,9 +366,9 @@ export function SalesWorkspace({ followUpsOnly = false }: { followUpsOnly?: bool
   const submitLabel = draft?.call_outcome === "QUALIFIED" ? "Qualify Lead" : draft?.call_outcome === "LOST" ? "Mark as Lost" : draft?.call_outcome === "PENDING" ? "Mark as Pending" : draft?.call_outcome === "BOOKED" ? "Book Follow-up" : draft?.call_outcome === "RETAILED" ? "Mark Retailed" : "Save follow-up";
   const visibleSections = isPs ? sections.filter(item => !["all", "fresh", "pending"].includes(item.key)) : sections;
   const psVisibleSections = followUpsOnly ? psFollowUpSections : psSections;
-  const metrics = isPs
-    ? [{label: followUpsOnly ? "TODAY'S FOLLOW-UPS" : "FRESH LEADS", value: followUpsOnly ? summary?.followups ?? 0 : summary?.fresh ?? 0, tone:"blue"}, {label:"BOOKED", value:summary?.walkin ?? 0, tone:"green"}, {label:"RETAILED", value:summary?.won ?? 0, tone:"green"}, {label:"LOST", value:summary?.lost ?? 0, tone:"red"}]
-    : [{label:"Fresh leads", value:summary?.fresh ?? 0, tone:"blue"}, {label:"Today's follow-ups", value:summary?.followups ?? 0, tone:"yellow"}, {label:"Pending leads", value:summary?.pending ?? 0, tone:"orange"}, {label:"Qualified leads", value:summary?.qualified ?? 0, tone:"green"}, {label:"Won leads", value:summary?.won ?? 0, tone:"mint"}, {label:"Lost leads", value:summary?.lost ?? 0, tone:"red"}];
+  const metrics: { label: string; value: number; tone: string; section: Section }[] = isPs
+    ? [{label: followUpsOnly ? "TODAY'S FOLLOW-UPS" : "FRESH LEADS", value: followUpsOnly ? summary?.followups ?? 0 : summary?.fresh ?? 0, tone:"blue", section: followUpsOnly ? "followups" : "fresh"}, {label:"BOOKED", value:summary?.walkin ?? 0, tone:"green", section:"walkin"}, {label:"RETAILED", value:summary?.won ?? 0, tone:"green", section:"won"}, {label:"LOST", value:summary?.lost ?? 0, tone:"red", section:"lost"}]
+    : [{label:"Fresh leads", value:summary?.fresh ?? 0, tone:"blue", section:"fresh"}, {label:"Today's follow-ups", value:summary?.followups ?? 0, tone:"yellow", section:"followups"}, {label:"Pending leads", value:summary?.pending ?? 0, tone:"orange", section:"pending"}, {label:"Qualified leads", value:summary?.qualified ?? 0, tone:"green", section:"qualified"}, {label:"Won leads", value:summary?.won ?? 0, tone:"mint", section:"won"}, {label:"Lost leads", value:summary?.lost ?? 0, tone:"red", section:"lost"}];
   const displayStatus = (lead: SalesLead) => !isPs && ["RNR", "SWITCHED_OFF", "CALLBACK"].includes(lead.statusCode) ? "Pending" : lead.status;
   const displayStatusClass = (lead: SalesLead) => !isPs && ["RNR", "SWITCHED_OFF", "CALLBACK"].includes(lead.statusCode) ? "pending" : lead.statusCode.toLowerCase();
   const psVisibleOutcomes = draft ? (draft.call_status === "Connected" ? soConnectedOutcomes : soNotConnectedOutcomes) : [];
@@ -377,7 +376,7 @@ export function SalesWorkspace({ followUpsOnly = false }: { followUpsOnly?: bool
 
   return <section className="page sales-workspace">
     <div className="sales-hero"><div><p className="eyebrow">{isPs ? "PS/SO WORKSPACE" : "CRE WORKSPACE"}</p><h1>My queue</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions"><button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{!isPs && <button className="button primary" onClick={() => { setAddLeadError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
-    <section className="sales-metrics">{metrics.map(metric => <article className={`sales-metric ${metric.tone}`} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong><small>Assigned to you</small></article>)}</section>
+    <section className="sales-metrics">{metrics.map(metric => <button type="button" className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-pressed={section === metric.section} onClick={() => { setSection(metric.section); setCategory(""); setSource(""); setQuery(""); setWonLostFilter("all"); }} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></button>)}</section>
     
     {isPs ? (
       <section className="panel sales-table-panel" style={{ background: "transparent", border: "none", boxShadow: "none", padding: 0 }}>
