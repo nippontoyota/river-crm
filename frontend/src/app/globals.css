@@ -43,23 +43,42 @@
 
 @media(max-width:760px){
   .login-page{grid-template-columns:1fr}
-  .login-visual{min-height:clamp(250px,39svh,340px)}
-  .login-visual-copy{top:28px;left:26px}
-  .login-visual-copy p{margin-bottom:8px;font-size:12px}
-  .login-visual-copy h2{max-width:270px;font-size:34px}
-  .login-visual-brand{top:58%;font-size:44px}
-  .login-access{min-height:auto;place-items:start center;padding:42px 26px 48px}
-  .login-wordmark{font-size:33px}
-  .login-product{margin-top:12px}
-  .login-heading{margin:40px 0 29px}
-  .login-heading h1{font-size:40px}
+  .login-visual{min-height:clamp(165px,24svh,220px)}
+  .login-visual-copy{top:18px;left:20px}
+  .login-visual-copy p{margin-bottom:6px;font-size:10px}
+  .login-visual-copy h2{max-width:220px;font-size:28px}
+  .login-visual-brand{top:auto;bottom:18px;font-size:34px}
+  .login-access{min-height:auto;place-items:start center;padding:24px 20px 26px}
+  .login-wordmark{font-size:30px}
+  .login-product{margin-top:8px}
+  .login-dealer{margin-top:10px}
+  .login-heading{margin:24px 0 20px}
+  .login-heading h1{font-size:34px}
+  .login-heading p{margin-top:9px;font-size:13px;line-height:1.4}
+  .login-page .auth-form{gap:14px}
+  .login-page .auth-form label{gap:6px}
+  .login-page .auth-form input{height:44px}
+  .login-submit{height:48px;margin-top:0}
+  .login-note{margin-top:16px}
 }
 
 @media(max-width:390px){
-  .login-visual{min-height:230px}
-  .login-visual-copy h2{max-width:230px;font-size:30px}
-  .login-visual-brand{font-size:38px}
-  .login-access{padding-inline:20px}
+  .login-visual{min-height:165px}
+  .login-visual-copy h2{max-width:210px;font-size:27px}
+  .login-visual-brand{font-size:32px}
+  .login-access{padding-inline:16px}
+}
+
+@media(max-width:760px) and (max-height:700px){
+  .login-visual{min-height:150px}
+  .login-visual-brand{bottom:12px;font-size:30px}
+  .login-access{padding-block:18px}
+  .login-wordmark{font-size:28px}
+  .login-heading{margin:18px 0 16px}
+  .login-heading h1{font-size:32px}
+  .login-heading p{margin-top:6px}
+  .login-page .auth-form{gap:12px}
+  .login-note{display:none}
 }
 
 @media(prefers-reduced-motion:reduce){
