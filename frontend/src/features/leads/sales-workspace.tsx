@@ -174,8 +174,6 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const branchOptions = branches;
   const selectedLocation = draft ? draft.city.trim() : "";
 
-  useEffect(() => { if (initialSection) setSection(initialSection); }, [initialSection]);
-
   useEffect(() => {
     void getCurrentUser().then(result => {
       setUser(result.user);
@@ -371,17 +369,17 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const displayStatusClass = (lead: SalesLead) => !isPs && ["RNR", "SWITCHED_OFF", "CALLBACK"].includes(lead.statusCode) ? "pending" : lead.statusCode.toLowerCase();
   const psVisibleOutcomes = draft ? (draft.call_status === "Connected" ? soConnectedOutcomes : soNotConnectedOutcomes) : [];
   const saveTone = draft?.call_outcome && lostPsOutcomes.has(draft.call_outcome) ? "lost" : draft?.call_outcome ? "qualified" : "";
+  const metricCards = metrics.map(metric => isPs && metric.href ? <Link className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-current={section === metric.section ? "page" : undefined} href={metric.href} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></Link> : <button type="button" className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-pressed={section === metric.section} onClick={() => { setSection(metric.section); setCategory(""); setSource(""); setQuery(""); setWonLostFilter("all"); }} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></button>);
+  const leadSearch = <label className="sales-search followup-lead-search">⌕<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name or mobile..." /></label>;
 
   return <section className="page sales-workspace">
     <div className="sales-hero"><div>{!isPs && <p className="eyebrow">CRE WORKSPACE</p>}<h1>{isPs ? followUpsOnly ? "Today's follow-ups" : allLeadsOnly ? "All leads" : "Fresh leads" : "My queue"}</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions"><button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{!isPs && <button className="button primary" onClick={() => { setAddLeadError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
-    <section className={`sales-metrics ${isPs && followUpsOnly ? "compact" : ""}`}>{metrics.map(metric => isPs && metric.href ? <Link className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-current={section === metric.section ? "page" : undefined} href={metric.href} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></Link> : <button type="button" className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-pressed={section === metric.section} onClick={() => { setSection(metric.section); setCategory(""); setSource(""); setQuery(""); setWonLostFilter("all"); }} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></button>)}</section>
+    {isPs && followUpsOnly ? <div className="followup-overview"><section className="sales-metrics compact">{metricCards}</section><div className="followup-search-pane">{leadSearch}</div></div> : <section className="sales-metrics">{metricCards}</section>}
     
     {isPs ? (
       <section className="panel sales-table-panel" style={{ background: "transparent", border: "none", boxShadow: "none", padding: 0 }}>
         {psVisibleSections.length > 0 && <nav className="sales-tabs" aria-label="All lead filters">{psVisibleSections.map(item => <button key={item.key} className={section === item.key ? "active" : ""} onClick={() => setSection(item.key)}><i>{item.icon}</i><span>{item.label}</span><b>{summary?.[item.count] ?? 0}</b></button>)}</nav>}
-        <div className="sales-filters" style={{ marginBottom: "1rem" }}>
-          <label className="sales-search" style={{ width: "100%", background: "#fff" }}>⌕<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name or mobile..." /></label>
-        </div>
+        {!followUpsOnly && <div className="sales-filters" style={{ marginBottom: "1rem" }}>{leadSearch}</div>}
         <div className="so-card-list" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           {loading ? <div className="sales-empty">Loading…</div> : dashboard?.results.length ? dashboard.results.map(lead => (
             <div key={lead.id} onClick={() => void openLead(lead)} style={{ background: "#fff", padding: "1.25rem", borderRadius: "12px", border: "1px solid var(--border)", cursor: "pointer", display: "flex", flexDirection: "column", gap: "0.75rem", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>

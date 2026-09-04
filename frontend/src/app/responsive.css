@@ -1180,7 +1180,7 @@ input[type="radio"] {
   }
 }
 
-.sales-workspace > .sales-metrics {
+.sales-workspace .sales-metrics {
   grid-template-columns: none;
   grid-auto-flow: column;
   grid-auto-columns: minmax(170px, 1fr);
@@ -1189,7 +1189,7 @@ input[type="radio"] {
   scrollbar-width: thin;
 }
 
-.sales-workspace > .sales-metrics .sales-metric {
+.sales-workspace .sales-metrics .sales-metric {
   appearance: none;
   min-width: 0;
   cursor: pointer;
@@ -1199,17 +1199,53 @@ input[type="radio"] {
   scroll-snap-align: start;
 }
 
-.sales-workspace > .sales-metrics .sales-metric.active,
-.sales-workspace > .sales-metrics .sales-metric:focus-visible {
+.sales-workspace .sales-metrics .sales-metric.active,
+.sales-workspace .sales-metrics .sales-metric:focus-visible {
   box-shadow: inset 0 0 0 2px currentColor;
 }
 
-.sales-workspace > .sales-metrics.compact {
+.sales-workspace .sales-metrics.compact {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-flow: row;
   grid-auto-columns: auto;
   max-width: 733px;
   margin-inline: auto;
+}
+
+.followup-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.followup-overview > .sales-metrics.compact {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.followup-search-pane,
+.followup-lead-search {
+  width: 100%;
+}
+
+.followup-lead-search {
+  min-width: 0;
+  height: 46px;
+  background: #fff;
+}
+
+.followup-lead-search input {
+  font-size: 13px;
+}
+
+@media (max-width: 767px) {
+  .followup-overview {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
