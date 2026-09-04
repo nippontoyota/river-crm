@@ -25,7 +25,8 @@ const adminLinks = [
 ] as const;
 const officerLinks = [
   ["/my-leads", "My queue", "◫"],
-  ["/follow-ups", "Follow-ups", "◷"],
+  ["/follow-ups", "Today's follow-ups", "◷"],
+  ["/all-my-leads", "All leads", "☰"],
   ["/my-analytics", "My results", "◔"],
 ] as const;
 const managerLinks = [

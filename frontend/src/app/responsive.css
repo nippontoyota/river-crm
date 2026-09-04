@@ -562,6 +562,12 @@ input[type="radio"] {
     white-space: nowrap;
   }
 
+  .sales-shell.ps-shell .sidebar .nav-link b {
+    text-align: center;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
   .sidebar .nav-link em {
     display: none;
   }
