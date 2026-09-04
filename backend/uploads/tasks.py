@@ -8,12 +8,9 @@ from django.db import transaction
 from django.utils import timezone
 
 from leads.models import Lead
-from leads.serializers import configured_values
+from leads.serializers import configured_source, configured_values
 from .models import UploadBatch, UploadRow
 from .storage import download_bytes
-
-SOURCE_MAP = {"meta": Lead.Source.META, "facebook": Lead.Source.META, "instagram": Lead.Source.META, "fb": Lead.Source.META, "website": Lead.Source.WEBSITE, "web": Lead.Source.WEBSITE, "landing page": Lead.Source.WEBSITE, "carwale": Lead.Source.CARWALE, "car wale": Lead.Source.CARWALE, "cw": Lead.Source.CARWALE, "walk-in": Lead.Source.WALKIN, "walk in": Lead.Source.WALKIN, "walkin": Lead.Source.WALKIN}
-
 
 def value(row, *names):
     lowered = {str(key).strip().lower(): value for key, value in row.items() if key}
@@ -30,14 +27,8 @@ def normalize_phone(phone):
 
 
 def classify_source(raw):
-    normalized = raw.strip().lower()
-    if normalized in SOURCE_MAP:
-        return SOURCE_MAP[normalized], raw
-    if normalized in {"oem", "telein", "google"}:
-        return Lead.Source.OTHER, raw
-    if not normalized:
-        return Lead.Source.UNKNOWN, raw
-    return Lead.Source.CAMPAIGN, raw
+    source = configured_source(raw)
+    return source or raw.strip(), raw, "" if source else "Choose a lead source from Admin Lists."
 
 
 def parse_date(raw):
@@ -82,9 +73,9 @@ def parse_upload_batch(batch_id):
             enquiry_date = parse_date(value(row, "date", "enquiry date"))
             if enquiry_date > timezone.localdate():
                 error = "Enquiry date cannot be in the future."
-            source, source_label = classify_source(value(row, "source"))
+            source, source_label, source_error = classify_source(value(row, "source"))
             model_interest = value(row, "model", "vehicle interest", "model / vehicle interest")
-            error = error or invalid_model_error(model_interest)
+            error = error or source_error or invalid_model_error(model_interest)
             if error:
                 skipped += 1
             parsed_rows.append({"row_number": row_number, "phone": phone, "validation_error": error, "data": {"name": name, "email": value(row, "email"), "source": source, "source_label": source_label, "campaign": value(row, "campaign"), "model_interest": model_interest, "city": value(row, "city", "location"), "enquiry_date": enquiry_date.isoformat()}})

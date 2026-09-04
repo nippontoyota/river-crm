@@ -20,6 +20,7 @@ class LeadAccessTests(TestCase):
         self.ps_so.save(update_fields=["location"])
         self.first_lead = Lead.objects.create(name="Aarav", phone="7305198421", assigned_so=self.first_so)
         self.second_lead = Lead.objects.create(name="Mehak", phone="9797210468", assigned_so=self.second_so)
+        SystemConfig.objects.create(id=1, lists={"sources": [Lead.Source.WEBSITE]})
         self.client = APIClient()
 
     def test_sales_officer_only_sees_assigned_leads(self):
@@ -108,6 +109,22 @@ class LeadAccessTests(TestCase):
         self.assertIsNone(lead.assigned_so)
         self.assertEqual(lead.status, Lead.Status.FRESH)
 
+    def test_admin_sources_control_new_leads_and_preserve_walkin(self):
+        config = SystemConfig.objects.get(id=1)
+        config.lists = {"sources": ["Meta"]}
+        config.save(update_fields=["lists"])
+        self.client.force_authenticate(self.admin)
+
+        accepted = self.client.post("/api/leads/", {"name": "Configured source", "phone": "7006682397", "source": "meta"}, format="json")
+        rejected = self.client.post("/api/leads/", {"name": "Removed source", "phone": "7006682398", "source": Lead.Source.WEBSITE}, format="json")
+        updated = self.client.put("/api/system-config/", {"lists": {"sources": ["Meta", "walk-in", "Meta"]}}, format="json")
+
+        self.assertEqual(accepted.status_code, 201, accepted.data)
+        self.assertEqual(Lead.objects.get(pk=accepted.data["id"]).source, "Meta")
+        self.assertEqual(rejected.status_code, 400)
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.data["lists"]["sources"], [Lead.Source.WALKIN, "Meta"])
+
     def test_only_admin_can_delete_a_lead_without_losing_its_history(self):
         call = CallLog.objects.create(lead=self.first_lead, so=self.first_so, status=Lead.Status.FRESH)
         self.client.force_authenticate(self.first_so)
@@ -125,7 +142,7 @@ class LeadAccessTests(TestCase):
         self.assertEqual(self.client.get("/api/leads/").data["count"], 1)
 
     def test_admin_models_limit_new_lead_models(self):
-        SystemConfig.objects.create(id=1, lists={"models": ["r7"]})
+        SystemConfig.objects.update_or_create(id=1, defaults={"lists": {"models": ["r7"], "sources": [Lead.Source.WEBSITE]}})
         self.client.force_authenticate(self.admin)
         response = self.client.post("/api/leads/", {"name": "Invalid model", "phone": "7006682310", "source": Lead.Source.WEBSITE, "model_interest": "R8 Pro"}, format="json")
         self.assertEqual(response.status_code, 400)
@@ -133,7 +150,7 @@ class LeadAccessTests(TestCase):
         self.assertEqual(response.status_code, 201)
 
     def test_admin_color_variants_limit_qualification_variants(self):
-        SystemConfig.objects.create(id=1, lists={"colorVariants": ["Red"]})
+        SystemConfig.objects.update_or_create(id=1, defaults={"lists": {"colorVariants": ["Red"], "sources": [Lead.Source.WEBSITE]}})
         self.client.force_authenticate(self.first_so)
         response = self.client.patch(f"/api/leads/{self.first_lead.id}/so-update/", {"call_outcome": "QUALIFIED", "status": Lead.Status.QUALIFIED, "city": "Kochi", "ps_officer_id": self.ps_so.id, "qualification": {"variant": "Blue"}}, format="json")
         self.assertEqual(response.status_code, 400)
@@ -280,13 +297,14 @@ class LeadAccessTests(TestCase):
 
     def test_system_config_returns_only_admin_branches(self):
         User.objects.create_user(email="north@example.com", password="password-12345", role=User.Role.SALES_OFFICER, location="Kannur")
-        SystemConfig.objects.create(id=1, lists={"branches": ["Kochi"]})
+        SystemConfig.objects.update_or_create(id=1, defaults={"lists": {"branches": ["Kochi"], "sources": [Lead.Source.WEBSITE]}})
         self.client.force_authenticate(self.first_so)
 
         response = self.client.get("/api/system-config/")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["lists"]["branches"], ["Kochi"])
+        self.assertEqual(response.data["lists"]["sources"], [Lead.Source.WALKIN, Lead.Source.WEBSITE])
 
     def test_cre_must_choose_matching_ps_for_qualified_lead(self):
         other_ps = User.objects.create_user(email="north@example.com", password="password-12345", role=User.Role.SALES_OFFICER, location="Kannur")
@@ -535,7 +553,7 @@ class LeadAccessTests(TestCase):
             "phone": "8234567890",
             "email": "reception.random@example.com",
             "profession": "Business",
-            "source": Lead.Source.WALKIN,
+            "source": Lead.Source.WEBSITE,
             "model_interest": "River Indie",
             "ps_officer_id": self.ps_so.id,
             "qualification_input": {
@@ -549,6 +567,7 @@ class LeadAccessTests(TestCase):
         self.assertEqual(create.status_code, 201, create.data)
         lead_id = create.data["id"]
         lead = Lead.objects.get(pk=lead_id)
+        self.assertEqual(lead.source, Lead.Source.WALKIN)
         self.assertEqual(lead.status, Lead.Status.QUALIFIED)
         self.assertIsNone(lead.assigned_so)
         self.assertEqual(lead.assigned_ps, self.ps_so)

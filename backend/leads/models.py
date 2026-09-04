@@ -41,7 +41,7 @@ class Lead(models.Model):
     name = models.CharField(max_length=160)
     phone = models.CharField(max_length=10, db_index=True)
     email = models.EmailField(blank=True)
-    source = models.CharField(max_length=20, choices=Source.choices, default=Source.UNKNOWN)
+    source = models.CharField(max_length=100, default=Source.UNKNOWN)
     source_label = models.CharField(max_length=100, blank=True)
     campaign = models.CharField(max_length=160, blank=True)
     model_interest = models.CharField(max_length=100, blank=True)

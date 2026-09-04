@@ -100,7 +100,9 @@ class LeadViewSet(viewsets.ModelViewSet):
             serializer.validated_data.get("source") == Lead.Source.WALKIN
             or serializer.validated_data.get("status") == Lead.Status.WALKIN
         )
-        if is_walkin:
+        if getattr(self.request.user, "role", None) == User.Role.RECEPTIONIST:
+            lead = serializer.save(source=Lead.Source.WALKIN, status=Lead.Status.QUALIFIED)
+        elif is_walkin:
             # Walk-in leads bypass CRE – go directly to PS/SO as qualified
             lead = serializer.save(status=Lead.Status.QUALIFIED)
         elif not self.request.user.is_admin and getattr(self.request.user, "role", None) == User.Role.CRE:
@@ -233,7 +235,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         if value := request.query_params.get("category"):
             queryset = queryset.filter(category=value.upper())
         if value := request.query_params.get("source"):
-            queryset = queryset.filter(source=value.upper())
+            queryset = queryset.filter(source=value)
         if value := request.query_params.get("q"):
             queryset = queryset.filter(Q(name__icontains=value) | Q(phone__icontains=value) | Q(campaign__icontains=value) | Q(model_interest__icontains=value) | Q(branch__icontains=value))
         leads = queryset.distinct().order_by("-enquiry_date", "-created_at").only("id", "status", "name", "phone", "source", "flagged_to_manager")
@@ -246,7 +248,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         user_field = "assigned_so_id" if request.user.role == User.Role.CRE else "assigned_ps_id"
         if not request.user.is_admin and getattr(lead, user_field) != request.user.id:
             return Response({"detail": "This lead is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = SOLeadUpdateSerializer(data=request.data)
+        serializer = SOLeadUpdateSerializer(data=request.data, context={"current_source": lead.source})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         sales_status = {Lead.SalesOutcome.BOOKED: Lead.Status.WALKIN, Lead.SalesOutcome.RETAILED: Lead.Status.WON, Lead.SalesOutcome.LOST: Lead.Status.LOST}

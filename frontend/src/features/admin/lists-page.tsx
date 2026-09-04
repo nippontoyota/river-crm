@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
-import { getSystemConfig, updateSystemConfig, type SystemConfig } from "@/lib/crm";
+import { getSystemConfig, sourceName, updateSystemConfig, type SystemConfig } from "@/lib/crm";
 
 const listSections: { title: string; name: keyof SystemConfig["lists"]; placeholder: string }[] = [
   { title: "Branches", name: "branches", placeholder: "Add branch" },
@@ -38,7 +38,7 @@ export function ListsPage() {
   };
 
   const handleRemove = async (listName: keyof SystemConfig["lists"], value: string) => {
-    if (!config) return;
+    if (!config || (listName === "sources" && value === "WALKIN")) return;
     const currentList = config.lists[listName] || [];
     const newLists = { ...config.lists, [listName]: currentList.filter(item => item !== value) };
     try {
@@ -76,8 +76,8 @@ export function ListsPage() {
         <ul className="list-items">
           {items.length ? items.map(item => (
             <li key={item}>
-              <span>{item}</span>
-              <button type="button" className="button" onClick={() => handleRemove(name, item)}>Remove</button>
+              <span>{name === "sources" ? sourceName(item) : item}</span>
+              <button type="button" className="button" disabled={name === "sources" && item === "WALKIN"} onClick={() => handleRemove(name, item)}>{name === "sources" && item === "WALKIN" ? "Permanent" : "Remove"}</button>
             </li>
           )) : <li className="list-empty">No items yet.</li>}
         </ul>

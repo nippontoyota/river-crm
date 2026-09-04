@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { exportSalesManagerAnalytics, getLeadDetail, getSalesManagerAnalytics, getSalesManagerPSFollowups, sourceName, statusName, type LeadDetail, type ManagerAnalytics, type ManagerFilterOption, type ManagerPerformanceRow, type ManagerPSFollowupRow, type ManagerRoleRow } from "@/lib/crm";
+import { exportSalesManagerAnalytics, getLeadDetail, getSalesManagerAnalytics, getSalesManagerPSFollowups, getSystemConfig, sourceName, statusName, type LeadDetail, type ManagerAnalytics, type ManagerFilterOption, type ManagerPerformanceRow, type ManagerPSFollowupRow, type ManagerRoleRow } from "@/lib/crm";
 import { DateInput } from "@/components/date-input";
 import { formatDate, formatDateTime, todayInIST, toDateInputValue } from "@/lib/dates";
 
@@ -121,6 +121,7 @@ export function SalesManagerAnalyticsPage() {
   const selectedTo = toDateInputValue(dateTo);
   const historicalFromMax = selectedTo && selectedTo < today ? dateTo : today;
   const [source, setSource] = useState("");
+  const [configuredSources, setConfiguredSources] = useState<string[]>(["WALKIN"]);
   const [model, setModel] = useState("");
   const [cre, setCre] = useState("");
   const [ps, setPs] = useState("");
@@ -136,6 +137,7 @@ export function SalesManagerAnalyticsPage() {
   const followupFilters = useMemo<Record<string, string>>(() => ({ range, ...(range === "custom" && validDateFrom ? { date_from: validDateFrom } : {}), ...(range === "custom" && validDateTo ? { date_to: validDateTo } : {}), ...(source ? { source } : {}), ...(model ? { model } : {}), ...(cre ? { cre } : {}) }), [cre, model, range, source, validDateFrom, validDateTo]);
   const drilldownFilters: Record<string, string> = { ...(range === "today" && data?.date_from ? { date_from: String(data.date_from), date_to: String(data.date_to || data.date_from) } : {}), ...(range === "custom" && validDateFrom && data?.date_from ? { date_from: String(data.date_from) } : {}), ...(range === "custom" && validDateTo && data?.date_to ? { date_to: String(data.date_to) } : {}), ...(source ? { source } : {}), ...(model ? { model } : {}), ...(cre ? { cre } : {}), ...(ps ? { ps } : {}) };
   const load = useCallback(async () => { setLoading(true); setError(""); loadedSections.current.clear(); sectionRequest.current += 1; try { const result = await getSalesManagerAnalytics({ ...params, include: "overview,filters" }); setData(result); loadedSections.current.add("overview"); } catch (err) { setError(err instanceof Error ? err.message : "Unable to load sales manager analytics."); } finally { setLoading(false); } }, [params]);
+  useEffect(() => { void getSystemConfig().then(config => setConfiguredSources(config.lists.sources || ["WALKIN"])).catch(() => setConfiguredSources(["WALKIN"])); }, []);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   useEffect(() => {
     if (!data || loading || activeTab === "overview" || loadedSections.current.has(activeTab)) return;
@@ -154,7 +156,7 @@ export function SalesManagerAnalyticsPage() {
     }).catch(err => { if (request === sectionRequest.current) setError(err instanceof Error ? err.message : "Unable to load analytics section."); })
       .finally(() => { if (request === sectionRequest.current) setSectionLoading(false); });
   }, [activeTab, data, loading, params]);
-  const sources = data?.filters?.source || data?.source.map(row => row.source) || [];
+  const sources = configuredSources;
   const models = data?.filters?.models || data?.models.map(row => row.model).filter(modelName => modelName !== "Model not set") || [];
   const creOptions = data?.filters?.cre || data?.cre || [];
   const psOptions = data?.filters?.ps || data?.ps || [];

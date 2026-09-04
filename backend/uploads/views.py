@@ -9,7 +9,7 @@ from rest_framework.response import Response
 
 from accounts.permissions import IsAdmin
 from leads.models import Lead, LeadAudit
-from leads.serializers import validate_configured_choice
+from leads.serializers import validate_configured_choice, validate_configured_source
 from .models import UploadBatch, UploadRow
 from .serializers import ResolveRowsSerializer, UploadBatchSerializer, UploadRowSerializer
 from .storage import upload_bytes
@@ -73,6 +73,7 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
         for row in rows:
             data = {key: value for key, value in row.data.items() if not key.startswith("_")}
             data["enquiry_date"] = data.get("enquiry_date") or None
+            data["source"] = validate_configured_source(data.get("source", ""))
             validate_configured_choice(data.get("model_interest", ""), "models", "vehicle model")
             if row.duplicate_of and row.resolution == UploadRow.Resolution.OVERWRITE:
                 for field in ("name", "email", "source", "source_label", "campaign", "model_interest", "city", "enquiry_date"):

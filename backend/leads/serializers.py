@@ -5,9 +5,40 @@ from accounts.models import User
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 
 
+def normalize_sources(values):
+    sources = [Lead.Source.WALKIN]
+    seen = {"walkin"}
+    for value in values if isinstance(values, list) else []:
+        source = str(value).strip()
+        key = "".join(character for character in source.casefold() if character.isalnum())
+        if not source or key in seen:
+            continue
+        seen.add(key)
+        sources.append(source)
+    return sources
+
+
 def configured_values(name):
     lists = SystemConfig.objects.filter(id=1).values_list("lists", flat=True).first() or {}
-    return [str(value).strip() for value in lists.get(name, []) if str(value).strip()]
+    values = [str(value).strip() for value in lists.get(name, []) if str(value).strip()] if isinstance(lists.get(name, []), list) else []
+    return normalize_sources(values) if name == "sources" else values
+
+
+def configured_source(value):
+    source = (value or "").strip()
+    key = "".join(character for character in source.casefold() if character.isalnum())
+    if key == "walkin":
+        return Lead.Source.WALKIN
+    return next((allowed for allowed in configured_values("sources") if allowed.casefold() == source.casefold()), "")
+
+
+def validate_configured_source(value, current=""):
+    source = configured_source(value)
+    if source:
+        return source
+    if current and value == current:
+        return value
+    raise serializers.ValidationError("Choose a lead source from Admin Lists.")
 
 
 def validate_configured_choice(value, list_name, label):
@@ -95,12 +126,16 @@ class LeadSerializer(serializers.ModelSerializer):
     def validate_model_interest(self, value):
         return validate_configured_choice(value, "models", "vehicle model")
 
+    def validate_source(self, value):
+        return validate_configured_source(value, self.instance.source if self.instance else "")
+
     ps_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True, deleted_at__isnull=True), source="assigned_ps", required=False, write_only=True)
 
     class Meta:
         model = Lead
         fields = ["id", "uid", "name", "phone", "email", "source", "source_label", "campaign", "model_interest", "city", "branch", "enquiry_date", "status", "category", "sales_outcome", "assigned_so", "assigned_so_name", "assigned_ps", "assigned_ps_name", "ps_officer_id", "next_follow_up", "call_count", "qualification", "qualification_input", "flagged_to_manager", "needs_cre_reassignment", "needs_so_reassignment", "profession", "created_at", "updated_at"]
         read_only_fields = ["uid", "assigned_so", "assigned_ps", "needs_cre_reassignment", "needs_so_reassignment", "created_at", "updated_at"]
+        extra_kwargs = {"source": {"required": True}}
 
     def create(self, validated_data):
         qualification_data = validated_data.pop("qualification_input", None)
@@ -165,7 +200,7 @@ class SOLeadUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=160, required=False)
     phone = serializers.RegexField(regex=r"^\d{10}$", required=False)
     email = serializers.EmailField(required=False, allow_blank=True)
-    source = serializers.ChoiceField(choices=Lead.Source.choices, required=False)
+    source = serializers.CharField(max_length=100, required=False)
     source_label = serializers.CharField(max_length=100, required=False, allow_blank=True)
     campaign = serializers.CharField(max_length=160, required=False, allow_blank=True)
     model_interest = serializers.CharField(max_length=100, required=False, allow_blank=True)
@@ -185,6 +220,9 @@ class SOLeadUpdateSerializer(serializers.Serializer):
 
     def validate_model_interest(self, value):
         return validate_configured_choice(value, "models", "vehicle model")
+
+    def validate_source(self, value):
+        return validate_configured_source(value, self.context.get("current_source", ""))
 
     def validate(self, attrs):
         enquiry_date = attrs.get("enquiry_date")
@@ -251,6 +289,24 @@ class FollowUpReviewSerializer(serializers.Serializer):
         return value
 
 class SystemConfigSerializer(serializers.ModelSerializer):
+    def validate_lists(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Expected an object of lists.")
+        sources = value.get("sources", [])
+        if not isinstance(sources, list):
+            raise serializers.ValidationError("Sources must be a list.")
+        normalized = normalize_sources(sources)
+        if any(len(source) > 100 for source in normalized):
+            raise serializers.ValidationError("Each source must be 100 characters or fewer.")
+        return {**value, "sources": normalized}
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        lists = dict(data.get("lists") or {})
+        lists["sources"] = normalize_sources(lists.get("sources", []))
+        data["lists"] = lists
+        return data
+
     class Meta:
         model = SystemConfig
         fields = ["lists", "updated_at"]

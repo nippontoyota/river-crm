@@ -3,13 +3,16 @@ from rest_framework.test import APIClient
 from unittest.mock import patch
 
 from accounts.models import User
-from leads.models import Lead
+from leads.models import Lead, SystemConfig
 from .models import UploadBatch, UploadRow
 from .serializers import UploadBatchSerializer
 from .tasks import parse_upload_batch
 
 
 class UploadDuplicateTests(TestCase):
+    def setUp(self):
+        SystemConfig.objects.create(id=1, lists={"sources": [Lead.Source.WEBSITE, Lead.Source.META]})
+
     def test_skipping_a_duplicate_unblocks_import(self):
         admin = User.objects.create_user(email="manager@example.com", password="password-12345", role=User.Role.ADMIN)
         lead = Lead.objects.create(name="Existing", phone="7000000000")
@@ -67,3 +70,17 @@ class UploadDuplicateTests(TestCase):
         self.assertEqual(summary["removed_duplicates"], 1)
         self.assertEqual(summary["crm_duplicates_found"], 0)
         self.assertEqual(summary["file_duplicates_found"], 1)
+
+    def test_parser_rejects_a_source_not_in_admin_lists(self):
+        admin = User.objects.create_user(email="manager@example.com", password="password-12345", role=User.Role.ADMIN)
+        batch = UploadBatch.objects.create(filename="leads.csv", storage_path="imports/test.csv", uploaded_by=admin)
+        content = b"name,phone,source\nUnknown channel,7000000002,partner\n"
+
+        with patch("uploads.tasks.download_bytes", return_value=content):
+            parse_upload_batch.run(batch.id)
+
+        batch.refresh_from_db()
+        row = batch.rows.get()
+        self.assertEqual(batch.status, UploadBatch.Status.READY)
+        self.assertEqual(batch.parsed_ok, 0)
+        self.assertEqual(row.validation_error, "Choose a lead source from Admin Lists.")

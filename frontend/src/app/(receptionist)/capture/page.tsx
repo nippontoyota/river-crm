@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
-import { createLead, getSystemConfig, getOfficers, toOfficer, sourceName, type Officer, type SystemConfig } from "@/lib/crm";
+import { createLead, getSystemConfig, getOfficers, toOfficer, type Officer, type SystemConfig } from "@/lib/crm";
 
 export default function CaptureLeadPage() {
   const [loading, setLoading] = useState(false);
@@ -10,9 +10,6 @@ export default function CaptureLeadPage() {
 
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [officers, setOfficers] = useState<Officer[]>([]);
-
-  const [sourceType, setSourceType] = useState<"Walk-in" | "Digital">("Walk-in");
-  const [digitalSource, setDigitalSource] = useState("WEBSITE");
 
   const [formData, setFormData] = useState({
     name: "",
@@ -40,7 +37,6 @@ export default function CaptureLeadPage() {
       name: "", phone: "", email: "", profession: "",
       model_interest: "", variant: "", buying_timeline: "", assigned_ps_id: ""
     });
-    setSourceType("Walk-in");
     setError("");
     setSuccess(false);
   };
@@ -59,7 +55,8 @@ export default function CaptureLeadPage() {
         phone: formData.phone,
         email: formData.email || undefined,
         profession: formData.profession,
-        source: sourceType === "Walk-in" ? "WALKIN" : digitalSource,
+        source: "WALKIN",
+        status: "QUALIFIED",
         model_interest: formData.model_interest,
         ps_officer_id: formData.assigned_ps_id ? parseInt(formData.assigned_ps_id) : undefined,
         qualification_input: {
@@ -71,12 +68,7 @@ export default function CaptureLeadPage() {
         }
       };
       
-      const finalPayload = {
-        ...payload,
-        status: sourceType === "Walk-in" ? "QUALIFIED" : "FRESH"
-      };
-
-      await createLead(finalPayload as any);
+      await createLead(payload as any);
       setSuccess(true);
       setTimeout(() => {
         handleClear();
@@ -131,25 +123,11 @@ export default function CaptureLeadPage() {
         <fieldset className="capture-fieldset">
             <legend>Source *</legend>
             <div className="capture-choice-row">
-              <label className={sourceType === "Walk-in" ? "selected" : ""}>
-                <input type="radio" name="sourceType" checked={sourceType === "Walk-in"} onChange={() => setSourceType("Walk-in")} />
+              <label className="selected">
+                <input type="radio" name="sourceType" checked readOnly />
                 Walk-in
               </label>
-              <label className={sourceType === "Digital" ? "selected" : ""}>
-                <input type="radio" name="sourceType" checked={sourceType === "Digital"} onChange={() => setSourceType("Digital")} />
-                Digital
-              </label>
             </div>
-            {sourceType === "Digital" && (
-              <label className="capture-digital-source">
-                Digital source
-                <select value={digitalSource} onChange={e => setDigitalSource(e.target.value)} required>
-                  {(config?.lists?.sources?.length ? config.lists.sources.filter(s => s !== "WALKIN") : ["META", "WEBSITE", "CARWALE", "CAMPAIGN", "OTHER"]).map(s => (
-                    <option key={s} value={s}>{sourceName(s)}</option>
-                  ))}
-                </select>
-              </label>
-            )}
         </fieldset>
 
         <div className="capture-form-grid">
