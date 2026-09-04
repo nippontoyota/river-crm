@@ -45,9 +45,9 @@
   .login-page{grid-template-columns:1fr}
   .login-visual{min-height:clamp(165px,24svh,220px)}
   .login-visual-copy{top:18px;left:20px}
-  .login-visual-copy p{margin-bottom:6px;font-size:10px}
-  .login-visual-copy h2{max-width:220px;font-size:28px}
-  .login-visual-brand{top:auto;bottom:18px;font-size:34px}
+  .login-visual-copy p{margin-bottom:5px;font-size:9px}
+  .login-visual-copy h2{max-width:180px;font-size:20px}
+  .login-visual-brand{top:50%;bottom:auto;transform:translate(-50%,-50%);font-size:34px}
   .login-access{min-height:auto;place-items:start center;padding:24px 20px 26px}
   .login-wordmark{font-size:30px}
   .login-product{margin-top:8px}
@@ -71,7 +71,8 @@
 
 @media(max-width:760px) and (max-height:700px){
   .login-visual{min-height:150px}
-  .login-visual-brand{bottom:12px;font-size:30px}
+  .login-visual-copy h2{max-width:180px;font-size:20px}
+  .login-visual-brand{top:50%;bottom:auto;font-size:28px}
   .login-access{padding-block:18px}
   .login-wordmark{font-size:28px}
   .login-heading{margin:18px 0 16px}
@@ -79,6 +80,10 @@
   .login-heading p{margin-top:6px}
   .login-page .auth-form{gap:12px}
   .login-note{display:none}
+}
+
+@media(max-width:760px) and (max-height:600px){
+  .login-visual-copy{display:none}
 }
 
 @media(prefers-reduced-motion:reduce){
