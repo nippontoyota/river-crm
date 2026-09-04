@@ -24,7 +24,7 @@ const adminLinks = [
   ["/all-leads", "All leads", "☷"],
 ] as const;
 const officerLinks = [
-  ["/my-leads", "My queue", "◫"],
+  ["/my-leads", "Fresh leads", "◫"],
   ["/follow-ups", "Today's follow-ups", "◷"],
   ["/all-my-leads", "All leads", "☰"],
   ["/my-analytics", "My results", "◔"],

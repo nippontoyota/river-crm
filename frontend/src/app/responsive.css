@@ -1194,6 +1194,7 @@ input[type="radio"] {
   min-width: 0;
   cursor: pointer;
   text-align: left;
+  text-decoration: none;
   font: inherit;
   scroll-snap-align: start;
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLead, getCurrentUser, getLeadDetail, getMyDashboard, getOfficers, toOfficer, updateMyLead, type CurrentUser, type LeadDetail, type LeadInput, type LeadQualification, type Officer, type SalesDashboard, type SalesLead, getSystemConfig } from "@/lib/crm";
 import { DateInput } from "@/components/date-input";
@@ -51,14 +52,8 @@ const sections: { key: Section; label: string; count: keyof SalesDashboard["summ
   { key: "qualified", label: "Qualified leads", count: "qualified", icon: "◎" },
   { key: "won_lost", label: "Won / lost", count: "won_lost", icon: "◇" },
 ];
-const psSections: { key: Section; label: string; count: keyof SalesDashboard["summary"]; icon: string }[] = [
-  { key: "fresh", label: "Fresh leads", count: "fresh", icon: "✦" },
-  { key: "walkin", label: "Booked", count: "walkin", icon: "◷" },
-  { key: "won", label: "Retailed", count: "won", icon: "✓" },
-  { key: "lost", label: "Lost", count: "lost", icon: "×" },
-];
-const psFollowUpSections: { key: Section; label: string; count: keyof SalesDashboard["summary"]; icon: string }[] = [
-  { key: "followups", label: "Today's follow-ups", count: "followups", icon: "◷" },
+const psAllSections: { key: Section; label: string; count: keyof SalesDashboard["summary"]; icon: string }[] = [
+  { key: "all", label: "All leads", count: "total", icon: "☰" },
   { key: "walkin", label: "Booked", count: "walkin", icon: "◷" },
   { key: "won", label: "Retailed", count: "won", icon: "✓" },
   { key: "lost", label: "Lost", count: "lost", icon: "×" },
@@ -143,8 +138,8 @@ function LeadEditPanel({ fields, modelOptions, onChange, onClose, onSave, saving
   return <div className="modal-layer sales-edit-layer" role="presentation"><section className="modal sales-detail-modal sales-edit-modal" role="dialog" aria-modal="true" aria-labelledby="sales-edit-title"><header className="sales-detail-header"><div><p className="eyebrow">CUSTOMER INFORMATION</p><h2 id="sales-edit-title">Edit lead details</h2><p className="subtext">Update the customer record saved in the CRM.</p></div><button className="modal-close" onClick={onClose} aria-label="Close">×</button></header><div className="sales-detail-scroll"><section className="sales-form-card"><div className="sales-form-grid"><label>Full name<input required value={fields.name} onChange={event => update("name", event.target.value)} /></label><label>Phone number<input required type="tel" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={fields.phone} onChange={event => update("phone", event.target.value.replace(/\D/g, "").slice(0, 10))} /></label><label>Email<input type="email" value={fields.email} onChange={event => update("email", event.target.value)} /></label><label>Lead source<select value={fields.source} onChange={event => update("source", event.target.value)}>{sourceOptions.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label><label>Source detail<input value={fields.source_label} onChange={event => update("source_label", event.target.value)} /></label><label>Campaign<input value={fields.campaign} onChange={event => update("campaign", event.target.value)} /></label><label>Vehicle / model<select value={fields.model_interest} onChange={event => update("model_interest", event.target.value)} disabled={!modelOptions.length && !fields.model_interest}><option value="">{modelOptions.length ? "Select model" : "Add models in Lists first"}</option>{optionsWithCurrent(modelOptions, fields.model_interest).map(model => <option value={model} key={model}>{model}</option>)}</select></label><label>City<input value={fields.city} onChange={event => update("city", event.target.value)} /></label><label>Branch<input value={fields.branch} onChange={event => update("branch", event.target.value)} /></label><label>Enquiry date<DateInput value={fields.enquiry_date || ""} max={formatDate(new Date())} onChange={value => update("enquiry_date", value || null)} ariaLabel="Enquiry date, DD/MM/YYYY" /></label></div></section></div><footer className="sales-detail-footer"><button className="filter" onClick={onClose}>Cancel</button><button className="button primary" disabled={saving || !fields.name.trim() || fields.phone.length !== 10} onClick={onSave}>{saving ? "Saving…" : "Save details"}</button></footer></section></div>;
 }
 
-export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false }: { followUpsOnly?: boolean; allLeadsOnly?: boolean }) {
-  const [section, setSection] = useState<Section>(followUpsOnly ? "followups" : allLeadsOnly ? "all" : "fresh");
+export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, initialSection }: { followUpsOnly?: boolean; allLeadsOnly?: boolean; initialSection?: Section }) {
+  const [section, setSection] = useState<Section>(initialSection ?? (followUpsOnly ? "followups" : allLeadsOnly ? "all" : "fresh"));
   const [wonLostFilter, setWonLostFilter] = useState<WonLostFilter>("all");
   const [range, setRange] = useState("all");
   const [category, setCategory] = useState("");
@@ -364,9 +359,9 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false }: 
   const chooseQualification = (field: keyof LeadQualification, value: string | boolean | null) => setDraft(current => current ? { ...current, qualification: { ...current.qualification, [field]: value } } : current);
   const submitLabel = draft?.call_outcome === "QUALIFIED" ? "Qualify Lead" : draft?.call_outcome === "LOST" ? "Mark as Lost" : draft?.call_outcome === "PENDING" ? "Mark as Pending" : draft?.call_outcome === "BOOKED" ? "Book Follow-up" : draft?.call_outcome === "RETAILED" ? "Mark Retailed" : "Save follow-up";
   const visibleSections = isPs ? sections.filter(item => !["all", "fresh", "pending"].includes(item.key)) : sections;
-  const psVisibleSections = followUpsOnly ? psFollowUpSections : psSections;
-  const metrics: { label: string; value: number; tone: string; section: Section }[] = isPs
-    ? [{label: followUpsOnly ? "TODAY'S FOLLOW-UPS" : "FRESH LEADS", value: followUpsOnly ? summary?.followups ?? 0 : summary?.fresh ?? 0, tone:"blue", section: followUpsOnly ? "followups" : "fresh"}, {label:"BOOKED", value:summary?.walkin ?? 0, tone:"green", section:"walkin"}, {label:"RETAILED", value:summary?.won ?? 0, tone:"green", section:"won"}, {label:"LOST", value:summary?.lost ?? 0, tone:"red", section:"lost"}]
+  const psVisibleSections = allLeadsOnly ? psAllSections : [];
+  const metrics: { label: string; value: number; tone: string; section: Section; href?: string }[] = isPs
+    ? [{label: followUpsOnly ? "TODAY'S FOLLOW-UPS" : "FRESH LEADS", value: followUpsOnly ? summary?.followups ?? 0 : summary?.fresh ?? 0, tone:"blue", section: followUpsOnly ? "followups" : "fresh", href: followUpsOnly ? "/follow-ups" : "/my-leads"}, {label:"BOOKED", value:summary?.walkin ?? 0, tone:"green", section:"walkin", href:"/all-my-leads?section=walkin"}, {label:"RETAILED", value:summary?.won ?? 0, tone:"green", section:"won", href:"/all-my-leads?section=won"}, {label:"LOST", value:summary?.lost ?? 0, tone:"red", section:"lost", href:"/all-my-leads?section=lost"}]
     : [{label:"Fresh leads", value:summary?.fresh ?? 0, tone:"blue", section:"fresh"}, {label:"Today's follow-ups", value:summary?.followups ?? 0, tone:"yellow", section:"followups"}, {label:"Pending leads", value:summary?.pending ?? 0, tone:"orange", section:"pending"}, {label:"Qualified leads", value:summary?.qualified ?? 0, tone:"green", section:"qualified"}, {label:"Won leads", value:summary?.won ?? 0, tone:"mint", section:"won"}, {label:"Lost leads", value:summary?.lost ?? 0, tone:"red", section:"lost"}];
   const displayStatus = (lead: SalesLead) => !isPs && ["RNR", "SWITCHED_OFF", "CALLBACK"].includes(lead.statusCode) ? "Pending" : lead.status;
   const displayStatusClass = (lead: SalesLead) => !isPs && ["RNR", "SWITCHED_OFF", "CALLBACK"].includes(lead.statusCode) ? "pending" : lead.statusCode.toLowerCase();
@@ -374,12 +369,12 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false }: 
   const saveTone = draft?.call_outcome && lostPsOutcomes.has(draft.call_outcome) ? "lost" : draft?.call_outcome ? "qualified" : "";
 
   return <section className="page sales-workspace">
-    <div className="sales-hero"><div>{!isPs && <p className="eyebrow">CRE WORKSPACE</p>}<h1>My queue</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions"><button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{!isPs && <button className="button primary" onClick={() => { setAddLeadError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
-    <section className="sales-metrics">{metrics.map(metric => <button type="button" className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-pressed={section === metric.section} onClick={() => { setSection(metric.section); setCategory(""); setSource(""); setQuery(""); setWonLostFilter("all"); }} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></button>)}</section>
+    <div className="sales-hero"><div>{!isPs && <p className="eyebrow">CRE WORKSPACE</p>}<h1>{isPs ? followUpsOnly ? "Today's follow-ups" : allLeadsOnly ? "All leads" : "Fresh leads" : "My queue"}</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions"><button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{!isPs && <button className="button primary" onClick={() => { setAddLeadError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
+    <section className="sales-metrics">{metrics.map(metric => isPs && metric.href ? <Link className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-current={section === metric.section ? "page" : undefined} href={metric.href} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></Link> : <button type="button" className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-pressed={section === metric.section} onClick={() => { setSection(metric.section); setCategory(""); setSource(""); setQuery(""); setWonLostFilter("all"); }} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></button>)}</section>
     
     {isPs ? (
       <section className="panel sales-table-panel" style={{ background: "transparent", border: "none", boxShadow: "none", padding: 0 }}>
-        <nav className="sales-tabs" aria-label="Lead status views">{psVisibleSections.map(item => <button key={item.key} className={section === item.key ? "active" : ""} onClick={() => setSection(item.key)}><i>{item.icon}</i><span>{item.label}</span><b>{summary?.[item.count] ?? 0}</b></button>)}</nav>
+        {psVisibleSections.length > 0 && <nav className="sales-tabs" aria-label="All lead filters">{psVisibleSections.map(item => <button key={item.key} className={section === item.key ? "active" : ""} onClick={() => setSection(item.key)}><i>{item.icon}</i><span>{item.label}</span><b>{summary?.[item.count] ?? 0}</b></button>)}</nav>}
         <div className="sales-filters" style={{ marginBottom: "1rem" }}>
           <label className="sales-search" style={{ width: "100%", background: "#fff" }}>⌕<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name or mobile..." /></label>
         </div>
