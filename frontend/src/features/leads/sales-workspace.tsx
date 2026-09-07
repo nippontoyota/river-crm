@@ -11,7 +11,7 @@ type WonLostFilter = "all" | "won" | "lost";
 type PsOutcome = { label: string; tone: "qualified" | "lost"; status: string };
 type Draft = {
   status: string; category: string; sales_outcome: string; call_outcome: string; call_status: string; remarks: string; follow_up_at: string;
-  model_interest: string; city: string; profession: string; custom_location: string; ps_officer_id: string; lost_reason: string; pending_reason: string; trade_in_note: string;
+  model_interest: string; city: string; profession: string; custom_location: string; ps_officer_id: string; lost_reason: string; pending_reason: string;
   qualification: LeadQualification;
 };
 type LeadFields = { name: string; phone: string; email: string; source: string; source_label: string; campaign: string; model_interest: string; city: string; branch: string; enquiry_date: string | null };
@@ -71,8 +71,6 @@ const lostPsOutcomes = new Set(soOutcomes.filter(outcome => outcome.status === "
 const professionOptions = ["Salaried", "Business", "Self Employed", "Doctor", "Govt Employee"];
 const buyingPlanOptions = ["Immediate", "1–2 Months", "2–3 Months", "Greater than 3 months"];
 const financeOptions = ["Inhouse", "Outright"];
-const testDriveOptions = ["No", "Home Test Drive", "Showroom visit"];
-const tradeInOptions = ["Yes", "Additional", "Buying for first time"];
 const lostReasons = ["Invalid Number", "Wrong Number", "Just enquired", "Service", "Insurance", "Internal", "Used car", "No Response", "Mock Call", "Plan Dropped", "DSA Enq", "BH Registration", "Existing Enq", "Duplicate Lead", "Not interested", "Did not enquire", "Lost to co-dealer", "Lost to competition", "Low Budget", "Out of Territory", "Not Eligible", "Job Enquiry"];
 const pendingReasons = ["RNR", "DND", "Not Reachable", "Switched Off", "Busy", "Disconnecting the call", "Temporary out of Service", "Call me back", "Incoming call facility not available", "Out of Network", "Plan Postponed"];
 const emptyQualification = (): LeadQualification => ({ variant: "", buying_timeline: "", finance_type: "", trade_in: null, test_drive: "", notes: "" });
@@ -121,7 +119,7 @@ function draftFor(lead: LeadDetail): Draft {
   qualification.notes = creNoteText(qualification.notes);
   const latestOutcome = lead.callHistory[0]?.outcome;
   const call_outcome = ["PENDING", "QUALIFIED", "LOST"].includes(latestOutcome || "") ? latestOutcome : lead.statusCode === "PENDING" ? "PENDING" : lead.statusCode === "QUALIFIED" ? "QUALIFIED" : lead.statusCode === "LOST" ? "LOST" : "";
-  return { status: lead.statusCode, category: lead.category || "WARM", sales_outcome: lead.salesOutcome || "PENDING", call_outcome, call_status: "", remarks: "", follow_up_at: "", model_interest: lead.model === "—" ? "" : lead.model, city: lead.city, profession: "", custom_location: "", ps_officer_id: lead.assignedPsId ? String(lead.assignedPsId) : "", lost_reason: "", pending_reason: "", trade_in_note: "", qualification };
+  return { status: lead.statusCode, category: lead.category || "WARM", sales_outcome: lead.salesOutcome || "PENDING", call_outcome, call_status: "", remarks: "", follow_up_at: "", model_interest: lead.model === "—" ? "" : lead.model, city: lead.city, profession: "", custom_location: "", ps_officer_id: lead.assignedPsId ? String(lead.assignedPsId) : "", lost_reason: "", pending_reason: "", qualification };
 }
 
 function leadFieldsFor(lead: LeadDetail): LeadFields {
@@ -307,7 +305,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
         city: !isPs && draft.call_outcome === "QUALIFIED" ? selectedLocation : undefined,
         branch: !isPs && draft.call_outcome === "QUALIFIED" ? selectedLocation : undefined,
         ps_officer_id: !isPs && draft.call_outcome === "QUALIFIED" ? Number(draft.ps_officer_id) : undefined,
-        qualification: !isPs && draft.call_outcome === "QUALIFIED" ? { ...draft.qualification, trade_in: draft.trade_in_note === "Yes" ? true : draft.trade_in_note ? false : null, notes } : undefined,
+        qualification: !isPs && draft.call_outcome === "QUALIFIED" ? { ...draft.qualification, notes } : undefined,
       });
       setDetail(null);
       setDraft(null);
@@ -461,8 +459,6 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
           <article className="sales-branch-card"><h3>Assign PS/SO</h3><label>PS/SO for {selectedLocation || "selected branch"} *<select value={draft.ps_officer_id} disabled={!selectedLocation || psLoading} onChange={event => choose("ps_officer_id", event.target.value)}><option value="">{psLoading ? "Loading PS/SO..." : selectedLocation ? "Select PS/SO" : "Select branch first"}</option>{psOptions.map(officer => <option value={officer.id} key={officer.id}>{officer.name} - {officer.location}</option>)}</select></label>{selectedLocation && !psLoading && !psOptions.length && <small>No active PS/SO found for this branch.</small>}</article>
           <article className="sales-branch-card"><h3>Purchase Planning</h3><label>Buying Plan *</label><ChoiceRow options={buyingPlanOptions} value={draft.qualification.buying_timeline} onChange={value => chooseQualification("buying_timeline", value)} /></article>
           <article className="sales-branch-card"><h3>Finance Options</h3><label>Finance Option *</label><ChoiceRow options={financeOptions} value={draft.qualification.finance_type} onChange={value => chooseQualification("finance_type", value)} /></article>
-          <article className="sales-branch-card"><h3>Test Drive</h3><label>Test Drive Type</label><ChoiceRow options={testDriveOptions} value={draft.qualification.test_drive} onChange={value => chooseQualification("test_drive", value)} /></article>
-          <article className="sales-branch-card"><h3>Trade In</h3><label>Trade In</label><ChoiceRow options={tradeInOptions} value={draft.trade_in_note} onChange={value => choose("trade_in_note", value)} /></article>
           <article className="sales-branch-card"><h3>Qualification Notes</h3><label>Remarks *<textarea value={draft.qualification.notes} onChange={event => chooseQualification("notes", event.target.value)} placeholder="Add qualification notes" /></label></article>
           <article className="sales-branch-card"><h3>Lead Category</h3><label>Lead Category</label><ChoiceRow options={["HOT", "WARM", "COLD"]} value={draft.category} onChange={value => choose("category", value)} /></article>
         </section>}
