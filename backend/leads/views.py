@@ -14,10 +14,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import User
-from accounts.permissions import IsAdmin, IsAdminOrReceptionist, IsAdminReceptionistOrCRE, IsSalesManager
+from accounts.permissions import IsAdmin, IsAdminOrReceptionist, IsAdminReceptionistOrCRE, IsSalesManager, IsSalesOfficer
 from notifications.models import Notification
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
-from .serializers import CALL_OUTCOME_STATUS_OPTIONS, PS_CALL_OUTCOME_STATUS_OPTIONS, AssignmentSerializer, BulkDistributeSerializer, FollowUpReviewSerializer, FollowUpSerializer, LeadDetailSerializer, LeadSerializer, LeadUpdateSerializer, PSAssignmentSerializer, SOLeadListSerializer, SOLeadUpdateSerializer, SystemConfigSerializer
+from .serializers import CALL_OUTCOME_STATUS_OPTIONS, PS_CALL_OUTCOME_STATUS_OPTIONS, AssignmentSerializer, BulkDistributeSerializer, FollowUpReviewSerializer, FollowUpSerializer, LeadDetailSerializer, LeadSerializer, LeadUpdateSerializer, PSAssignmentSerializer, SOLeadCreateSerializer, SOLeadListSerializer, SOLeadUpdateSerializer, SystemConfigSerializer
 
 FORWARD_TRANSITIONS = {
     Lead.Status.FRESH: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.LOST},
@@ -74,7 +74,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         elif not self.request.user.is_admin:
             queryset = queryset.filter(assigned_ps=self.request.user)
         elif self.request.query_params.get("unassigned") == "true":
-            queryset = queryset.filter(assigned_so__isnull=True, needs_cre_reassignment=False)
+            queryset = queryset.filter(assigned_so__isnull=True, generated_by__isnull=True, needs_cre_reassignment=False)
         elif self.request.query_params.get("ps_unassigned") == "true":
             queryset = queryset.filter(status=Lead.Status.QUALIFIED, assigned_ps__isnull=True, needs_so_reassignment=False)
         if value := self.request.query_params.get("needs_reassignment"):
@@ -94,6 +94,27 @@ class LeadViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         return Response(LeadDetailSerializer(self.get_object()).data)
+
+    @action(detail=False, methods=["post"], url_path="so-create", permission_classes=[IsSalesOfficer], serializer_class=SOLeadCreateSerializer)
+    def so_create(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            owner = User.objects.select_for_update().filter(
+                pk=request.user.pk, role=User.Role.SALES_OFFICER, is_active=True, deleted_at__isnull=True,
+            ).first()
+            if not owner:
+                raise ValidationError({"detail": "Your account is no longer active."})
+            if not owner.location.strip():
+                raise ValidationError({"branch": "Ask your admin to set your branch before adding a lead."})
+            lead = serializer.save(
+                assigned_ps=owner, assigned_so=None, generated_by=owner, branch=owner.location.strip(),
+                status=Lead.Status.QUALIFIED, category=Lead.Category.WARM, sales_outcome=Lead.SalesOutcome.PENDING,
+            )
+            LeadAudit.objects.create(lead=lead, actor=owner, event="created", after={
+                "generated_by": owner.id, "source": lead.source, "assigned_ps": owner.id,
+            })
+        return Response(LeadSerializer(lead).data, status=status.HTTP_201_CREATED)
 
     def perform_create(self, serializer):
         is_walkin = (
@@ -248,7 +269,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         user_field = "assigned_so_id" if request.user.role == User.Role.CRE else "assigned_ps_id"
         if not request.user.is_admin and getattr(lead, user_field) != request.user.id:
             return Response({"detail": "This lead is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = SOLeadUpdateSerializer(data=request.data, context={"current_source": lead.source})
+        serializer = SOLeadUpdateSerializer(data=request.data, context={"current_source": lead.source, "self_generated": bool(lead.generated_by_id)})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         sales_status = {Lead.SalesOutcome.BOOKED: Lead.Status.WALKIN, Lead.SalesOutcome.RETAILED: Lead.Status.WON, Lead.SalesOutcome.LOST: Lead.Status.LOST}
@@ -443,7 +464,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         if not isinstance(filters, dict):
             raise ValidationError({"filters": "Expected an object of filter values."})
         officer = serializer.validated_data["sales_officer"]
-        leads = Lead.objects.filter(deleted_at__isnull=True, assigned_so__isnull=True, assigned_ps__isnull=True, needs_cre_reassignment=False, needs_so_reassignment=False)
+        leads = Lead.objects.filter(deleted_at__isnull=True, assigned_so__isnull=True, assigned_ps__isnull=True, generated_by__isnull=True, needs_cre_reassignment=False, needs_so_reassignment=False)
         leads = apply_lead_filters(leads, filters)
         with transaction.atomic():
             officer = User.objects.select_for_update().filter(
@@ -511,7 +532,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         if not isinstance(filters, dict):
             raise ValidationError({"filters": "Expected an object of filter values."})
         officers = serializer.validated_data["sales_officer_ids"]
-        leads = Lead.objects.filter(deleted_at__isnull=True, assigned_so__isnull=True, assigned_ps__isnull=True, needs_cre_reassignment=False, needs_so_reassignment=False)
+        leads = Lead.objects.filter(deleted_at__isnull=True, assigned_so__isnull=True, assigned_ps__isnull=True, generated_by__isnull=True, needs_cre_reassignment=False, needs_so_reassignment=False)
         leads = apply_lead_filters(leads, filters)
         with transaction.atomic():
             locked_officers = {
@@ -627,7 +648,7 @@ class LeadViewSet(viewsets.ModelViewSet):
                 ).values_list("assigned_so_id").annotate(total=Count("id"))
             )
             officers.sort(key=lambda officer: (loads.get(officer.id, 0), officer.id))
-            leads = Lead.objects.select_for_update().filter(deleted_at__isnull=True, assigned_so__isnull=True, assigned_ps__isnull=True, needs_cre_reassignment=False, needs_so_reassignment=False)
+            leads = Lead.objects.select_for_update().filter(deleted_at__isnull=True, assigned_so__isnull=True, assigned_ps__isnull=True, generated_by__isnull=True, needs_cre_reassignment=False, needs_so_reassignment=False)
             if lead_ids:
                 leads = leads.filter(id__in=lead_ids)
             leads = list(leads.order_by("created_at"))

@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from accounts.models import User
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
+from .serializers import SO_LEAD_SOURCES
 
 
 class LeadAccessTests(TestCase):
@@ -108,6 +109,152 @@ class LeadAccessTests(TestCase):
         lead = Lead.objects.get(pk=response.data["id"])
         self.assertIsNone(lead.assigned_so)
         self.assertEqual(lead.status, Lead.Status.FRESH)
+
+    def so_lead_payload(self, **overrides):
+        return {
+            "name": "SO contact", "phone": "9876543210", "email": "contact@example.com",
+            "profession": "Business", "city": "Ernakulam", "rto": "KL-07",
+            "source": "Referral", "source_label": "Referred by a customer", "model_interest": "River Indie",
+            "enquiry_date": timezone.localdate().isoformat(),
+            "qualification_input": {"variant": "Blue", "buying_timeline": "Immediate"}, **overrides,
+        }
+
+    def test_so_generates_lead_for_themselves_and_their_branch(self):
+        self.client.force_authenticate(self.ps_so)
+        response = self.client.post("/api/leads/so-create/", self.so_lead_payload(
+            ps_officer_id=self.first_so.id, assigned_ps=self.first_so.id, assigned_so=self.first_so.id,
+            generated_by=self.admin.id, branch="Another branch", status=Lead.Status.WON, sales_outcome=Lead.SalesOutcome.RETAILED,
+        ), format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        lead = Lead.objects.get(pk=response.data["id"])
+        self.assertEqual(lead.assigned_ps, self.ps_so)
+        self.assertIsNone(lead.assigned_so)
+        self.assertEqual(lead.generated_by, self.ps_so)
+        self.assertEqual(lead.branch, "Kochi")
+        self.assertEqual(lead.status, Lead.Status.QUALIFIED)
+        self.assertEqual(lead.sales_outcome, Lead.SalesOutcome.PENDING)
+        self.assertEqual(lead.source, "Referral")
+        self.assertEqual(lead.rto, "KL-07")
+        self.assertEqual(lead.profession, "Business")
+        self.assertEqual(lead.qualification.variant, "Blue")
+        self.assertEqual(LeadAudit.objects.get(lead=lead, event="created").actor, self.ps_so)
+        dashboard = self.client.get("/api/leads/my-dashboard/?section=fresh")
+        self.assertEqual(dashboard.data["summary"]["fresh"], 1)
+        self.assertEqual(dashboard.data["results"][0]["id"], lead.id)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.get("/api/leads/?unassigned=true").data["count"], 0)
+        self.assertEqual(self.client.get(f"/api/leads/{lead.id}/").data["generated_by"], self.ps_so.id)
+
+    def test_so_form_is_restricted_to_active_sales_officers(self):
+        for role in (User.Role.SALES_MANAGER, User.Role.COMPLAINTS):
+            user = User.objects.create_user(email=f"{role}@example.com", password=None, role=role)
+            self.client.force_authenticate(user)
+            self.assertEqual(self.client.post("/api/leads/so-create/", self.so_lead_payload(), format="json").status_code, 403)
+        for user in (self.admin, self.first_so, self.receptionist):
+            self.client.force_authenticate(user)
+            self.assertEqual(self.client.post("/api/leads/so-create/", self.so_lead_payload(), format="json").status_code, 403)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.post("/api/leads/so-create/", self.so_lead_payload(), format="json").status_code, 401)
+        self.ps_so.is_active = False
+        self.ps_so.save(update_fields=["is_active"])
+        self.client.force_authenticate(self.ps_so)
+        self.assertEqual(self.client.post("/api/leads/so-create/", self.so_lead_payload(), format="json").status_code, 403)
+
+    def test_so_sources_are_separate_and_validate_customer_data(self):
+        self.client.force_authenticate(self.ps_so)
+        config = self.client.get("/api/system-config/").data
+        self.assertEqual(config["so_lead_sources"], SO_LEAD_SOURCES)
+        self.assertEqual(config["lists"]["sources"], [Lead.Source.WALKIN, Lead.Source.WEBSITE])
+        for source in SO_LEAD_SOURCES:
+            with self.subTest(source=source):
+                response = self.client.post("/api/leads/so-create/", self.so_lead_payload(source=source), format="json")
+                self.assertEqual(response.status_code, 201, response.data)
+                self.assertEqual(response.data["source"], source)
+        for fields in (
+            {"source": Lead.Source.WEBSITE}, {"source": Lead.Source.WALKIN}, {"source": "Not allowed"},
+            {"source": "Other", "source_label": ""}, {"phone": "123"}, {"email": "invalid"}, {"rto": "TN-01"},
+            {"enquiry_date": (timezone.localdate() + timedelta(days=1)).isoformat()}, {"model_interest": ""},
+        ):
+            with self.subTest(fields=fields):
+                response = self.client.post("/api/leads/so-create/", self.so_lead_payload(**fields), format="json")
+                self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(self.client.post("/api/leads/", self.so_lead_payload(), format="json").status_code, 403)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.post("/api/leads/", self.so_lead_payload(), format="json").status_code, 400)
+
+    def test_so_without_branch_cannot_generate_leads(self):
+        self.ps_so.location = ""
+        self.ps_so.save(update_fields=["location"])
+        self.client.force_authenticate(self.ps_so)
+        response = self.client.post("/api/leads/so-create/", self.so_lead_payload(), format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("branch", response.data)
+        self.assertFalse(Lead.objects.filter(generated_by=self.ps_so).exists())
+
+    def test_so_generated_source_can_be_corrected_without_losing_creator(self):
+        self.client.force_authenticate(self.ps_so)
+        created = self.client.post("/api/leads/so-create/", self.so_lead_payload(), format="json")
+        lead_id = created.data["id"]
+        response = self.client.patch(f"/api/leads/{lead_id}/so-update/", {"source": "Existing customer", "generated_by": self.admin.id}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        lead = Lead.objects.get(pk=lead_id)
+        self.assertEqual(lead.source, "Existing customer")
+        self.assertEqual(lead.generated_by, self.ps_so)
+        rejected = self.client.patch(f"/api/leads/{lead_id}/so-update/", {"source": Lead.Source.WEBSITE}, format="json")
+        self.assertEqual(rejected.status_code, 400)
+        self.client.force_authenticate(self.first_so)
+        self.assertEqual(self.client.get(f"/api/leads/{lead_id}/").status_code, 404)
+
+    def test_so_generated_leads_stay_out_of_cre_distribution_without_an_owner(self):
+        lead = Lead.objects.create(name="SO generated", phone="9876543210", generated_by=self.ps_so, source="Referral")
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.get("/api/leads/?unassigned=true").data["count"], 0)
+        for path, payload in (
+            ("auto-assign", {}),
+            ("bulk-assign", {"sales_officer_id": self.first_so.id, "filters": {}}),
+            ("bulk-distribute", {"sales_officer_ids": [self.first_so.id], "filters": {}}),
+        ):
+            response = self.client.post(f"/api/leads/{path}/", payload, format="json")
+            self.assertEqual(response.status_code, 200, response.data)
+            self.assertEqual(response.data["assigned"], 0)
+        lead.refresh_from_db()
+        self.assertIsNone(lead.assigned_so)
+
+    def test_rto_selection_is_saved_for_all_lead_creation_roles(self):
+        for user in (self.admin, self.first_so, self.receptionist):
+            with self.subTest(role=user.role):
+                self.client.force_authenticate(user)
+                options = self.client.get("/api/system-config/").data["rto_options"]
+                self.assertEqual(len(options), 86)
+                self.assertIn({"value": "KL-07", "label": "KL-07 - Ernakulam"}, options)
+                self.assertIn({"value": "KL-86", "label": "KL-86 - Payyannur"}, options)
+                created = self.client.post("/api/leads/", {
+                    "name": "RTO enquiry", "phone": "7006682399", "source": Lead.Source.WEBSITE,
+                    "rto": "KL-07", "ps_officer_id": self.ps_so.id,
+                }, format="json")
+                self.assertEqual(created.status_code, 201, created.data)
+                lead = Lead.objects.get(pk=created.data["id"])
+                self.assertEqual(lead.rto, "KL-07")
+                self.assertEqual(created.data["rto"], "KL-07")
+                self.client.force_authenticate(self.admin)
+                self.assertEqual(self.client.get(f"/api/leads/{lead.id}/").data["rto"], "KL-07")
+
+    def test_rto_rejects_unknown_codes_and_allows_unknown_selection(self):
+        self.client.force_authenticate(self.admin)
+        for rto in ("KL-99", "TN-01", "Ernakulam"):
+            with self.subTest(rto=rto):
+                response = self.client.post("/api/leads/", {
+                    "name": "Invalid RTO", "phone": "7006682399", "source": Lead.Source.WEBSITE, "rto": rto,
+                }, format="json")
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("rto", response.data)
+        for selection in ({}, {"rto": ""}):
+            response = self.client.post("/api/leads/", {
+                "name": "RTO unknown", "phone": "7006682399", "source": Lead.Source.WEBSITE, **selection,
+            }, format="json")
+            self.assertEqual(response.status_code, 201, response.data)
+            self.assertEqual(Lead.objects.get(pk=response.data["id"]).rto, "")
+        self.assertEqual(self.client.get(f"/api/leads/{self.first_lead.id}/").data["rto"], "")
 
     def test_admin_sources_control_new_leads_and_preserve_walkin(self):
         config = SystemConfig.objects.get(id=1)

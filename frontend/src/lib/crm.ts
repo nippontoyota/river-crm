@@ -3,18 +3,18 @@ import { formatDate, toApiDate, toDateInputValue } from "@/lib/dates";
 
 type Paginated<T> = { count?: number; next?: string | null; previous?: string | null; results: T[] };
 type ApiLead = {
-  id: number; name: string; phone: string; email: string; source: string; source_label: string; campaign: string; model_interest: string; city: string;
+  id: number; name: string; phone: string; email: string; source: string; source_label: string; campaign: string; model_interest: string; city: string; rto: string; generated_by: number | null;
   branch: string; enquiry_date: string | null; status: string; category: string; sales_outcome: string; assigned_so: number | null; assigned_so_name: string; assigned_ps: number | null; assigned_ps_name: string; needs_cre_reassignment: boolean; needs_so_reassignment: boolean; next_follow_up: string | null; call_count: number; qualification: LeadQualification | null; created_at: string;
 };
 type ApiSalesLead = { id: number; status: string; name: string; phone: string; source: string; flagged_to_manager: boolean };
 type ApiOfficer = { id: number; first_name: string; last_name: string; email: string; phone: string; location: string; is_active: boolean };
 
 export type Lead = {
-  id: number; name: string; phone: string; source: string; sourceCode: string; model: string; city: string; enquiryDate: string | null; enquiredAt: string;
+  id: number; name: string; phone: string; source: string; sourceCode: string; model: string; city: string; rto: string; generated_by: number | null; enquiryDate: string | null; enquiredAt: string;
   branch: string; campaign: string; category: string; salesOutcome: string; nextFollowUp: string | null; callCount: number; statusCode: string; status: string; assignedSoId: number | null; assignedSoName: string; assignedPsId: number | null; assignedPsName: string; needsCreReassignment: boolean; needsSoReassignment: boolean;
 };
 export type SalesLead = { id: number; status: string; statusCode: string; name: string; phone: string; source: string; sourceCode: string; flagged_to_manager: boolean };
-export type LeadInput = { name: string; phone: string; email?: string; source: string; source_label?: string; campaign?: string; model_interest?: string; city?: string; branch?: string; enquiry_date?: string; profession?: string; ps_officer_id?: number; status?: string; category?: string; qualification?: LeadQualification; qualification_input?: LeadQualification };
+export type LeadInput = { rto?: string; name: string; phone: string; email?: string; source: string; source_label?: string; campaign?: string; model_interest?: string; city?: string; branch?: string; enquiry_date?: string; profession?: string; ps_officer_id?: number; status?: string; category?: string; qualification?: LeadQualification; qualification_input?: LeadQualification };
 export type LeadFilters = { source?: string; status?: string; branch?: string; model?: string; city?: string; source_label?: string; date_from?: string; date_to?: string; q?: string };
 export type LeadQualification = { variant: string; buying_timeline: string; finance_type: string; trade_in: boolean | null; test_drive: string; notes: string; updated_at?: string };
 export type CallHistory = { id: number; status: string; outcome: string; remarks: string; so_name: string; created_at: string; call_status?: string };
@@ -134,6 +134,7 @@ export async function getLeadDetail(id: number) { const data = await api<ApiLead
 export const deleteLead = (id: number) => api<void>(`/api/leads/${id}/`, { method: "DELETE" });
 const withApiDate = <T extends { enquiry_date?: string | null }>(payload: T): T => payload.enquiry_date === undefined ? payload : { ...payload, enquiry_date: toApiDate(payload.enquiry_date) };
 export async function updateMyLead(id: number, payload: { name?: string; phone?: string; email?: string; source?: string; source_label?: string; campaign?: string; model_interest?: string; city?: string; branch?: string; enquiry_date?: string | null; status?: string; category?: string; sales_outcome?: string; remarks?: string; call_status?: string; call_outcome?: string; follow_up_at?: string | null; ps_officer_id?: number; qualification?: LeadQualification; flagged_to_manager?: boolean }) { const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"] }>(`/api/leads/${id}/so-update/`, { method: "PATCH", body: JSON.stringify(withApiDate(payload)) }); return toLeadDetail(data); }
+export const createSoLead = (payload: LeadInput) => api<ApiLead>("/api/leads/so-create/", { method: "POST", body: JSON.stringify(withApiDate(payload)) });
 export const createLead = (payload: LeadInput) => api<ApiLead>("/api/leads/", { method: "POST", body: JSON.stringify(withApiDate(payload)) });
 export async function getCres() { const data = await api<Paginated<ApiOfficer>>("/api/auth/cre-users/"); return data.results; }
 export async function getOfficers(location = "") { const query = location ? `?${new URLSearchParams({ location }).toString()}` : ""; const data = await api<Paginated<ApiOfficer>>(`/api/auth/sales-officers/${query}`); return data.results; }
@@ -176,7 +177,8 @@ export const commitUpload = (id: number) => api<{ created: number; overwritten: 
 export type UploadRow = { id: number; row_number: number; data: { name?: string }; normalized_phone: string; validation_error: string; duplicate_of: number | null; existing_name: string; existing_status: string; duplicate_type: "CRM" | "FILE" | ""; resolution: "PENDING" | "SKIP" | "OVERWRITE" | "IMPORT" };
 export type UploadBatch = { id: number; status: "PARSING" | "READY" | "COMMITTED" | "FAILED"; total_rows: number; parsed_ok: number; duplicates_found: number; crm_duplicates_found: number; file_duplicates_found: number; removed_duplicates: number; pending_duplicates: number; skipped: number; error_message: string; rows?: UploadRow[] };
 
-export type SystemConfig = { lists: { branches?: string[]; sources?: string[]; activities?: string[]; models?: string[]; colorVariants?: string[] }; updated_at?: string };
+export type RtoOption = { value: string; label: string };
+export type SystemConfig = { so_lead_sources: string[]; rto_options: RtoOption[]; lists: { branches?: string[]; sources?: string[]; activities?: string[]; models?: string[]; colorVariants?: string[] }; updated_at?: string };
 export function getSystemConfig() {
   if (systemConfigCache) return Promise.resolve(systemConfigCache);
   if (!systemConfigRequest) systemConfigRequest = api<SystemConfig>("/api/system-config/").then(config => systemConfigCache = config).finally(() => { systemConfigRequest = null; });

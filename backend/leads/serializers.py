@@ -3,6 +3,15 @@ from django.utils import timezone
 
 from accounts.models import User
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
+from .rtos import KERALA_RTO_CHOICES
+
+SO_LEAD_SOURCES = ["Referral", "Existing customer", "Friends / Family", "Personal contact", "Local networking", "Self prospecting", "Other"]
+
+
+def validate_so_source(value):
+    if value not in SO_LEAD_SOURCES:
+        raise serializers.ValidationError("Choose a source for an SO-generated lead.")
+    return value
 
 
 def normalize_sources(values):
@@ -127,14 +136,16 @@ class LeadSerializer(serializers.ModelSerializer):
         return validate_configured_choice(value, "models", "vehicle model")
 
     def validate_source(self, value):
+        if self.instance and self.instance.generated_by_id:
+            return validate_so_source(value)
         return validate_configured_source(value, self.instance.source if self.instance else "")
 
     ps_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True, deleted_at__isnull=True), source="assigned_ps", required=False, write_only=True)
 
     class Meta:
         model = Lead
-        fields = ["id", "uid", "name", "phone", "email", "source", "source_label", "campaign", "model_interest", "city", "branch", "enquiry_date", "status", "category", "sales_outcome", "assigned_so", "assigned_so_name", "assigned_ps", "assigned_ps_name", "ps_officer_id", "next_follow_up", "call_count", "qualification", "qualification_input", "flagged_to_manager", "needs_cre_reassignment", "needs_so_reassignment", "profession", "created_at", "updated_at"]
-        read_only_fields = ["uid", "assigned_so", "assigned_ps", "needs_cre_reassignment", "needs_so_reassignment", "created_at", "updated_at"]
+        fields = ["id", "uid", "name", "phone", "email", "source", "source_label", "campaign", "model_interest", "city", "rto", "branch", "enquiry_date", "status", "category", "sales_outcome", "assigned_so", "assigned_so_name", "assigned_ps", "assigned_ps_name", "generated_by", "ps_officer_id", "next_follow_up", "call_count", "qualification", "qualification_input", "flagged_to_manager", "needs_cre_reassignment", "needs_so_reassignment", "profession", "created_at", "updated_at"]
+        read_only_fields = ["uid", "assigned_so", "assigned_ps", "generated_by", "needs_cre_reassignment", "needs_so_reassignment", "created_at", "updated_at"]
         extra_kwargs = {"source": {"required": True}}
 
     def create(self, validated_data):
@@ -143,6 +154,26 @@ class LeadSerializer(serializers.ModelSerializer):
         if qualification_data:
             LeadQualification.objects.create(lead=lead, **qualification_data)
         return lead
+
+
+class SOLeadCreateSerializer(LeadSerializer):
+    phone = serializers.RegexField(regex=r"^\d{10}$")
+
+    def validate_source(self, value):
+        return validate_so_source(value)
+
+    def validate(self, attrs):
+        if not attrs.get("model_interest"):
+            raise serializers.ValidationError({"model_interest": "Choose a vehicle model."})
+        if not attrs.get("enquiry_date"):
+            raise serializers.ValidationError({"enquiry_date": "Enter the enquiry date."})
+        if attrs.get("source") == "Other" and not attrs.get("source_label", "").strip():
+            raise serializers.ValidationError({"source_label": "Describe how you found this customer."})
+        return attrs
+
+    class Meta(LeadSerializer.Meta):
+        fields = [field for field in LeadSerializer.Meta.fields if field != "ps_officer_id"]
+        read_only_fields = LeadSerializer.Meta.read_only_fields + ["branch", "status", "category", "sales_outcome"]
 
 
 class SOLeadListSerializer(serializers.ModelSerializer):
@@ -222,6 +253,8 @@ class SOLeadUpdateSerializer(serializers.Serializer):
         return validate_configured_choice(value, "models", "vehicle model")
 
     def validate_source(self, value):
+        if self.context.get("self_generated"):
+            return validate_so_source(value)
         return validate_configured_source(value, self.context.get("current_source", ""))
 
     def validate(self, attrs):
@@ -289,6 +322,15 @@ class FollowUpReviewSerializer(serializers.Serializer):
         return value
 
 class SystemConfigSerializer(serializers.ModelSerializer):
+    rto_options = serializers.SerializerMethodField()
+    so_lead_sources = serializers.SerializerMethodField()
+
+    def get_so_lead_sources(self, obj):
+        return SO_LEAD_SOURCES
+
+    def get_rto_options(self, obj):
+        return [{"value": code, "label": f"{code} - {name}"} for code, name in KERALA_RTO_CHOICES]
+
     def validate_lists(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError("Expected an object of lists.")
@@ -309,4 +351,4 @@ class SystemConfigSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SystemConfig
-        fields = ["lists", "updated_at"]
+        fields = ["lists", "rto_options", "so_lead_sources", "updated_at"]

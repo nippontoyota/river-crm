@@ -16,6 +16,7 @@ export default function CaptureLeadPage() {
     phone: "",
     email: "",
     profession: "",
+    rto: "",
     model_interest: "",
     variant: "",
     buying_timeline: "",
@@ -34,7 +35,7 @@ export default function CaptureLeadPage() {
 
   const handleClear = () => {
     setFormData({
-      name: "", phone: "", email: "", profession: "",
+      name: "", phone: "", email: "", profession: "", rto: "",
       model_interest: "", variant: "", buying_timeline: "", assigned_ps_id: ""
     });
     setError("");
@@ -55,6 +56,7 @@ export default function CaptureLeadPage() {
         phone: formData.phone,
         email: formData.email || undefined,
         profession: formData.profession,
+        rto: formData.rto,
         source: "WALKIN",
         status: "QUALIFIED",
         model_interest: formData.model_interest,
@@ -81,6 +83,7 @@ export default function CaptureLeadPage() {
   };
 
   const modelOptions = config?.lists?.models || [];
+  const rtoOptions = config?.rto_options || [];
   const colorVariantOptions = config?.lists?.colorVariants || [];
 
   return (
@@ -119,6 +122,16 @@ export default function CaptureLeadPage() {
             </label>
         </div>
 
+
+        <div className="capture-form-grid">
+            <label>
+              RTO (optional)
+              <select name="rto" value={formData.rto} onChange={handleChange} disabled={!rtoOptions.length}>
+                <option value="">{rtoOptions.length ? "Select Kerala RTO" : "RTO list unavailable"}</option>
+                {rtoOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+        </div>
 
         <fieldset className="capture-fieldset">
             <legend>Source *</legend>

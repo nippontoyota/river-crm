@@ -3,6 +3,8 @@ import uuid
 from django.conf import settings
 from django.db import models
 
+from .rtos import KERALA_RTO_CHOICES
+
 
 class Lead(models.Model):
     class Status(models.TextChoices):
@@ -46,6 +48,7 @@ class Lead(models.Model):
     campaign = models.CharField(max_length=160, blank=True)
     model_interest = models.CharField(max_length=100, blank=True)
     city = models.CharField(max_length=100, blank=True)
+    rto = models.CharField(max_length=5, choices=KERALA_RTO_CHOICES, blank=True, db_index=True)
     profession = models.CharField(max_length=100, blank=True)
     branch = models.CharField(max_length=120, blank=True)
     enquiry_date = models.DateField(null=True, blank=True)
@@ -54,6 +57,7 @@ class Lead(models.Model):
     sales_outcome = models.CharField(max_length=12, choices=SalesOutcome.choices, default=SalesOutcome.PENDING, db_index=True)
     assigned_so = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="assigned_leads")
     assigned_ps = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="ps_leads")
+    generated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="generated_leads")
     duplicate_flag = models.BooleanField(default=False)
     flagged_to_manager = models.BooleanField(default=False)
     needs_cre_reassignment = models.BooleanField(default=False, db_index=True)

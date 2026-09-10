@@ -1,0 +1,1830 @@
+[
+  {
+    "section": "OPENING",
+    "title": "Incheon Mobility CRM",
+    "subtitle": "Product demonstration | Operations walkthrough | 9 September 2026",
+    "kind": "cover",
+    "body": [
+      [
+        "ADMIN",
+        "Intake & allocation"
+      ],
+      [
+        "CRE",
+        "Contact & qualification"
+      ],
+      [
+        "PS / SO",
+        "Follow-up & sales"
+      ],
+      [
+        "SALES MANAGER",
+        "Branch oversight"
+      ],
+      [
+        "COMPLAINTS",
+        "Resolution"
+      ]
+    ],
+    "notes": "Opening talk track: Today I will follow a customer enquiry through the people who handle it. We will see how Admin allocates work, how CRE records a customer decision, how PS/SO continues the sales conversation, and how the Sales Manager reviews the branch. We will also follow a complaint and a staff handover. The purpose is to agree how your team will operate the product. The descriptions reflect the current repository, rather than every item in the original requirements document. Live deployment behavior should be checked before the meeting. Use the accompanying demo briefing for that rehearsal.",
+    "refs": "README.md; frontend/src/components/app-shell.tsx",
+    "takeaway": ""
+  },
+  {
+    "section": "OPENING",
+    "title": "What this session will answer",
+    "subtitle": "Use the core route for the meeting; keep the detailed slides for discussion.",
+    "kind": "cards",
+    "body": [
+      [
+        "OWNERSHIP",
+        "Who receives a lead?\nWho acts next?\nWho can change ownership?"
+      ],
+      [
+        "EXECUTION",
+        "How do we qualify, follow up, book and retail?\nHow do we record loss and complaints?"
+      ],
+      [
+        "CONTROL",
+        "What can the manager see?\nHow do we handle overdue work, bad data and staff exits?"
+      ]
+    ],
+    "notes": "Suggested meeting structure: 5 minutes on the operating model, 10 minutes on roles and allocation, 15 minutes on the five requested lead scenarios, and 10 minutes on management review and exceptions. The full deck provides reference detail and is not intended to require a minute on every slide. If time is tight, follow the core slide route in the presenter briefing. Ask the manager to validate practical responsibilities and handoff rules while you demonstrate. Do not spend meeting time describing frameworks, hosting or code.",
+    "refs": "",
+    "takeaway": "Aim: agree who does what, what they record, and how management follows up."
+  },
+  {
+    "section": "OPERATING MODEL",
+    "title": "One enquiry, several responsibilities",
+    "subtitle": "Admin → CRE → PS/SO is the execution path. Sales Manager provides branch oversight.",
+    "kind": "flow",
+    "body": [
+      [
+        "ADMIN",
+        "Capture / import\nAllocate CRE"
+      ],
+      [
+        "CRE",
+        "Contact customer\nQualify / pending / lost"
+      ],
+      [
+        "PS / SO",
+        "Work qualified lead\nBook / retail / lose"
+      ],
+      [
+        "SALES MANAGER",
+        "Review branch\nCoach and follow up"
+      ]
+    ],
+    "notes": "Explain the arrows as a sequence of responsibility, not an approval hierarchy. A lead does not wait for Sales Manager approval before a PS can contact the customer, book or retail. The manager reviews the branch data and gives operational direction. Admin retains allocation and user controls. CRE ownership remains attached after the PS handoff, so the team retains both the original relationship owner and the sales owner. The manager sees records that match the branch on their account. The complaints team works through a separate ticket queue.",
+    "refs": "backend/leads/views.py:LeadViewSet; backend/analytics/views.py:manager_base_queryset",
+    "takeaway": "Sales Manager oversight does not add an approval step to each sale."
+  },
+  {
+    "section": "OPERATING MODEL",
+    "title": "The customer journey at a glance",
+    "subtitle": "Separate contact decisions, sales progress and complaint handling.",
+    "kind": "journey",
+    "body": [
+      [
+        "INTAKE",
+        "Import / manual entry"
+      ],
+      [
+        "CRE",
+        "Fresh → contact"
+      ],
+      [
+        "QUALIFIED",
+        "Branch + PS/SO selected"
+      ],
+      [
+        "SALES",
+        "Follow-up → booked → retailed"
+      ],
+      [
+        "PENDING",
+        "Customer needs time / retry"
+      ],
+      [
+        "LOST",
+        "Reason + remarks"
+      ],
+      [
+        "COMPLAINT",
+        "CRE logs → resolution team"
+      ]
+    ],
+    "notes": "Start at intake, then show the three CRE decisions: qualified, pending and lost. Qualified requires the branch and sales owner in the main CRE form. Pending records the reason and next follow-up date. Lost records why the enquiry ended. At the PS stage, the customer can continue in follow-up, proceed to booking and retail, or be lost. A complaint is a separate ticket; it does not automatically close or convert the sales lead. The diagram shows the intended operating route supported by the normal screens. Detailed status handling is covered later.",
+    "refs": "backend/leads/views.py; frontend/src/features/leads/sales-workspace.tsx; backend/complaints/views.py",
+    "takeaway": ""
+  },
+  {
+    "section": "OPERATING MODEL",
+    "title": "Six roles, six workspaces",
+    "subtitle": "Use the names staff will see when they sign in.",
+    "kind": "table",
+    "body": [
+      [
+        "Role",
+        "Main workspace",
+        "Operational responsibility"
+      ],
+      [
+        "Admin",
+        "Assignment, All leads, Users, Lists, Analytics",
+        "Allocate work and maintain controls"
+      ],
+      [
+        "CRE",
+        "My queue, Follow-ups, Complaints, My results",
+        "Contact, qualify, record decisions, log tickets"
+      ],
+      [
+        "PS / SO",
+        "Fresh leads, Today’s follow-ups, All leads, My results",
+        "Continue sales work and record outcomes"
+      ],
+      [
+        "Sales Manager",
+        "Analytics, Branch leads",
+        "Review own branch and direct follow-up"
+      ],
+      [
+        "Complaints department",
+        "Complaints",
+        "Work the shared queue and resolve tickets"
+      ],
+      [
+        "Receptionist",
+        "Capture Lead, Dashboard",
+        "Capture walk-ins and select PS/SO"
+      ]
+    ],
+    "notes": "CRE means Customer Relationship Executive. PS/SO is the shared sales role label used in this build; use the company’s preferred expansion of PS during the meeting. SM means Sales Manager. The product gives each role a different navigation menu. A senior job title does not automatically grant Admin or complaint-resolution rights. For example, a Sales Manager cannot allocate leads in the current application, and an Admin can read complaints but cannot resolve them. Receptionist is an additional intake role and should be shown after the main CRE sales path.",
+    "refs": "frontend/src/components/app-shell.tsx; backend/accounts/models.py",
+    "takeaway": ""
+  },
+  {
+    "section": "ACCESS & ROLES",
+    "title": "Access control: leads and administration",
+    "subtitle": "“Own” means assigned records; “branch” means the manager’s configured branch.",
+    "kind": "matrix",
+    "body": [
+      [
+        "Action",
+        "Admin",
+        "CRE",
+        "PS/SO",
+        "SM",
+        "Reception",
+        "Complaints"
+      ],
+      [
+        "View lead queue",
+        "All",
+        "Own",
+        "Own",
+        "Branch",
+        "Capture*",
+        "No"
+      ],
+      [
+        "Capture lead",
+        "Yes",
+        "Yes",
+        "No",
+        "No",
+        "Walk-in",
+        "No"
+      ],
+      [
+        "Work sales outcome",
+        "Yes",
+        "Own",
+        "Own",
+        "Read only",
+        "No",
+        "No"
+      ],
+      [
+        "Edit CRE qualification",
+        "Yes",
+        "Own**",
+        "No",
+        "No",
+        "At capture",
+        "No"
+      ],
+      [
+        "Distribute / reassign",
+        "Yes",
+        "Handoff**",
+        "No",
+        "No",
+        "At capture",
+        "No"
+      ],
+      [
+        "Users / master lists",
+        "Manage",
+        "Read options",
+        "Read options",
+        "Read options",
+        "Read options",
+        "Read options"
+      ]
+    ],
+    "notes": "This table describes normal supported workspaces and dedicated workflow actions, rather than a completed security audit of every generic endpoint. Receptionist sees their capture dashboard, not a general branch lead queue. CRE qualification and PS selection occur in the qualification flow; CRE also retains update access after handoff subject to transition rules. PS can edit allowed customer details, but cannot rewrite CRE qualification. Staff use Admin-maintained options. The manager’s lead workspace is read-only. Any change to the permission model should be agreed as a separate product decision.",
+    "refs": "backend/leads/views.py:get_permissions,get_queryset,so_update; backend/accounts/permissions.py",
+    "takeaway": "*Reception: own capture dashboard. **CRE: qualification/handoff rules apply; repeat qualification is blocked."
+  },
+  {
+    "section": "ACCESS & ROLES",
+    "title": "Access control: complaints and reporting",
+    "subtitle": "The complaint logger, resolver and management viewer have different rights.",
+    "kind": "matrix",
+    "body": [
+      [
+        "Action",
+        "Admin",
+        "CRE",
+        "PS/SO",
+        "SM",
+        "Reception",
+        "Complaints"
+      ],
+      [
+        "Log complaint",
+        "No",
+        "Yes",
+        "No",
+        "No",
+        "No",
+        "No"
+      ],
+      [
+        "Read complaint",
+        "All",
+        "Own logged",
+        "No",
+        "No",
+        "No",
+        "All"
+      ],
+      [
+        "Change status / priority",
+        "No",
+        "No",
+        "No",
+        "No",
+        "No",
+        "Yes"
+      ],
+      [
+        "Add note / resolve / close",
+        "No",
+        "No",
+        "No",
+        "No",
+        "No",
+        "Yes"
+      ],
+      [
+        "Complaint analytics",
+        "All + team",
+        "No",
+        "No",
+        "No",
+        "No",
+        "Shared"
+      ],
+      [
+        "Sales reporting",
+        "Company",
+        "Personal",
+        "Personal",
+        "Branch",
+        "Own today",
+        "No sales UI"
+      ]
+    ],
+    "notes": "Walk the manager through the complaint row first: CRE logs a ticket and can track only the tickets they logged; the complaints department sees the shared queue and can update it; Admin sees the queue and analytics but does not resolve tickets. PS, SM and Receptionist have no complaint access in this version. These restrictions are covered by existing complaint tests. The complaints dashboard can therefore support company-level resolution work, while the Sales Manager’s sales reporting remains scoped to their branch.",
+    "refs": "backend/complaints/permissions.py; backend/complaints/tests.py; backend/analytics/views.py",
+    "takeaway": ""
+  },
+  {
+    "section": "ACCESS & ROLES",
+    "title": "Admin: daily control responsibilities",
+    "subtitle": "Admin owns allocation, master data and continuity of work.",
+    "kind": "cards",
+    "body": [
+      [
+        "START THE DAY",
+        "Check new imports and unassigned leads.\nReview active CRE capacity.\nClear reassignment exceptions."
+      ],
+      [
+        "DURING THE DAY",
+        "Allocate individual leads or filtered buckets.\nInspect customer and call history.\nReview held follow-up reminders."
+      ],
+      [
+        "MAINTAIN CONTROL",
+        "Create and edit users.\nMaintain branches, sources, models and colors.\nReview sales and complaint analytics."
+      ]
+    ],
+    "notes": "Show the Assignment, All leads, Users, Lists and Analytics menus. Explain that the unassigned pool is a work queue that Admin must review, not proof that the team has already contacted the customer. Ordinary allocation targets active CRE users. Admin can inspect any non-deleted lead and see ownership and history. User offboarding is a distinct action with an impact preview. Complaints remain read-only for Admin. Recommended daily practice is to clear unassigned work at agreed intervals and check the separate Needs reassignment view before finishing the day.",
+    "refs": "frontend/src/features/leads/lead-desk.tsx; frontend/src/features/team/team-page.tsx",
+    "takeaway": ""
+  },
+  {
+    "section": "ACCESS & ROLES",
+    "title": "CRE: contact, qualify and preserve context",
+    "subtitle": "The handoff should tell PS/SO what the customer needs.",
+    "kind": "cards",
+    "body": [
+      [
+        "WORK THE QUEUE",
+        "Open own assigned lead.\nRead customer details and history.\nRecord Qualified, Pending or Lost."
+      ],
+      [
+        "QUALIFY THE BUYER",
+        "Capture model, color, buying plan and finance.\nSelect preferred branch and matching PS/SO.\nAdd useful qualification remarks."
+      ],
+      [
+        "HANDLE EXCEPTIONS",
+        "Record pending or loss reasons.\nSet follow-up dates where required.\nLog customer complaints in Complaints."
+      ]
+    ],
+    "notes": "Explain what good CRE work looks like in operational terms. A useful qualification note says which model and color the customer wants, how soon they plan to buy, how they expect to pay and what the PS should discuss next. The main form requires the model, color, branch, PS, buying plan, finance and notes. Profession is displayed but is not part of that required qualification set. CRE can still see and update owned records after handoff under the current rules. Agree internally which person should make the next customer call so both roles do not chase the customer at the same time.",
+    "refs": "frontend/src/features/leads/sales-workspace.tsx:save; backend/leads/views.py:so_update",
+    "takeaway": ""
+  },
+  {
+    "section": "ACCESS & ROLES",
+    "title": "PS/SO: continue the sales conversation",
+    "subtitle": "Use CRE context, record the customer response, and set the next action.",
+    "kind": "cards",
+    "body": [
+      [
+        "RECEIVE",
+        "Find the qualified lead in Fresh leads.\nRead CRE qualification and call history.\nConfirm customer details."
+      ],
+      [
+        "PROGRESS",
+        "Choose Connected / Not Connected.\nRecord a specific outcome and remarks.\nSchedule the next follow-up where required."
+      ],
+      [
+        "CONCLUDE",
+        "Booking Done → Booked.\nRetail Done → Retailed / Won.\nLoss outcome → Lost with a recorded reason."
+      ]
+    ],
+    "notes": "PS/SO has a different outcome menu from CRE. Connected outcomes include test drive, showroom visit, booking, retail, callback, finance or discount issues, and several loss reasons. Not Connected includes RNR, switched off, line busy, call forwarding, invalid number and manual No Response loss. PS must record remarks in the screen. CRE qualification remains visible and cannot be edited through the PS workflow. Fresh for PS means a currently qualified lead that the assigned PS has not yet logged a call against; it does not mean the same thing as CRE Fresh.",
+    "refs": "frontend/src/features/leads/sales-workspace.tsx; backend/leads/views.py:my_dashboard",
+    "takeaway": ""
+  },
+  {
+    "section": "ACCESS & ROLES",
+    "title": "Sales Manager: review the branch and act through owners",
+    "subtitle": "Branch oversight is read-only in the current product.",
+    "kind": "cards",
+    "body": [
+      [
+        "MONITOR",
+        "Review leads, qualification, booking and retail.\nCompare CRE and PS activity.\nInspect source and model results."
+      ],
+      [
+        "INVESTIGATE",
+        "Drill into a person or lead.\nReview overdue and stale work.\nRead call and follow-up history."
+      ],
+      [
+        "DIRECT THE TEAM",
+        "Ask the owner to update the customer.\nAsk Admin to change allocation.\nUse exports for branch review meetings."
+      ]
+    ],
+    "notes": "The manager’s configured location determines the branch scope. A blank location gives no branch data. The manager cannot change lead status, assign, delete or reopen leads through this role. Coaching and reassignment requests take place through the company’s normal communication process; there is no implemented manager approval inbox. The operational review can identify a stale Fresh lead or an overdue follow-up and then ask the named CRE or PS to act. Flagged filters exist, but do not promise a complete escalation button-to-notification flow without a live check.",
+    "refs": "backend/analytics/views.py:manager_base_queryset; backend/leads/views.py:manager_leads; backend/analytics/tests.py",
+    "takeaway": ""
+  },
+  {
+    "section": "INTAKE & ALLOCATION",
+    "title": "Lead intake: three practical entry routes",
+    "subtitle": "Configure the allowed source and model names before bringing data in.",
+    "kind": "flow",
+    "body": [
+      [
+        "BULK IMPORT",
+        "Admin uploads\nCSV / XLSX"
+      ],
+      [
+        "MANUAL ENTRY",
+        "Admin adds enquiry\nCRE can capture directly"
+      ],
+      [
+        "WALK-IN",
+        "Receptionist captures\nSelects PS/SO"
+      ],
+      [
+        "NEXT WORK",
+        "Admin pool or\ndirect qualified sales lead"
+      ]
+    ],
+    "notes": "Use the bulk route for downloaded advertising or partner lead lists. Admin manual entry can place an ordinary enquiry in the allocation pool. CRE’s visible Add lead form is designed for a directly qualified lead with branch and PS selected; the underlying non-walk-in CRE creation path also supports CRE ownership. Receptionist capture forces Walk-in source and Qualified status and can attach a PS. Walk-in capture bypasses normal CRE qualification. Do not describe configured sources as live integrations: this repository supports capture and upload, not a verified live advertising-platform feed.",
+    "refs": "backend/leads/views.py:perform_create; frontend/src/features/leads/sales-workspace.tsx:saveLead; frontend/src/app/(receptionist)/capture/page.tsx",
+    "takeaway": "These are parallel entry routes. Walk-in capture bypasses the normal CRE allocation step."
+  },
+  {
+    "section": "INTAKE & ALLOCATION",
+    "title": "Bulk upload: review before importing",
+    "subtitle": "CSV or XLSX, up to 10 MB. An uploaded file does not yet mean imported leads.",
+    "kind": "flow",
+    "body": [
+      [
+        "UPLOAD",
+        "Choose CSV / XLSX\nAdmin only"
+      ],
+      [
+        "VALIDATE",
+        "Name, phone, source\nModel and date checks"
+      ],
+      [
+        "REVIEW",
+        "Valid / skipped rows\nDuplicate summary"
+      ],
+      [
+        "IMPORT",
+        "Confirm import\nNew leads enter pool"
+      ]
+    ],
+    "notes": "Show the upload summary and distinguish the parsed row count from the imported count. The parser strips formatting from phones, removes a +91 or leading zero when appropriate, and expects a ten-digit result. It checks the configured source and, when configured, the model. It rejects a future enquiry date. Valid rows can be imported while invalid and duplicate rows are skipped. A failed upload should be corrected and retried. Missing or unrecognized date formats can fall back to today, so validate the source file dates rather than assuming the imported cohort is correct.",
+    "refs": "backend/uploads/views.py; backend/uploads/tasks.py; backend/uploads/serializers.py",
+    "takeaway": ""
+  },
+  {
+    "section": "INTAKE & ALLOCATION",
+    "title": "Duplicate and invalid data handling",
+    "subtitle": "Phone-based duplicate checks apply to the import path.",
+    "kind": "table",
+    "body": [
+      [
+        "Situation",
+        "Current import behavior",
+        "Operator response"
+      ],
+      [
+        "Phone already in CRM",
+        "Skip duplicate by default",
+        "Open existing lead before taking further action"
+      ],
+      [
+        "Phone repeated in same file",
+        "Keep first valid occurrence; skip repeats",
+        "Check the duplicate row summary"
+      ],
+      [
+        "Invalid phone / missing name",
+        "Skip invalid row",
+        "Correct the file and re-upload affected rows"
+      ],
+      [
+        "Unknown source or configured-model mismatch",
+        "Validation error; row skipped",
+        "Use Admin Lists values"
+      ],
+      [
+        "Future enquiry date",
+        "Validation error",
+        "Correct to actual enquiry date"
+      ],
+      [
+        "Missing / unrecognized date",
+        "May default to upload-day date",
+        "Review dates before committing"
+      ]
+    ],
+    "notes": "The current UI emphasizes automatic duplicate removal. Do not demonstrate overwrite/import-as-new options from the original PRD as though they are exposed in the normal upload screen. The server retains duplicate-resolution capabilities, but that is different from the user-facing workflow. Duplicate detection is not a universal uniqueness guarantee: manual entry does not enforce unique phone numbers across all lead records. For operations, search by phone before manually creating a second enquiry, and agree how repeat enquiries should be treated.",
+    "refs": "backend/uploads/tasks.py:parse_upload_batch; backend/uploads/views.py:commit; frontend/src/features/leads/lead-desk.tsx",
+    "takeaway": "Duplicate review prevents repeat import work; it does not merge customer records automatically."
+  },
+  {
+    "section": "INTAKE & ALLOCATION",
+    "title": "Admin Lists: the operating vocabulary",
+    "subtitle": "Maintain shared choices before the team starts entering leads.",
+    "kind": "cards",
+    "body": [
+      [
+        "BRANCHES & SOURCES",
+        "Branches support branch selection and reporting.\nSources define accepted lead origins.\nWalk-in remains a permanent source."
+      ],
+      [
+        "MODELS & COLORS",
+        "Use consistent model names.\nMaintain available color variants.\nForms use these choices during capture and qualification."
+      ],
+      [
+        "ACTIVITIES & CHANGE",
+        "Activities also appear in Lists.\nDo not assume they configure call-outcome rules.\nRefresh workspaces after changing lists."
+      ]
+    ],
+    "notes": "Demonstrate adding or reviewing an existing branch, source, model and color. Matching branch names matter because PS selection and Sales Manager visibility depend on location values. Sources reject values outside the configured list for new records. The source list preserves Walk-in. Models and colors constrain relevant forms when configured. Several reason lists, finance choices and buying timelines remain fixed in the current screens; Admin Lists is not a complete business-rule builder. Removing a list value does not rewrite historical customer records.",
+    "refs": "frontend/src/features/admin/lists-page.tsx; backend/leads/serializers.py",
+    "takeaway": ""
+  },
+  {
+    "section": "INTAKE & ALLOCATION",
+    "title": "Distribution hierarchy and branch responsibility",
+    "subtitle": "Allocation is global for Admin; branch ownership matters at the sales handoff.",
+    "kind": "hierarchy",
+    "body": [
+      [
+        "ADMIN",
+        "Company lead pool and allocation"
+      ],
+      [
+        "CRE TEAM",
+        "Work allocated enquiries; qualify customer"
+      ],
+      [
+        "BRANCH A / PS",
+        "Selected PS location matches preferred branch"
+      ],
+      [
+        "BRANCH B / PS",
+        "Selected PS location matches preferred branch"
+      ],
+      [
+        "SM / BRANCH A",
+        "Read Branch A leads and performance"
+      ],
+      [
+        "SM / BRANCH B",
+        "Read Branch B leads and performance"
+      ]
+    ],
+    "notes": "This is an operational responsibility diagram, not a stored employee-manager tree. There is no separate multi-level regional-manager hierarchy in the current roles. Admin can distribute fresh enquiries across selected CRE users. During the normal CRE qualification form, selecting preferred branch populates both customer location and lead branch, and filters the PS list. The Sales Manager sees the lead through the branch field. Different CRE users may contribute to one branch’s results. Branch corrections therefore change the manager’s reporting scope and should be deliberate.",
+    "refs": "backend/leads/views.py:bulk_distribute,so_update; backend/analytics/views.py:manager_base_queryset",
+    "takeaway": ""
+  },
+  {
+    "section": "INTAKE & ALLOCATION",
+    "title": "Choose the allocation method deliberately",
+    "subtitle": "The three methods serve different operating situations.",
+    "kind": "table",
+    "body": [
+      [
+        "Method",
+        "Best use",
+        "Current behavior"
+      ],
+      [
+        "Individual assignment",
+        "A specific enquiry needs a named CRE",
+        "Drag CRE card or choose an eligible CRE"
+      ],
+      [
+        "Filtered bucket",
+        "A selected campaign/source group goes to chosen CREs",
+        "Distributes matching eligible records in turns"
+      ],
+      [
+        "Auto assign",
+        "Clear the whole eligible unowned pool",
+        "Cycles across active CREs, lower total load first"
+      ],
+      [
+        "Needs reassignment",
+        "Recover work after employee changes",
+        "Selected replacements; balances active work"
+      ],
+      [
+        "CRE → PS handoff",
+        "Qualified customer has chosen branch",
+        "CRE selects a matching active PS/SO"
+      ]
+    ],
+    "notes": "Use filtered bucket distribution in the live demo if you need scope control. The current Auto assign button calls the operation without lead IDs or the active screen filters. It therefore processes the eligible unowned pool, not just the count shown on a page or a filtered view. The eligible ordinary allocation pool excludes records already owned by CRE or PS and records waiting for offboarding reassignment. Individual assignment rejects a lead that already has a CRE. The separate offboarding recovery queue should be cleared through its dedicated workflow.",
+    "refs": "frontend/src/features/leads/lead-desk.tsx:autoAssign,assignBucket; backend/leads/views.py",
+    "takeaway": "Demo tip: filtered bucket assignment gives a clear, reviewable scope."
+  },
+  {
+    "section": "INTAKE & ALLOCATION",
+    "title": "Round-robin example: 11 enquiries, 3 CREs",
+    "subtitle": "Illustrative allocation only. These are not company performance figures.",
+    "kind": "bars",
+    "body": [
+      [
+        "CRE A",
+        4
+      ],
+      [
+        "CRE B",
+        4
+      ],
+      [
+        "CRE C",
+        3
+      ]
+    ],
+    "notes": "Use eleven fresh enquiries and three selected CREs as an easy explanation. The system takes eligible leads in creation order and cycles through the selected CREs: A, B, C, A, B, C, and so on. A and B receive four, C receives three. This equalizes the new batch, not necessarily everyone’s existing workload. Auto assign first sorts active CRE users by their total assigned lead count, then cycles through them; it does not repeatedly recalculate the least-loaded employee for every new lead. Offboarding redistribution uses a different active-load calculation.",
+    "refs": "backend/leads/views.py:bulk_distribute,auto_assign",
+    "takeaway": "Round robin shares the new batch evenly; it does not fully rebalance existing queues."
+  },
+  {
+    "section": "LEAD EXECUTION",
+    "title": "A lead record holds the handoff evidence",
+    "subtitle": "Staff should be able to understand the customer without asking the previous owner.",
+    "kind": "cards",
+    "body": [
+      [
+        "CUSTOMER & ORIGIN",
+        "Name, phone, email, city and branch.\nSource, campaign, model and enquiry date.\nHot / Warm / Cold category."
+      ],
+      [
+        "RESPONSIBILITY & PLAN",
+        "CRE owner and PS/SO owner.\nQualification: color, buying plan, finance and notes.\nCurrent status and sales outcome."
+      ],
+      [
+        "WORK HISTORY",
+        "Call outcomes, remarks, person and timestamp.\nOpen and resolved follow-ups.\nAssignment and change history."
+      ]
+    ],
+    "notes": "Open one lead record and point to these three groups. The history preserves who made the update and what the customer said. Do not claim that the application places or records telephone calls: staff make the call through their usual process and then record the outcome here. The call count measures recorded call-log entries; it is not a verified telecom call count. Category is a staff-entered prioritization choice, not automated lead scoring. Lead detail exposes recent audit entries and complete serialized call and follow-up history.",
+    "refs": "backend/leads/models.py; backend/leads/serializers.py:LeadDetailSerializer",
+    "takeaway": ""
+  },
+  {
+    "section": "LEAD EXECUTION",
+    "title": "CRE has three main decisions",
+    "subtitle": "Choose the outcome that describes the conversation, then complete its required fields.",
+    "kind": "cards",
+    "body": [
+      [
+        "QUALIFIED",
+        "Serious buying enquiry.\nModel + color + buying plan + finance.\nPreferred branch + PS/SO + notes."
+      ],
+      [
+        "PENDING",
+        "No final decision or customer not reached.\nPending reason + remarks.\nFuture follow-up date."
+      ],
+      [
+        "LOST",
+        "Enquiry has ended or is not relevant.\nLoss reason + remarks.\nNo new follow-up on the loss update."
+      ]
+    ],
+    "notes": "A qualified customer does not mean a booked vehicle or completed sale. It means the CRE has collected enough information for PS to continue the sales conversation. Pending covers contact retries and customer timing. Lost should have a specific explanation, such as low budget, wrong number or lost to competition, rather than a generic closing note. The current form requires the applicable reason and remarks. Avoid promising that status transitions are entirely locked after handoff: CRE retains ownership and permitted update access, which requires an agreed team operating rule.",
+    "refs": "frontend/src/features/leads/sales-workspace.tsx:save; backend/leads/serializers.py",
+    "takeaway": ""
+  },
+  {
+    "section": "LEAD EXECUTION",
+    "title": "Qualification and the PS/SO handoff",
+    "subtitle": "The main CRE qualification form makes the branch and next owner explicit.",
+    "kind": "flow",
+    "body": [
+      [
+        "CUSTOMER NEED",
+        "Model / color\nBuying plan / finance"
+      ],
+      [
+        "PREFERRED BRANCH",
+        "Choose branch\nLoad matching active PSs"
+      ],
+      [
+        "NAMED PS/SO",
+        "Select next owner\nAdd qualification notes"
+      ],
+      [
+        "SAVE QUALIFIED",
+        "History retained\nPS receives lead"
+      ]
+    ],
+    "notes": "For the live demo, complete model, variant, buying plan, finance and remarks, then select a configured preferred branch and a PS from that branch. Saving updates the lead to Qualified and stores the PS assignment. The server checks that the PS is active and the selected location matches the PS location. A record with an already-qualified status cannot simply be qualified again through the CRE form. The lead remains visible to the assigned CRE after handoff. Assignment notifications are stored, but use the refreshed PS queue as the reliable visible proof during the meeting.",
+    "refs": "frontend/src/features/leads/sales-workspace.tsx:save; backend/leads/views.py:so_update",
+    "takeaway": "No active PS for the branch: stop the handoff and ask Admin to correct availability or branch setup."
+  },
+  {
+    "section": "LEAD EXECUTION",
+    "title": "PS follow-up: record the reason for the next action",
+    "subtitle": "The PS screen offers conversation-specific outcomes.",
+    "kind": "table",
+    "body": [
+      [
+        "Conversation",
+        "Examples in the PS menu",
+        "Result"
+      ],
+      [
+        "Customer needs further work",
+        "Need Test Drive, Showroom Visit, Need time",
+        "Pending + follow-up"
+      ],
+      [
+        "A decision barrier remains",
+        "Exchange Issue, Discount Issue, Need More Details",
+        "Pending + follow-up"
+      ],
+      [
+        "Customer requests another call",
+        "Call Me Back, with Connected selected",
+        "Callback + follow-up"
+      ],
+      [
+        "Booking confirmed",
+        "Booking Done",
+        "Booked + follow-up"
+      ],
+      [
+        "Sale completed",
+        "Retail Done",
+        "Retailed / Won"
+      ],
+      [
+        "Customer does not proceed",
+        "Finance Rejected, Lost to Competition, Dropped",
+        "Lost"
+      ]
+    ],
+    "notes": "The outcome describes the customer’s situation and the status tells the team where the work stands. A test-drive request is a next action, not proof that a test drive happened. Booking Done stores the booked sales outcome and a status that some shared screens label Walk-in. Retail Done stores Retailed and Won. The current system does not create a vehicle invoice or reserve inventory from these choices. Staff should record booking or retail only after the company’s underlying sales process supports that statement.",
+    "refs": "frontend/src/features/leads/sales-workspace.tsx:soConnectedOutcomes,save; backend/leads/serializers.py",
+    "takeaway": ""
+  },
+  {
+    "section": "LEAD EXECUTION",
+    "title": "When the customer does not answer",
+    "subtitle": "A failed contact attempt is normally a retry decision; loss remains a staff choice.",
+    "kind": "table",
+    "body": [
+      [
+        "PS outcome",
+        "Stored work status",
+        "Follow-up behavior"
+      ],
+      [
+        "RNR",
+        "RNR",
+        "Next-day default if no date is selected"
+      ],
+      [
+        "Switch Off",
+        "Switched off",
+        "Next-day default if no date is selected"
+      ],
+      [
+        "Call Forwarding / Line Busy",
+        "Pending",
+        "Next-day default if no date is selected"
+      ],
+      [
+        "Invalid Number",
+        "Pending",
+        "Choose a follow-up date"
+      ],
+      [
+        "No Response",
+        "Lost",
+        "Manual selection; no automatic attempt threshold"
+      ],
+      [
+        "Call Me Back",
+        "Callback",
+        "Requires Connected; choose a date"
+      ]
+    ],
+    "notes": "Explain that the F1 to F5 display is a visual call-progress indicator. It does not automatically declare the lead Lost after five calls, and it does not enforce a fixed maximum number of contact attempts. Operations should agree how many attempts are appropriate and who approves closing an unreachable customer. PS No Response is available as a deliberate Lost choice under Not Connected. CRE uses its own pending reasons, and RNR or switched-off CRE updates can appear under the broader Pending status.",
+    "refs": "frontend/src/features/leads/sales-workspace.tsx:autoNextDayFollowUpOutcomes,progressState; backend/leads/tests.py:test_ps_can_manually_mark_not_connected_as_no_response_lost",
+    "takeaway": ""
+  },
+  {
+    "section": "LEAD EXECUTION",
+    "title": "Follow-ups: one current plan, retained history",
+    "subtitle": "An outcome update closes existing open follow-ups and creates the next one when supplied.",
+    "kind": "flow",
+    "body": [
+      [
+        "SCHEDULE",
+        "Record next date\nAdd context"
+      ],
+      [
+        "WORK QUEUE",
+        "Due today / overdue\nReview assigned work"
+      ],
+      [
+        "CONTACT",
+        "Read latest history\nRecord new outcome"
+      ],
+      [
+        "REPLACE PLAN",
+        "Resolve prior open items\nCreate next follow-up"
+      ]
+    ],
+    "notes": "The normal CRE and PS screens use a date picker and save the selected day at 23:59 IST. They allow future follow-ups within the next three days, while the server enforces a rolling seventy-two-hour limit. This creates a potential edge on the last selectable calendar day; use today or tomorrow for rehearsal. Do not promise exact customer callback-time scheduling through these date-only screens. Admin has time-oriented review controls. Each outcome update resolves all open follow-ups on the lead, so a CRE update can affect a PS follow-up and vice versa. Agree one next-action owner after handoff.",
+    "refs": "frontend/src/features/leads/sales-workspace.tsx:followUpIso; backend/leads/serializers.py:SOLeadUpdateSerializer; backend/leads/views.py:so_update",
+    "takeaway": "Operational decision: agree the retry cadence and who owns the next customer contact after handoff."
+  },
+  {
+    "section": "LEAD EXECUTION",
+    "title": "Booking, retail and status labels",
+    "subtitle": "The same sales event can appear under different labels across workspaces.",
+    "kind": "table",
+    "body": [
+      [
+        "Business event",
+        "PS screen choice",
+        "Stored lead status",
+        "Sales outcome"
+      ],
+      [
+        "Qualified for sales",
+        "CRE selects Qualified",
+        "Qualified",
+        "Pending"
+      ],
+      [
+        "Customer needs more work",
+        "Need time / Showroom Visit",
+        "Pending",
+        "Pending"
+      ],
+      [
+        "Customer has booked",
+        "Booking Done",
+        "Walk-in / Booked",
+        "Booked"
+      ],
+      [
+        "Sale completed",
+        "Retail Done",
+        "Won / Retailed",
+        "Retailed"
+      ],
+      [
+        "Customer lost",
+        "A specific loss outcome",
+        "Lost",
+        "Lost"
+      ]
+    ],
+    "notes": "Clarify the two fields before presenting metrics. Lead status and sales outcome are separate values. Shared lead tables may use Walk-in where the PS view uses Booked, and Won where the PS view uses Retailed. A walk-in as a source is also different from a booking status. Current outcome updates can move an active booked lead back into follow-up and reset the sales outcome to Pending. These are current-state records, so do not describe the dashboard as an immutable historical sales ledger. Review the final customer status after the demo save.",
+    "refs": "backend/leads/models.py; frontend/src/lib/crm.ts:statusNames; frontend/src/features/leads/sales-workspace.tsx:save",
+    "takeaway": ""
+  },
+  {
+    "section": "SCENARIO DEMOS",
+    "title": "Five required scenarios, one consistent demo pattern",
+    "subtitle": "Use a separate customer record for each scenario so the audience can follow the result.",
+    "kind": "table",
+    "body": [
+      [
+        "Scenario",
+        "Start",
+        "Action to demonstrate",
+        "Visible proof"
+      ],
+      [
+        "1 · CRE → Qualified",
+        "Fresh CRE enquiry",
+        "Complete qualification + PS selection",
+        "Qualified + PS receives record"
+      ],
+      [
+        "2 · CRE → Lost",
+        "Fresh CRE enquiry",
+        "Loss reason + remarks",
+        "Lost + recorded explanation"
+      ],
+      [
+        "3 · Qualified → PS follow-up",
+        "Qualified PS enquiry",
+        "Need Test Drive / Need time",
+        "Pending + open follow-up"
+      ],
+      [
+        "4 · Qualified → PS Lost",
+        "Qualified PS enquiry",
+        "Select sales loss reason",
+        "Lost + original CRE history"
+      ],
+      [
+        "5 · CRE → Complaint",
+        "Customer issue",
+        "Log ticket; resolver works it",
+        "Ticket + resolution remarks"
+      ]
+    ],
+    "notes": "This slide matches the list in the screenshot. Use fictional demo customer names and keep a small written list of their record IDs. Demonstrate the same structure each time: starting owner and status, customer statement, staff action, record after saving, and next owner. The slide notes for the next five scenarios provide the talk track and exact validation points. No customer records were created as part of building this presentation; prepare them in your designated demo environment before the session.",
+    "refs": "",
+    "takeaway": "For every scenario: starting state → staff action → saved evidence → next owner."
+  },
+  {
+    "section": "SCENARIO DEMOS",
+    "title": "Scenario 1: CRE qualifies the enquiry",
+    "subtitle": "Demo customer: DEMO Asha | Wants a model/color available in Admin Lists.",
+    "kind": "flow",
+    "body": [
+      [
+        "ADMIN",
+        "Create / import fresh lead\nAssign to demo CRE"
+      ],
+      [
+        "CRE",
+        "Open My queue\nSelect Qualified"
+      ],
+      [
+        "QUALIFICATION",
+        "Complete required fields\nSelect branch + PS"
+      ],
+      [
+        "RESULT",
+        "Qualified lead saved\nPS sees CRE context"
+      ]
+    ],
+    "notes": "Talk track: Asha has confirmed that she is interested in buying. Our CRE captures the specific model, color, buying plan, finance option and useful remarks. Show that the PS list depends on preferred branch. Save with Qualify Lead. Verify the lead appears as Qualified for CRE and appears in the assigned PS Fresh leads queue after switching to that role and refreshing. Open the same lead ID and point out the CRE qualification details. Expected ownership: CRE remains attached; PS is now the next operational contact. If no PS appears, check active status and branch spelling with Admin.",
+    "refs": "frontend/src/features/leads/sales-workspace.tsx; backend/leads/tests.py:test_cre_must_choose_matching_ps_for_qualified_lead",
+    "takeaway": "Success check: one lead ID, CRE context preserved, matching PS/SO assigned."
+  },
+  {
+    "section": "SCENARIO DEMOS",
+    "title": "Scenario 2: CRE marks the enquiry Lost",
+    "subtitle": "Demo customer: DEMO Binu | Confirms the purchase plan has been dropped.",
+    "kind": "flow",
+    "body": [
+      [
+        "START",
+        "Fresh assigned enquiry\nCRE contacts customer"
+      ],
+      [
+        "DECISION",
+        "Select Lost\nChoose Plan Dropped"
+      ],
+      [
+        "EVIDENCE",
+        "Add customer explanation\nSave Mark as Lost"
+      ],
+      [
+        "RESULT",
+        "Lost / Won-lost view\nHistory remains available"
+      ]
+    ],
+    "notes": "Talk track: Binu confirms that there is no longer an active purchase plan. The CRE should close the enquiry with a reason that management can understand later. Select Lost, choose Plan Dropped and add a remark such as: Customer cancelled the purchase after discussing the household budget; no next purchase date agreed. Save and show the Lost record and call history. Do not add a follow-up date to this loss update. The existing open follow-up is resolved when the outcome is logged. Reopening is an Admin capability in the server, but the current frontend has no dedicated Reopen action; do not promise an on-screen reopening demo.",
+    "refs": "frontend/src/features/leads/sales-workspace.tsx:lostReasons,save; backend/leads/views.py:reopen",
+    "takeaway": ""
+  },
+  {
+    "section": "SCENARIO DEMOS",
+    "title": "Scenario 3: qualified lead stays under PS follow-up",
+    "subtitle": "Demo customer: DEMO Charu | Requests a test drive before deciding.",
+    "kind": "flow",
+    "body": [
+      [
+        "CRE HANDOFF",
+        "Qualified + PS assigned\nRead buying context"
+      ],
+      [
+        "PS CONTACT",
+        "Select Connected\nNeed Test Drive"
+      ],
+      [
+        "NEXT ACTION",
+        "Choose today / tomorrow\nAdd precise remarks"
+      ],
+      [
+        "RESULT",
+        "Pending + open follow-up\nPS owns next action"
+      ]
+    ],
+    "notes": "Talk track: Charu is qualified, but needs a test drive before committing. As PS, open the lead and show the CRE notes. Select Connected, then Need Test Drive. Choose tomorrow and write a remark explaining the model and the proposed visit. Save, reopen the record and show the new history entry and open follow-up. Tomorrow’s item is not necessarily in Today’s follow-ups yet; show All leads or the record’s follow-up history. If the demo needs the due-today queue, select today before 23:59 IST. The manager’s test-drive signal reflects a request or qualification indicator, not a verified completed test drive.",
+    "refs": "frontend/src/features/leads/sales-workspace.tsx; backend/leads/tests.py:test_assigned_ps_can_schedule_next_day_follow_up",
+    "takeaway": "“Under follow-up” is the operating situation; Pending / Callback is the displayed status."
+  },
+  {
+    "section": "SCENARIO DEMOS",
+    "title": "Scenario 4: qualified lead becomes Lost at PS stage",
+    "subtitle": "Demo customer: DEMO Deepak | Chooses a competing product after discussion.",
+    "kind": "flow",
+    "body": [
+      [
+        "START",
+        "Qualified customer\nPS has received handoff"
+      ],
+      [
+        "PS DECISION",
+        "Connected\nLost to Competition"
+      ],
+      [
+        "REMARKS",
+        "Record customer reason\nSave sales outcome"
+      ],
+      [
+        "RESULT",
+        "Lost for PS and branch\nCRE qualification retained"
+      ]
+    ],
+    "notes": "Talk track: Qualification is an early buying signal, not a guarantee of conversion. Deepak has now chosen a competitor. Select Connected and Lost to Competition, add the specific reason and save. Show Lost in PS All leads, the earlier CRE qualification and the new PS call history. In the manager’s branch view, search the same lead and inspect the trail. Loss reasons also include Finance Rejected, Dropped and Lost to co-dealer. Do not treat the current Lost reasons chart as a deduplicated final-cause count; its implementation groups call outcomes associated with currently lost leads.",
+    "refs": "frontend/src/features/leads/sales-workspace.tsx:soConnectedOutcomes; backend/analytics/views.py:manager_payload",
+    "takeaway": ""
+  },
+  {
+    "section": "SCENARIO DEMOS",
+    "title": "Scenario 5: CRE logs a customer complaint",
+    "subtitle": "Demo customer: DEMO Farah | Reports a delivery issue requiring follow-up.",
+    "kind": "flow",
+    "body": [
+      [
+        "CRE",
+        "Open Complaints\nCreate ticket"
+      ],
+      [
+        "INTAKE",
+        "Customer + branch\nCategory + priority + details"
+      ],
+      [
+        "RESOLUTION TEAM",
+        "Find shared ticket\nUpdate status and remarks"
+      ],
+      [
+        "CLOSURE",
+        "Resolve / close with notes\nCRE and Admin can track"
+      ]
+    ],
+    "notes": "Talk track: Farah needs help with an existing issue. CRE opens Complaints and enters customer name, valid phone, configured branch, category, priority, source, subject and description. Save and note the CMP ticket number. Switch to a complaints-department account, open that ticket, update to In Progress with a note, then resolve with a clear description of the action taken. Return to CRE to show the ticket status, then use Admin for reporting if time permits. The normal complaint form does not automatically link to an existing sales lead or change its status. Use the ticket number as the handoff reference.",
+    "refs": "backend/complaints/serializers.py; backend/complaints/views.py; frontend/src/features/complaints/complaint-desk.tsx",
+    "takeaway": ""
+  },
+  {
+    "section": "SCENARIO DEMOS",
+    "title": "Optional success path: follow-up to booking to retail",
+    "subtitle": "Close the sales story after showing the exception paths.",
+    "kind": "flow",
+    "body": [
+      [
+        "QUALIFIED",
+        "PS accepts enquiry\nReads CRE context"
+      ],
+      [
+        "FOLLOW-UP",
+        "Customer questions\nNext date + remarks"
+      ],
+      [
+        "BOOKED",
+        "Booking Done\nBook next follow-up"
+      ],
+      [
+        "RETAILED",
+        "Retail Done\nRecord completion remarks"
+      ]
+    ],
+    "notes": "Use a sixth fictional customer or a rehearsed existing demo record. PS chooses Booking Done and a future follow-up, then the record appears under Booked. Open it again, choose Connected and Retail Done, and save final remarks. Show Retailed in the PS view and Won in shared status labels where applicable. The new retail update resolves the open booking follow-up. The application tracks the sales outcome entered by staff; it does not validate payment, finance disbursal, stock allocation, invoicing or delivery documentation. Those actions remain with the company’s existing systems and process.",
+    "refs": "backend/leads/tests.py:test_full_admin_to_cre_to_ps_lead_journey_with_five_followups",
+    "takeaway": ""
+  },
+  {
+    "section": "SCENARIO DEMOS",
+    "title": "Optional walk-in path: reception to PS/SO",
+    "subtitle": "A showroom visitor can enter the sales queue as Qualified.",
+    "kind": "flow",
+    "body": [
+      [
+        "RECEPTION",
+        "Capture customer\nPhone + model + color"
+      ],
+      [
+        "SELECT PS",
+        "Choose active sales user\nCapture buying plan"
+      ],
+      [
+        "DIRECT SALES",
+        "Walk-in source\nQualified status"
+      ],
+      [
+        "COMPLETE RECORD",
+        "Confirm branch + enquiry date\nPS continues sales work"
+      ]
+    ],
+    "notes": "Show the receptionist Capture Lead page and explain that this is a different intake path. The current form captures basic customer details, profession, model, variant, buying plan and PS selection. It does not capture branch or enquiry date in its submitted payload. Consequently, the lead can reach the PS queue but be absent from branch-scoped or enquiry-date-filtered reporting until an authorized user fills those fields. The receptionist dashboard counts their own captures made today. Keep the branch/date completion step explicit; do not claim automatic branch inference from the selected PS.",
+    "refs": "frontend/src/app/(receptionist)/capture/page.tsx; backend/analytics/views.py:ReceptionistAnalyticsView",
+    "takeaway": "Current operating step: complete branch and enquiry date so manager reporting includes the walk-in."
+  },
+  {
+    "section": "COMPLAINT OPERATIONS",
+    "title": "Complaint lifecycle and responsibility",
+    "subtitle": "Recommended operating sequence using the available status choices.",
+    "kind": "flow",
+    "body": [
+      [
+        "OPEN",
+        "CRE logs issue\nShared queue intake"
+      ],
+      [
+        "IN PROGRESS",
+        "Resolver investigates\nAdd dated notes"
+      ],
+      [
+        "ESCALATED",
+        "Needs further intervention\nRecord reason and next action"
+      ],
+      [
+        "RESOLVED / CLOSED",
+        "Document resolution\nComplete ticket handling"
+      ]
+    ],
+    "notes": "Open, In Progress, Escalated, Resolved and Closed are available statuses. Recommend moving a ticket to In Progress when the complaints team starts work, escalating when they need management or another department, resolving when corrective action is complete, and closing after the agreed customer confirmation step. The software does not enforce this full sequence or customer confirmation. Escalated is a status, not evidence of an automatic email or routing event. Closure and resolution require non-empty resolution remarks. Agree who will monitor escalated tickets and how they will contact the relevant department.",
+    "refs": "backend/complaints/models.py; backend/complaints/serializers.py:ComplaintUpdateSerializer",
+    "takeaway": "Customer confirmation and priority response targets are proposed operating rules, not enforced workflow steps."
+  },
+  {
+    "section": "COMPLAINT OPERATIONS",
+    "title": "Complaint assignment uses a shared queue",
+    "subtitle": "Updating a ticket records the complaints user as its current assignee.",
+    "kind": "cards",
+    "body": [
+      [
+        "QUEUE ENTRY",
+        "CRE logs an Open ticket.\nComplaints users can see the shared queue.\nFilter by status, priority, category or source."
+      ],
+      [
+        "WORK OWNERSHIP",
+        "Saving status, priority or resolution assigns the updater.\nAnother resolver update can change the assignee.\nAdding a note alone does not claim ownership."
+      ],
+      [
+        "CONTROL PRACTICE",
+        "Agree who picks up each ticket.\nUse notes for cross-person handoff.\nCheck high-priority and escalated work daily."
+      ]
+    ],
+    "notes": "This is not the same allocation mechanism as lead distribution. There is no normal manual assignment-to-colleague control exposed in the complaint update serializer. The updater becomes the assigned user, so two resolution staff members need a clear working arrangement. CRE sees only tickets they logged; Admin and the complaints department see the shared queue. The current complaint update does not use the same stale-edit protection as the dedicated lead update flow. The notes provide a readable history of the discussion, but there is no complete old/new audit event for every complaint status or priority change.",
+    "refs": "backend/complaints/views.py:update,add_note; backend/complaints/permissions.py",
+    "takeaway": ""
+  },
+  {
+    "section": "COMPLAINT OPERATIONS",
+    "title": "Complaint priorities and management review",
+    "subtitle": "Agree service targets with the operations manager; the app stores priorities and status.",
+    "kind": "table",
+    "body": [
+      [
+        "Priority",
+        "Suggested operating interpretation",
+        "What to review"
+      ],
+      [
+        "Critical",
+        "Urgent issue needing immediate coordination",
+        "Named resolver and latest action"
+      ],
+      [
+        "High",
+        "Significant customer impact",
+        "Progress, escalation and next commitment"
+      ],
+      [
+        "Medium",
+        "Normal resolution queue",
+        "Age, category and pending action"
+      ],
+      [
+        "Low",
+        "Lower-urgency issue",
+        "Completion without losing queue visibility"
+      ],
+      [
+        "Resolved / Closed",
+        "Action recorded with remarks",
+        "Resolution quality and customer confirmation"
+      ]
+    ],
+    "notes": "These descriptions are proposed operating guidance, not company policy or enforced service-level clocks. Ask the manager to define response targets, escalation contacts and closure evidence for each priority. The product reports complaint status totals, priority and category breakdowns, average resolution hours and trends; Admin additionally sees resolution-team performance. Average resolution uses the recorded resolved timestamp. If a ticket is reopened or its status changes again, the existing timestamp is not cleared automatically, so do not treat that number as an audited SLA compliance score.",
+    "refs": "backend/complaints/views.py:ComplaintAnalyticsView,_resolution_team_performance",
+    "takeaway": "To agree: response targets, escalation contacts and the evidence required before closure."
+  },
+  {
+    "section": "MANAGEMENT REVIEW",
+    "title": "A practical daily review rhythm",
+    "subtitle": "Suggested routine for the team; timings are not automated product rules.",
+    "kind": "table",
+    "body": [
+      [
+        "Moment",
+        "Role",
+        "Review / action"
+      ],
+      [
+        "Start of day",
+        "Admin",
+        "Clear unassigned pool; check active users and reassignment"
+      ],
+      [
+        "Start of day",
+        "CRE / PS",
+        "Review due and missed follow-ups; prioritize own queue"
+      ],
+      [
+        "Midday",
+        "Sales Manager",
+        "Check untouched leads, follow-up gaps and branch progress"
+      ],
+      [
+        "Throughout day",
+        "CRE / PS / Complaints",
+        "Log outcomes and next commitments after customer contact"
+      ],
+      [
+        "End of day",
+        "Admin + SM",
+        "Review exceptions and agree named owners"
+      ],
+      [
+        "Weekly",
+        "Manager + operations",
+        "Review source quality, loss patterns and complaint outcomes"
+      ]
+    ],
+    "notes": "Position this as a suggested operating routine that the manager can adapt to existing shift timings. The product provides queues, dates, histories and reporting; people still need to review them. A short midday check can focus on leads that remain Fresh, booked customers needing further action and overdue follow-ups. End-of-day review should distinguish work that has a next date from work that lacks an active owner. Admin handles allocation corrections; SM directs branch execution. Complaints need their own queue owner because SM does not have complaint access in this build.",
+    "refs": "",
+    "takeaway": "A saved outcome and a named next owner make the next review actionable."
+  },
+  {
+    "section": "MANAGEMENT REVIEW",
+    "title": "Use analytics to answer operating questions",
+    "subtitle": "Move from a count to the customer records behind it.",
+    "kind": "cards",
+    "body": [
+      [
+        "DEMAND & CONVERSION",
+        "Which sources bring enquiries and retail outcomes?\nWhich models attract interest?\nHow does this period compare?"
+      ],
+      [
+        "TEAM EXECUTION",
+        "Which CREs have untouched enquiries?\nWhich PSs have bookings and follow-ups?\nWho needs support?"
+      ],
+      [
+        "CUSTOMER RISK",
+        "Which follow-ups are overdue?\nWhich Fresh leads are at least three days old?\nWhich loss outcomes need review?"
+      ]
+    ],
+    "notes": "Show manager Analytics first, then a person drilldown into Branch leads. The available analyses include source/model results, CRE/PS performance, current status/category splits, monthly views, follow-up information and stale leads. Stale means currently Fresh with a creation date on or before today minus three days; it is not a configurable service target or a measure of every kind of inactivity. Overdue is based on an unresolved scheduled timestamp. Follow-up and call reporting may use activity dates, while lead-period counts typically use enquiry date. Keep filters visible when discussing numbers.",
+    "refs": "backend/analytics/views.py:manager_payload,role_rows; frontend/src/features/analytics/sales-manager-analytics-page.tsx",
+    "takeaway": ""
+  },
+  {
+    "section": "MANAGEMENT REVIEW",
+    "title": "Read dashboard measures in context",
+    "subtitle": "Current-state reporting is useful, but it is not a historical stage-conversion ledger.",
+    "kind": "table",
+    "body": [
+      [
+        "Measure",
+        "Current interpretation",
+        "Review caution"
+      ],
+      [
+        "Qualified",
+        "Leads currently in Qualified status",
+        "Can decrease when PS moves the lead forward"
+      ],
+      [
+        "Booked / Retailed",
+        "Current sales outcome values",
+        "An outcome update can replace an earlier value"
+      ],
+      [
+        "Lead-to-retail rate",
+        "Retailed ÷ total selected leads",
+        "Check branch, period and enquiry dates"
+      ],
+      [
+        "Contacted",
+        "Lead status is no longer Fresh",
+        "Does not prove a connected telephone call"
+      ],
+      [
+        "Calls / follow-ups",
+        "Recorded logs / scheduled items",
+        "Counts reflect CRM entries, not telecom evidence"
+      ],
+      [
+        "Lost reasons",
+        "Call outcomes on currently lost leads",
+        "Can include several historical outcomes per lead"
+      ]
+    ],
+    "notes": "Use this slide when the manager asks about numbers or performance measurement. The current funnel draws from status and sales-outcome snapshots. A lead that moved from Qualified to Pending or Won no longer contributes to the current Qualified count, so qualified-to-booked and booked-to-retail ratios are not historical stage conversion probabilities and may be counterintuitive. The company should use this for operational visibility while agreeing the reporting definitions needed for target or incentive calculations. Do not present invented conversion improvements or revenue impact.",
+    "refs": "backend/analytics/views.py:summary_for,manager_payload,metrics",
+    "takeaway": "Before using figures for targets or incentives, agree definitions and verify the filtered records."
+  },
+  {
+    "section": "MANAGEMENT REVIEW",
+    "title": "Illustrative branch review: follow-up workload",
+    "subtitle": "Example counts for discussion only; no production customer data used.",
+    "kind": "bars",
+    "body": [
+      [
+        "PS A · due items",
+        8
+      ],
+      [
+        "PS B · due items",
+        5
+      ],
+      [
+        "PS C · due items",
+        2
+      ]
+    ],
+    "notes": "Ask what this difference would mean operationally. Eight follow-ups can reflect more active customers, older overdue work or a need for assistance; it does not automatically mean poor performance. Drill into the records, look at promised dates, booking status and latest remarks, then decide whether the owner needs help or Admin should redistribute eligible work. This example demonstrates how to use a workload chart without inventing real company performance data. The chart is intentionally labeled illustrative and should never be presented as a snapshot from the live system.",
+    "refs": "",
+    "takeaway": "Review dates and customer context before deciding whether a workload difference needs intervention."
+  },
+  {
+    "section": "MANAGEMENT REVIEW",
+    "title": "History and exports support review meetings",
+    "subtitle": "Use the record trail to explain the count.",
+    "kind": "cards",
+    "body": [
+      [
+        "LEAD HISTORY",
+        "Recorded call outcomes and remarks.\nFollow-up dates and resolution status.\nAssignment and change events."
+      ],
+      [
+        "REPORTING",
+        "Personal result exports.\nManager analytics exports.\nAdmin review of sales and complaint results."
+      ],
+      [
+        "INTERPRETATION",
+        "Keep branch and date filters visible.\nRefresh after a demonstration update.\nUse records to resolve metric questions."
+      ]
+    ],
+    "notes": "A good review moves from a dashboard count to a specific customer and back. Show who updated the lead, the selected outcome and the next follow-up. Lead audit detail exposes the latest thirty audit entries; do not call the visible panel an unlimited audit export. CSV exports exist for personal and manager reporting. The Admin analytics screen provides company and team review; do not promise a CSV control on that screen. Report values can briefly lag due to analytics caching, so refresh and allow the configured refresh interval after a demo change. Complaint notes are separate from the lead audit history.",
+    "refs": "backend/leads/serializers.py:LeadDetailSerializer; backend/analytics/views.py; frontend/src/features/analytics/analytics-page.tsx",
+    "takeaway": ""
+  },
+  {
+    "section": "EXCEPTIONS & CONTINUITY",
+    "title": "Exceptions during normal lead work",
+    "subtitle": "Explain the staff response, not just the validation message.",
+    "kind": "table",
+    "body": [
+      [
+        "Exception",
+        "Current response",
+        "What staff should do"
+      ],
+      [
+        "No active CRE for auto assign",
+        "Assignment is rejected",
+        "Admin activates or creates eligible CRE"
+      ],
+      [
+        "No matching PS at qualification",
+        "Handoff cannot complete",
+        "Admin checks branch and active PS setup"
+      ],
+      [
+        "Lead already assigned",
+        "Individual assignment rejects second owner",
+        "Inspect ownership; use appropriate recovery workflow"
+      ],
+      [
+        "Lead changes during save",
+        "Dedicated update can reject conflict",
+        "Refresh and read latest history before retry"
+      ],
+      [
+        "Invalid follow-up date",
+        "Save rejected",
+        "Choose a valid future date within allowed window"
+      ],
+      [
+        "SM cannot see a lead",
+        "Branch/date scope may exclude it",
+        "Check lead branch, enquiry date and filters"
+      ]
+    ],
+    "notes": "The dedicated lead update checks changes that occur during its processing and verifies current ownership and active accounts. However, the screen does not send a version token from the moment the modal was opened, so do not claim complete stale-form protection for all edit situations. A normal save error should lead to refresh and review, not repeated blind clicking. Reassignment work created by offboarding has a distinct queue; ordinary assignment buttons are not a general transfer-any-lead control. For manager visibility issues, check the data and filters before assuming the lead was lost.",
+    "refs": "backend/leads/views.py:so_update,assign,auto_assign; backend/analytics/views.py:manager_base_queryset",
+    "takeaway": ""
+  },
+  {
+    "section": "EXCEPTIONS & CONTINUITY",
+    "title": "Employee exit: preview the impact before committing",
+    "subtitle": "Dedicated lifecycle actions currently support CRE and PS/SO accounts.",
+    "kind": "flow",
+    "body": [
+      [
+        "PREVIEW",
+        "Actionable / closed leads\nFollow-ups and branches"
+      ],
+      [
+        "CHOOSE ROUTES",
+        "By lead status:\nPool or distribute"
+      ],
+      [
+        "CONFIRM",
+        "Disable or permanent delete\nValidate preview is current"
+      ],
+      [
+        "RECOVER WORK",
+        "Assign pooled records\nReview held reminders"
+      ]
+    ],
+    "notes": "In Users, open the lifecycle action for a demo CRE or PS account. The preview shows active work grouped by status, closed records, follow-ups and eligible replacement users. For each actionable status choose a pool or selected replacement users. A changed preview is rejected so Admin must review fresh counts rather than moving work based on an old preview. Closed leads preserve the historical employee association. This dedicated preview-and-route workflow is limited to CRE and PS/SO; do not promise the same lifecycle screen for Sales Manager, Receptionist or complaints staff.",
+    "refs": "backend/accounts/offboarding.py:offboarding_impact,offboard_user; frontend/src/features/team/team-page.tsx",
+    "takeaway": ""
+  },
+  {
+    "section": "EXCEPTIONS & CONTINUITY",
+    "title": "Redistribution protects the next owner’s workload",
+    "subtitle": "PS replacement must match the lead branch; unmatched work stays in the pool.",
+    "kind": "flow",
+    "body": [
+      [
+        "ACTIONABLE LEAD",
+        "Identify role and branch\nPreserve closed history"
+      ],
+      [
+        "REPLACEMENT CHECK",
+        "Active + same role\nPS location matches branch"
+      ],
+      [
+        "DISTRIBUTE",
+        "Choose lowest active load\nUpdate load as work moves"
+      ],
+      [
+        "NO MATCH",
+        "Mark Needs reassignment\nAdmin follows up"
+      ]
+    ],
+    "notes": "Unlike normal round-robin allocation, offboarding distribution selects the lowest active workload from the chosen eligible replacements and updates that load as each lead moves. For PS work it also requires a non-blank lead branch matching the replacement location. No eligible branch match leaves the lead pooled with a reassignment flag. Ordinary fresh allocation excludes these records, which prevents them being treated as completely new enquiries. Admin can later select pooled records and replacements in All leads → Needs reassignment. Follow-up ownership can move, but its reminder remains held until review.",
+    "refs": "backend/accounts/offboarding.py:offboard_user; backend/leads/views.py:bulk_reassign",
+    "takeaway": ""
+  },
+  {
+    "section": "EXCEPTIONS & CONTINUITY",
+    "title": "Held reminders require an Admin review",
+    "subtitle": "Changing the employee does not automatically revive old customer commitments.",
+    "kind": "flow",
+    "body": [
+      [
+        "OWNER CHANGES",
+        "Employee is disabled\nor deleted"
+      ],
+      [
+        "REMINDER HELD",
+        "Preserve follow-up history\nPause reminder delivery"
+      ],
+      [
+        "ADMIN REVIEWS",
+        "Check new active owner\nConfirm or revise schedule"
+      ],
+      [
+        "APPROVE / RESOLVE",
+        "Resume reminder eligibility\nor close obsolete item"
+      ]
+    ],
+    "notes": "Explain why this extra step exists: a replacement should not inherit an old reminder without anyone checking whether the customer commitment still makes sense. After offboarding, open follow-ups are held. Admin can approve them, optionally choose a new future time, or resolve the item if it is no longer relevant. Approval requires an active current follow-up owner. A record that changes owner or is resolved during review can reject the stale action. This review is separate from the work allocation step, so end-of-day controls should check both reassignment and held reminders.",
+    "refs": "backend/leads/views.py:FollowUpViewSet.review; backend/notifications/tasks.py",
+    "takeaway": "Admin closes two tasks after an exit: recover lead ownership and review inherited reminders."
+  },
+  {
+    "section": "EXCEPTIONS & CONTINUITY",
+    "title": "Disable, re-enable and permanent delete",
+    "subtitle": "Historical sales work remains attributable after the account changes.",
+    "kind": "table",
+    "body": [
+      [
+        "Action",
+        "Account behavior",
+        "Work / history behavior"
+      ],
+      [
+        "Disable",
+        "Employee cannot continue using the account",
+        "Route active work; keep closed history"
+      ],
+      [
+        "Re-enable",
+        "Restore a disabled CRE / PS account",
+        "Previously transferred leads do not return automatically"
+      ],
+      [
+        "Permanent delete",
+        "Reason required; credentials removed",
+        "Retain historical name and work attribution"
+      ],
+      [
+        "Deleted account",
+        "Cannot be re-enabled",
+        "Create a new account if employment resumes"
+      ],
+      [
+        "Role change",
+        "Edit-to-different-role rejected",
+        "Create a new account for a different role"
+      ]
+    ],
+    "notes": "Use Disable as the reversible option in a live demo, and use only a disposable employee with prepared work. Permanent Delete removes login capability and scrubs email and phone while retaining history and the display name marked Deleted; it is not a deletion of all historical employee data. A deleted email can be reused for a new account. Re-enabling a disabled user does not pull leads back from replacement staff. The preview route and lifecycle event summary provide the record of who performed the action and the counts moved.",
+    "refs": "backend/accounts/offboarding.py; backend/accounts/serializers.py:TeamMemberSerializer",
+    "takeaway": ""
+  },
+  {
+    "section": "EXCEPTIONS & CONTINUITY",
+    "title": "Current boundaries to agree before rollout",
+    "subtitle": "These decisions affect everyday use and the promises made during the demo.",
+    "kind": "cards",
+    "body": [
+      [
+        "CONTACT & REMINDERS",
+        "CRE / PS scheduling is date-based.\nVerify reminders in the deployed environment.\nAgree retry count and callback ownership."
+      ],
+      [
+        "CONTROL & DATA",
+        "SM reviews; Admin changes allocation.\nComplete walk-in branch and enquiry date.\nSearch before creating repeat manual enquiries."
+      ],
+      [
+        "REPORTING & COMPLAINTS",
+        "Agree current-state metric definitions.\nDefine complaint SLA and escalation contacts.\nAgree customer-confirmed closure practice."
+      ]
+    ],
+    "notes": "Keep the discussion operational. Automatic lead feeds, WhatsApp or SMS messaging, integrated calling, payment processing and stock management are not verified capabilities in this build. Assignment and due-reminder records exist in the backend; the current main shell does not display a notification bell, and the deployment configuration does not demonstrate a scheduled worker service. Use queue refreshes for the live presentation and validate reminder delivery separately. The full presenter briefing includes implementation-specific watchpoints so the manager-facing discussion can stay focused.",
+    "refs": "frontend/src/components/app-shell.tsx; backend/notifications/tasks.py; render.yaml",
+    "takeaway": ""
+  },
+  {
+    "section": "MEETING CLOSE",
+    "title": "Decisions to capture from the operations manager",
+    "subtitle": "Finish with named owners and clear rules for the pilot.",
+    "kind": "table",
+    "body": [
+      [
+        "Decision",
+        "Proposed starting point",
+        "Owner to confirm"
+      ],
+      [
+        "Allocation cadence",
+        "Admin checks intake and reassignment at agreed times",
+        "Operations + Admin"
+      ],
+      [
+        "Handoff ownership",
+        "PS owns next customer call after qualification",
+        "CRE / sales leadership"
+      ],
+      [
+        "Retry and loss policy",
+        "Reasoned retries; manual loss with remarks",
+        "Sales Manager"
+      ],
+      [
+        "Branch data discipline",
+        "Correct branch, source and enquiry date before review",
+        "Admin + capture team"
+      ],
+      [
+        "Complaint handling",
+        "Priority targets, escalation contacts and closure evidence",
+        "Complaints lead"
+      ],
+      [
+        "Reporting acceptance",
+        "Agree definitions before using incentives / targets",
+        "Operations manager"
+      ]
+    ],
+    "notes": "Closing talk track: We have followed the lead from Admin through CRE and PS, shown how the manager reviews the branch, and traced a complaint and a staff handover. The next step is to agree the rules in this table and use them in the pilot. Ask the manager which steps differ from the company’s current practice. Capture a named owner for each change or policy. Avoid promising a go-live date or scope that has not been agreed. The detailed appendix and presenter guide are available for follow-up questions.",
+    "refs": "",
+    "takeaway": "Record the agreed operating rules, accountable people and any product changes needed for the pilot."
+  },
+  {
+    "section": "REFERENCE APPENDIX",
+    "title": "Suggested pilot acceptance checks",
+    "subtitle": "Use these as a review checklist, not a statement that live acceptance testing is complete.",
+    "kind": "table",
+    "body": [
+      [
+        "Check",
+        "Expected evidence"
+      ],
+      [
+        "Admin → CRE → PS",
+        "Same lead ID; both owners and qualification history"
+      ],
+      [
+        "Role scope",
+        "CRE / PS own queues; SM only configured branch"
+      ],
+      [
+        "Follow-up",
+        "New scheduled item; prior open item resolved"
+      ],
+      [
+        "Loss",
+        "Specific reason and remarks retained"
+      ],
+      [
+        "Complaint",
+        "CRE logger, resolver update, required closure remarks"
+      ],
+      [
+        "Offboarding",
+        "Active work routed; unmatched work pooled; reminders held"
+      ],
+      [
+        "Reporting",
+        "Expected branch and date cohort; metric definitions agreed"
+      ]
+    ],
+    "notes": "Complete this checklist in the environment used for the meeting or pilot. Existing automated workflow tests provide useful evidence for the repository behavior, but they do not confirm deployed configuration, account setup, imported data quality or all browser interactions. Read the companion verification report for what was actually run when building this presentation. In the live rehearsal, use separate browser profiles for different roles because account cookies are shared across tabs in the same browser profile.",
+    "refs": "backend/leads/tests.py; backend/analytics/tests.py; backend/complaints/tests.py; backend/accounts/tests.py",
+    "takeaway": ""
+  },
+  {
+    "section": "REFERENCE APPENDIX",
+    "title": "Role-to-screen navigation reference",
+    "subtitle": "Use this slide when switching accounts during the live demo.",
+    "kind": "table",
+    "body": [
+      [
+        "Role",
+        "Start here",
+        "Then show"
+      ],
+      [
+        "Admin",
+        "Assignment (/leads)",
+        "All leads, Users, Lists, Analytics"
+      ],
+      [
+        "CRE",
+        "My queue (/my-leads)",
+        "Open lead → outcome; Follow-ups; Complaints"
+      ],
+      [
+        "PS/SO",
+        "Fresh leads (/my-leads)",
+        "Today’s follow-ups; All leads; My results"
+      ],
+      [
+        "Sales Manager",
+        "Analytics (/manager/analytics)",
+        "Branch leads (/manager/leads)"
+      ],
+      [
+        "Complaints department",
+        "Complaints (/complaints)",
+        "Ticket detail → update / add remarks"
+      ],
+      [
+        "Receptionist",
+        "Capture Lead (/capture)",
+        "Dashboard (/receptionist-dashboard)"
+      ]
+    ],
+    "notes": "Keep this slide open in the presenter guide if you are moving between roles. Separate Chrome/Edge profiles, or separate normal/private sessions with verified identities, avoid confusing cookie replacement. Two tabs in the same profile do not provide two independent role sessions. The app can show a session-conflict screen after another tab signs in as a different user. Rehearse every login and confirm the visible role before recording an outcome. Credentials are intentionally excluded from the presentation and companion documents.",
+    "refs": "frontend/src/components/app-shell.tsx",
+    "takeaway": ""
+  },
+  {
+    "section": "REFERENCE APPENDIX",
+    "title": "CRE pending and loss reasons",
+    "subtitle": "The main forms offer specific reasons plus free-text remarks.",
+    "kind": "cards",
+    "body": [
+      [
+        "PENDING EXAMPLES",
+        "RNR; DND; not reachable; switched off.\nBusy; call disconnected; out of network.\nCall me back; plan postponed."
+      ],
+      [
+        "LOSS: CONTACT / FIT",
+        "Wrong or invalid number; did not enquire.\nDuplicate / existing enquiry.\nOut of territory; not eligible; job enquiry."
+      ],
+      [
+        "LOSS: BUYING DECISION",
+        "Plan dropped; not interested; low budget.\nLost to co-dealer or competition.\nAdd the customer-specific explanation."
+      ]
+    ],
+    "notes": "Use the full choices displayed in the live form if the manager asks how their dispositions map into the product. Additional CRE loss choices include Just enquired, Service, Insurance, Internal, Used car, No Response, Mock Call, DSA Enq and BH Registration. Pending reasons also include Temporary out of Service and Incoming call facility not available. Some of these choices may need company-specific wording or a policy discussion. They are currently screen-defined choices rather than editable Admin Lists values. Remarks should make the disposition understandable without relying on an acronym.",
+    "refs": "frontend/src/features/leads/sales-workspace.tsx:lostReasons,pendingReasons",
+    "takeaway": ""
+  },
+  {
+    "section": "REFERENCE APPENDIX",
+    "title": "Complaint intake: what CRE records",
+    "subtitle": "A complete ticket gives the resolution team enough context to start.",
+    "kind": "table",
+    "body": [
+      [
+        "Field group",
+        "Information"
+      ],
+      [
+        "Customer",
+        "Name, valid 10-digit phone, optional email"
+      ],
+      [
+        "Routing context",
+        "Configured branch; source such as phone, email or walk-in"
+      ],
+      [
+        "Issue classification",
+        "Category; Low / Medium / High / Critical priority"
+      ],
+      [
+        "Issue description",
+        "Clear subject and detailed customer account"
+      ],
+      [
+        "Product context",
+        "Model interest where relevant"
+      ],
+      [
+        "Tracking after save",
+        "Ticket number, logger, status, timestamps and notes"
+      ]
+    ],
+    "notes": "Categories are Service Delay, Product Defect, Delivery Issue, Billing / Finance, After-Sales, Staff Behaviour, Warranty and Other. Complaint sources are Phone, Email, Walk-in, Social Media and Other. These complaint classifications are distinct from the Admin-configured sales lead sources. Ask CRE to record facts, the customer impact and what response the customer expects. Avoid vague subjects such as Complaint or Urgent. The normal create form does not set an assignee or attach a sales lead automatically. The complaints team uses the shared queue to take the next action.",
+    "refs": "backend/complaints/models.py; backend/complaints/serializers.py",
+    "takeaway": ""
+  },
+  {
+    "section": "REFERENCE APPENDIX",
+    "title": "Import file preparation reference",
+    "subtitle": "Use configured source and model names exactly; keep phone columns as text.",
+    "kind": "table",
+    "body": [
+      [
+        "Column / accepted header",
+        "Example or rule"
+      ],
+      [
+        "Name / Customer Name",
+        "Customer name required"
+      ],
+      [
+        "Phone / Mobile",
+        "10-digit number; common +91 / 0 prefixes normalized"
+      ],
+      [
+        "Source",
+        "Value from Admin Lists; Walk-in is preserved"
+      ],
+      [
+        "Model / Vehicle Interest",
+        "Configured model name"
+      ],
+      [
+        "City / Location; Campaign; Email",
+        "Optional descriptive context"
+      ],
+      [
+        "Date / Enquiry Date",
+        "Prefer DD/MM/YYYY or YYYY-MM-DD; no future date"
+      ]
+    ],
+    "notes": "Use text-formatted phone columns to avoid spreadsheet scientific notation and lost leading digits. The parser recognizes Name or Customer Name, Phone or Mobile, model or vehicle interest or model / vehicle interest, and date or enquiry date. It reads the active worksheet of XLSX files. Date parsing accepts day-month-year, ISO date and day/month/year. Native spreadsheet date serialization can differ, so confirm the parsed date in a sample before committing a large batch. The import payload does not populate the branch field; CRE qualification normally supplies the preferred branch. Imported walk-in source rows do not automatically execute the receptionist shortcut.",
+    "refs": "backend/uploads/tasks.py:read_rows,parse_date,parse_upload_batch; backend/uploads/views.py:commit",
+    "takeaway": ""
+  },
+  {
+    "section": "REFERENCE APPENDIX",
+    "title": "Suggested 40-minute meeting route",
+    "subtitle": "A detailed deck lets you choose depth without rushing through every reference slide.",
+    "kind": "table",
+    "body": [
+      [
+        "Time",
+        "Focus",
+        "Evidence to show"
+      ],
+      [
+        "0–5 min",
+        "Operating model and roles",
+        "Journey + responsibility diagram"
+      ],
+      [
+        "5–12 min",
+        "Admin controls and allocation",
+        "Lists, fresh pool, filtered distribution"
+      ],
+      [
+        "12–25 min",
+        "Five requested scenarios",
+        "Saved outcomes, PS handoff, complaint ticket"
+      ],
+      [
+        "25–32 min",
+        "Sales Manager + complaints review",
+        "Branch drilldown, history, complaint resolution"
+      ],
+      [
+        "32–36 min",
+        "Exceptions and staff continuity",
+        "Impact preview, reassignment, held reminders"
+      ],
+      [
+        "36–40 min",
+        "Questions and operating decisions",
+        "Capture policy choices and pilot checks"
+      ]
+    ],
+    "notes": "This is a proposed timing plan. For a shorter session, narrate the CRE loss and PS loss slides without repeating every field, and focus live clicking on one qualification handoff, one PS follow-up and one complaint resolution. Keep staff offboarding as a prepared preview unless the manager wants to see a full disposable-account exercise. Use the PDF as a fallback if the application or network is slow. Presenter notes provide the detailed explanations even when you skip a reference slide. Finish by recording decisions rather than trying to demonstrate every optional menu.",
+    "refs": "",
+    "takeaway": ""
+  }
+]
