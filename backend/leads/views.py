@@ -140,7 +140,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         if getattr(self.request.user, "role", None) == User.Role.RECEPTIONIST:
             lead = serializer.save(source=Lead.Source.WALKIN, status=Lead.Status.QUALIFIED)
         elif is_walkin:
-            # Walk-in leads bypass CRE – go directly to PS/SO as qualified
+            # Walk-in leads bypass CE – go directly to PS/SO as qualified
             lead = serializer.save(status=Lead.Status.QUALIFIED)
         elif not self.request.user.is_admin and getattr(self.request.user, "role", None) == User.Role.CRE:
             with transaction.atomic():
@@ -338,7 +338,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         if not request.user.is_admin and not ps_outcome and next_status != lead.status and next_status not in FORWARD_TRANSITIONS.get(lead.status, set()):
             return Response({"detail": "This status transition is not allowed."}, status=status.HTTP_400_BAD_REQUEST)
         if not request.user.is_admin and request.user.role == User.Role.SALES_OFFICER and data.get("qualification"):
-            return Response({"detail": "PS/SO users cannot edit CRE qualification details."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "PS/SO users cannot edit CE qualification details."}, status=status.HTTP_403_FORBIDDEN)
         editable_fields = ("name", "phone", "email", "source", "source_label", "campaign", "activity", "sub_activity", "model_interest", "city", "branch", "enquiry_date", "flagged_to_manager")
         before = {field: audit_value(getattr(lead, field)) for field in ("status", "category", "sales_outcome", *editable_fields)}
         with transaction.atomic():
@@ -418,7 +418,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             ).first()
             if not officer:
                 return Response(
-                    {"detail": "That CRE is no longer active. Refresh and choose again."},
+                    {"detail": "That CE is no longer active. Refresh and choose again."},
                     status=status.HTTP_409_CONFLICT,
                 )
             lead = Lead.objects.select_for_update().get(pk=lead.pk)
@@ -492,7 +492,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             ).first()
             if not officer:
                 return Response(
-                    {"detail": "That CRE is no longer active. Refresh and choose again."},
+                    {"detail": "That CE is no longer active. Refresh and choose again."},
                     status=status.HTTP_409_CONFLICT,
                 )
             leads = list(leads.select_for_update().order_by("created_at"))
@@ -563,7 +563,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             }
             if len(locked_officers) != len(officers):
                 return Response(
-                    {"detail": "A selected CRE is no longer active. Refresh and choose again."},
+                    {"detail": "A selected CE is no longer active. Refresh and choose again."},
                     status=status.HTTP_409_CONFLICT,
                 )
             officers = [locked_officers[officer.id] for officer in officers]
@@ -589,7 +589,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         lead_ids = request.data.get("lead_ids", [])
         recipient_ids = request.data.get("recipient_ids", [])
         if role not in {User.Role.CRE, User.Role.SALES_OFFICER}:
-            raise ValidationError({"role": "Choose CRE or PS/SO."})
+            raise ValidationError({"role": "Choose CE or PS/SO."})
         if not isinstance(lead_ids, list) or not lead_ids:
             raise ValidationError({"lead_ids": "Select at least one lead."})
         if not isinstance(recipient_ids, list) or not recipient_ids:
@@ -657,7 +657,7 @@ class LeadViewSet(viewsets.ModelViewSet):
                 ).order_by("id")
             )
             if not officers:
-                return Response({"detail": "No active CRE users."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"detail": "No active CE users."}, status=status.HTTP_400_BAD_REQUEST)
             loads = dict(
                 Lead.objects.filter(
                     deleted_at__isnull=True,

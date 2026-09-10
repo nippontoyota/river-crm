@@ -5,7 +5,7 @@ import { createUser, disableUser, enableUser, getOffboardingImpact, getSystemCon
 
 const roleOptions = [
   { value: "ADMIN", label: "Administrator" },
-  { value: "CRE", label: "Marketing" },
+  { value: "CRE", label: "CE" },
   { value: "SO", label: "PS/SO" },
   { value: "SALES_MANAGER", label: "Sales Manager" },
   { value: "COMPLAINTS", label: "Complaints department" },
@@ -51,7 +51,7 @@ export function TeamPage() {
     // Map UI roles to Backend roles
     const uiRole = formData.get("role") as string;
     let backendRole = "ADMIN";
-    if (uiRole === "Marketing") backendRole = "CRE";
+    if (uiRole === "CE") backendRole = "CRE";
     if (uiRole === "PS/SO") backendRole = "SO";
     if (uiRole === "Sales Manager") backendRole = "SALES_MANAGER";
     if (uiRole === "Complaints department") backendRole = "COMPLAINTS";
@@ -134,7 +134,7 @@ export function TeamPage() {
   };
 
   const displayRole = (role: string) => {
-    if (role === "CRE") return "Marketing";
+    if (role === "CRE") return "CE";
     if (role === "SO") return "PS/SO";
     if (role === "SALES_MANAGER") return "Sales Manager";
     if (role === "COMPLAINTS") return "Complaints department";
@@ -193,7 +193,7 @@ export function TeamPage() {
                 <select name="role" required value={selectedRole} onChange={e => setSelectedRole(e.target.value)}>
                   <option value="">Select...</option>
                   <option value="Admin">Admin</option>
-                  <option value="Marketing">Marketing (CRE)</option>
+                  <option value="CE">CE</option>
                   <option value="PS/SO">PS/SO</option>
                   <option value="Sales Manager">Sales Manager</option>
                   <option value="Complaints department">Complaints department</option>

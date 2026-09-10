@@ -4,7 +4,7 @@ from accounts.models import User
 
 
 class ComplaintPermission(BasePermission):
-    message = "Complaints are logged by CRE or receptionists and resolved by the complaints department."
+    message = "Complaints are logged by CE or receptionists and resolved by the complaints department."
 
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:

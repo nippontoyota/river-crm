@@ -16,7 +16,7 @@ class IsAdminOrReceptionist(BasePermission):
 
 
 class IsAdminReceptionistOrCRE(BasePermission):
-    message = "Admin, Receptionist, or CRE access is required."
+    message = "Admin, Receptionist, or CE access is required."
 
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and (request.user.is_admin or getattr(request.user, "role", None) in ["RECEPTIONIST", "CRE"]))

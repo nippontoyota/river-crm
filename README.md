@@ -1,7 +1,7 @@
 # Incheon Mobility CRM
 
 Admin Lists manages lead sources, activities, and sub-activities grouped under an
-activity. These optional fields appear in admin, CRE, SO, and receptionist intake
+activity. These optional fields appear in admin, CE, SO, and receptionist intake
 forms. Removing an option does not alter historical leads. SO sources retain
 their existing choices; receptionist enquiries remain Walk-in.
 
@@ -14,7 +14,7 @@ changing its status, qualification, or follow-ups. Requested drives do not count
 as completed.
 
 Complaints require a type and a matching subtype for new tickets. Existing
-tickets without a subtype display "Not specified". CRE and receptionists can log
+tickets without a subtype display "Not specified". CE and receptionists can log
 and view their own tickets; the complaints department handles resolution and
 admins retain oversight. Receptionist complaints default to Walk-in.
 

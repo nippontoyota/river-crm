@@ -32,7 +32,7 @@ def _role_fields(user):
         return "assigned_so", "needs_cre_reassignment", "CRE", "assigned_leads"
     if user.role == User.Role.SALES_OFFICER:
         return "assigned_ps", "needs_so_reassignment", "SO", "ps_leads"
-    raise ValidationError({"detail": "Only CRE and PS/SO accounts can use this workflow."})
+    raise ValidationError({"detail": "Only CE and PS/SO accounts can use this workflow."})
 
 
 def _snapshot_version(user, leads, followups, complaints):

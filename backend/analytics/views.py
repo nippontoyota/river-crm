@@ -498,7 +498,8 @@ class SalesManagerAnalyticsExportView(APIView):
             return response
         data = manager_payload(request)
         response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = f'attachment; filename="incheon-sales-manager-{section}.csv"'
+        export_section = "ce" if section == "cre" else section
+        response["Content-Disposition"] = f'attachment; filename="incheon-sales-manager-{export_section}.csv"'
         writer = csv.writer(response)
         rows = data.get(section, [])
         if section in {"cre", "ps", "source", "models", "lost_reasons", "stale_leads"} and isinstance(rows, list) and rows:
