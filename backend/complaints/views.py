@@ -34,8 +34,8 @@ class ComplaintViewSet(ModelViewSet):
         user = self.request.user
         queryset = Complaint.objects.select_related("logged_by", "assigned_to")
 
-        # CRE users see only what they logged; admins and complaints department see the shared queue.
-        if user.role == User.Role.CRE:
+        # Intake staff see their own tickets; admins and resolvers share the queue.
+        if user.role in {User.Role.CRE, User.Role.RECEPTIONIST}:
             queryset = queryset.filter(logged_by=user)
 
         # Annotate note count for list performance
@@ -74,7 +74,10 @@ class ComplaintViewSet(ModelViewSet):
         return ComplaintListSerializer
 
     def perform_create(self, serializer):
-        serializer.save(logged_by=self.request.user)
+        source = serializer.validated_data.get("source") or (
+            Complaint.Source.WALKIN if self.request.user.role == User.Role.RECEPTIONIST else Complaint.Source.PHONE
+        )
+        serializer.save(logged_by=self.request.user, source=source)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

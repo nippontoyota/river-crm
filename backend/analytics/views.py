@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 from accounts.models import User
 from accounts.permissions import IsAdmin, IsSalesManager
 from analytics.cache import cache_analytics
+from leads.metrics import etbr_aggregates
 from leads.models import CallLog, FollowUp, Lead, LeadAudit
 
 
@@ -27,6 +28,7 @@ def csv_value(value):
 
 def metrics(queryset):
     counts = queryset.aggregate(
+        **etbr_aggregates(),
         total_assigned=Count("id"),
         total_called=Count("id", filter=~Q(status=Lead.Status.FRESH)),
         qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)),
@@ -208,6 +210,7 @@ def ps_followup_payload(request):
 
 def summary_for(queryset, stale_since=None):
     aggregates = dict(
+        **etbr_aggregates(),
         total=Count("id"),
         untouched=Count("id", filter=Q(status=Lead.Status.FRESH)),
         contacted=Count("id", filter=~Q(status=Lead.Status.FRESH)),
@@ -396,6 +399,7 @@ class MyAnalyticsView(APIView):
                 queryset = queryset.filter(enquiry_date__lte=request.query_params["date_to"])
         status_aggregates = {f"status_{value.lower()}": Count("id", filter=Q(status=value)) for value, _ in Lead.Status.choices}
         summary = queryset.aggregate(
+            **etbr_aggregates(),
             total=Count("id"),
             qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)),
             booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)),
@@ -432,8 +436,8 @@ class ReceptionistAnalyticsView(APIView):
         today = timezone.localdate()
         # Find leads created by this receptionist today
         created_lead_ids = LeadAudit.objects.filter(actor=request.user, event="created", created_at__date=today).values_list("lead_id", flat=True)
-        queryset = Lead.objects.filter(id__in=created_lead_ids, deleted_at__isnull=True)
-        summary = queryset.aggregate(total=Count("id"), walkin=Count("id", filter=Q(source=Lead.Source.WALKIN)))
+        queryset = Lead.objects.filter(id__in=created_lead_ids, deleted_at__isnull=True, source=Lead.Source.WALKIN)
+        summary = queryset.aggregate(**etbr_aggregates(), total=Count("id"), walkin=Count("id", filter=Q(source=Lead.Source.WALKIN)))
         total = summary["total"]
         walkins = summary["walkin"]
         digital = total - walkins
@@ -448,6 +452,7 @@ class ReceptionistAnalyticsView(APIView):
         ]
         return Response({
             "summary": {
+                **summary,
                 "total": total,
                 "walkin": walkins,
                 "digital": digital

@@ -50,7 +50,7 @@ const statusLabel = (v: string) => STATUSES.find(([k]) => k === v)?.[1] ?? v;
 
 const emptyInput = (): ComplaintInput => ({
   customer_name: "", customer_phone: "", customer_email: "",
-  category: "", priority: "MEDIUM", subject: "", description: "",
+  category: "", subtype: "", priority: "MEDIUM", subject: "", description: "",
   model_interest: "", branch: "",
 });
 
@@ -60,7 +60,7 @@ const formatNoteTime = formatDateTime;
 
 export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: boolean; currentUser?: CurrentUser }) {
   const userRole = currentUser?.role;
-  const canCreate = userRole === "CRE";
+  const canCreate = userRole === "CRE" || userRole === "RECEPTIONIST";
   const canResolve = userRole === "COMPLAINTS";
   const canUseAnalytics = adminView || canResolve;
   const heading = adminView
@@ -114,6 +114,8 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
   const [detailError, setDetailError] = useState("");
 
   // System config
+  const [configError, setConfigError] = useState("");
+  const [subtypes, setSubtypes] = useState<Record<string, string[]>>({});
   const [models, setModels] = useState<string[]>([]);
   const [branches, setBranches] = useState<string[]>([]);
 
@@ -158,9 +160,10 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
 
   useEffect(() => {
     void getSystemConfig().then(c => {
+      setSubtypes(c.complaint_subtypes || {});
       setModels(c.lists?.models || []);
       setBranches(c.lists?.branches || []);
-    }).catch(() => { setModels([]); setBranches([]); });
+    }).catch(() => { setModels([]); setBranches([]); setConfigError("Unable to load complaint options. Refresh the page to retry."); });
   }, []);
 
   // Pagination
@@ -174,13 +177,14 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
     const { customer_name, customer_phone, category, subject, description, priority, branch } = newComplaint;
     if (!customer_name.trim()) { setFormError("Customer name is required."); return; }
     if (!/^\d{10}$/.test(customer_phone)) { setFormError("Enter a valid 10-digit phone number."); return; }
-    if (!category) { setFormError("Select a complaint category."); return; }
+    if (!category) { setFormError("Select a complaint type."); return; }
+    if (!subtypes[category]?.includes(newComplaint.subtype)) { setFormError("Select a complaint subtype."); return; }
     if (!subject.trim()) { setFormError("Enter a complaint subject."); return; }
     if (!description.trim()) { setFormError("Describe the complaint."); return; }
     if (!branch) { setFormError("Select the complaint branch."); return; }
     setSubmitting(true); setFormError("");
     try {
-      const created = await createComplaint({ ...newComplaint, customer_name: customer_name.trim(), subject: subject.trim(), description: description.trim() });
+      const created = await createComplaint({ ...newComplaint, source: newComplaint.source || (userRole === "RECEPTIONIST" ? "WALKIN" : "PHONE"), customer_name: customer_name.trim(), subject: subject.trim(), description: description.trim() });
       setComplaints(cur => [created, ...cur]);
       setTotalCount(c => c + 1);
       setAddingComplaint(false);
@@ -440,9 +444,13 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
                   <option value="">{branches.length ? "Select branch" : "No branches configured"}</option>
                   {branches.map(branch => <option key={branch} value={branch}>{branch}</option>)}
                 </select></label>
-                <label>Category<select required value={newComplaint.category} onChange={e => setNewComplaint(c => ({ ...c, category: e.target.value }))}>
-                  <option value="">Select category</option>
+                <label>Complaint type<select required name="complaint_type" value={newComplaint.category} onChange={e => setNewComplaint(c => ({ ...c, category: e.target.value, subtype: "" }))}>
+                  <option value="">Select complaint type</option>
                   {CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select></label>
+                <label>Complaint subtype<select required name="complaint_subtype" value={newComplaint.subtype} disabled={!newComplaint.category || !subtypes[newComplaint.category]?.length} onChange={e => setNewComplaint(c => ({ ...c, subtype: e.target.value }))}>
+                  <option value="">{newComplaint.category ? "Select subtype" : "Select type first"}</option>
+                  {(subtypes[newComplaint.category] || []).map(item => <option key={item}>{item}</option>)}
                 </select></label>
                 <label>Priority<select required value={newComplaint.priority} onChange={e => setNewComplaint(c => ({ ...c, priority: e.target.value }))}>
                   {PRIORITIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -462,7 +470,7 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
                 Description
                 <textarea required rows={4} value={newComplaint.description} onChange={e => setNewComplaint(c => ({ ...c, description: e.target.value }))} placeholder="Detailed complaint description as shared by the customer…" />
               </label>
-              {formError && <p className="form-error" role="alert">{formError}</p>}
+              {configError && <p className="form-error" role="alert">{configError}</p>}{formError && <p className="form-error" role="alert">{formError}</p>}
               <p className="subtext">A unique ticket number will be auto-generated on submission.</p>
               <footer>
                 <button type="button" className="filter" onClick={() => setAddingComplaint(false)}>Cancel</button>
@@ -511,6 +519,8 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
                   <span><small>Name</small><b>{activeComplaint.customer_name}</b></span>
                   <span><small>Phone</small><b>{activeComplaint.customer_phone}</b></span>
                   {activeComplaint.customer_email && <span><small>Email</small><b>{activeComplaint.customer_email}</b></span>}
+                  <span><small>Complaint type</small><b>{categoryLabel(activeComplaint.category)}</b></span>
+                  <span><small>Complaint subtype</small><b>{activeComplaint.subtype || "Not specified"}</b></span>
                   <span><small>Source</small><b>{SOURCES.find(([v]) => v === activeComplaint.source)?.[1] ?? activeComplaint.source}</b></span>
                   <span><small>Branch</small><b>{activeComplaint.branch}</b></span>
                   {activeComplaint.model_interest && <span><small>Vehicle</small><b>{activeComplaint.model_interest}</b></span>}

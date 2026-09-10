@@ -1,5 +1,7 @@
 "use client";
 
+import { EtbrTiles } from "@/components/etbr-tiles";
+
 import { useEffect, useState } from "react";
 import { getReceptionistAnalytics, type ReceptionistAnalytics } from "@/lib/crm";
 
@@ -24,10 +26,11 @@ export default function ReceptionistDashboardPage() {
       <div className="page-heading">
         <div>
           <h1>Receptionist Dashboard</h1>
-          <p className="subtext">Overview of leads captured today.</p>
+          <p className="subtext">Your walk-in enquiries captured today.</p>
         </div>
       </div>
       
+      <EtbrTiles data={analytics.summary} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
         <div className="panel" style={{ padding: "1.5rem" }}>
           <p className="eyebrow">TOTAL LEADS TODAY</p>
@@ -36,10 +39,6 @@ export default function ReceptionistDashboardPage() {
         <div className="panel" style={{ padding: "1.5rem" }}>
           <p className="eyebrow">WALK-IN LEADS</p>
           <div style={{ fontSize: "2rem", fontWeight: "bold" }}>{analytics.summary.walkin}</div>
-        </div>
-        <div className="panel" style={{ padding: "1.5rem" }}>
-          <p className="eyebrow">DIGITAL LEADS</p>
-          <div style={{ fontSize: "2rem", fontWeight: "bold" }}>{analytics.summary.digital}</div>
         </div>
       </div>
 

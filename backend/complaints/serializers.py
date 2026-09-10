@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from leads.serializers import validate_configured_choice
 from .models import Complaint, ComplaintNote
+from .catalogue import COMPLAINT_SUBTYPES
 
 
 class ComplaintNoteSerializer(serializers.ModelSerializer):
@@ -30,7 +31,7 @@ class ComplaintListSerializer(serializers.ModelSerializer):
         model = Complaint
         fields = [
             "id", "uid", "ticket_number", "customer_name", "customer_phone",
-            "customer_email", "category", "priority", "status", "subject",
+            "customer_email", "category", "subtype", "priority", "status", "subject",
             "description", "model_interest", "branch", "source", "resolution_notes",
             "resolved_at", "logged_by", "logged_by_name", "assigned_to",
             "assigned_to_name", "note_count", "created_at", "updated_at",
@@ -49,12 +50,18 @@ class ComplaintDetailSerializer(ComplaintListSerializer):
 
 class ComplaintCreateSerializer(serializers.ModelSerializer):
     branch = serializers.CharField(required=True, allow_blank=False, max_length=120)
+    subtype = serializers.CharField(required=True, allow_blank=False, max_length=100)
+
+    def validate(self, attrs):
+        if attrs["subtype"] not in COMPLAINT_SUBTYPES.get(attrs["category"], []):
+            raise serializers.ValidationError({"subtype": "Choose a subtype belonging to the selected complaint type."})
+        return attrs
 
     class Meta:
         model = Complaint
         fields = [
             "customer_name", "customer_phone", "customer_email",
-            "category", "priority", "subject", "description",
+            "category", "subtype", "priority", "subject", "description",
             "model_interest", "branch", "source",
         ]
 

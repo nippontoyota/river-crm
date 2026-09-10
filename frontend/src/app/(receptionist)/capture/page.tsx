@@ -1,5 +1,7 @@
 "use client";
 
+import { ActivityFields } from "@/components/activity-fields";
+
 import { useEffect, useState, FormEvent } from "react";
 import { createLead, getSystemConfig, getOfficers, toOfficer, type Officer, type SystemConfig } from "@/lib/crm";
 
@@ -12,19 +14,18 @@ export default function CaptureLeadPage() {
   const [officers, setOfficers] = useState<Officer[]>([]);
 
   const [formData, setFormData] = useState({
+    activity: "", sub_activity: "",
     name: "",
     phone: "",
     email: "",
     profession: "",
     rto: "",
     model_interest: "",
-    variant: "",
-    buying_timeline: "",
     assigned_ps_id: "",
   });
 
   useEffect(() => {
-    getSystemConfig().then(setConfig).catch(console.error);
+    getSystemConfig().then(setConfig).catch(() => setError("Unable to load enquiry options. Refresh the page to retry."));
     getOfficers().then(apiOfficers => setOfficers(apiOfficers.map(o => toOfficer(o)))).catch(console.error);
   }, []);
 
@@ -35,8 +36,9 @@ export default function CaptureLeadPage() {
 
   const handleClear = () => {
     setFormData({
+      activity: "", sub_activity: "",
       name: "", phone: "", email: "", profession: "", rto: "",
-      model_interest: "", variant: "", buying_timeline: "", assigned_ps_id: ""
+      model_interest: "", assigned_ps_id: ""
     });
     setError("");
     setSuccess(false);
@@ -50,7 +52,6 @@ export default function CaptureLeadPage() {
 
     try {
       if (!formData.model_interest) throw new Error("Select a vehicle model from Admin Lists.");
-      if (!formData.variant) throw new Error("Select a color variant from Admin Lists.");
       const payload = {
         name: formData.name,
         phone: formData.phone,
@@ -58,19 +59,13 @@ export default function CaptureLeadPage() {
         profession: formData.profession,
         rto: formData.rto,
         source: "WALKIN",
+        activity: formData.activity, sub_activity: formData.sub_activity,
         status: "QUALIFIED",
         model_interest: formData.model_interest,
         ps_officer_id: formData.assigned_ps_id ? parseInt(formData.assigned_ps_id) : undefined,
-        qualification_input: {
-          variant: formData.variant,
-          buying_timeline: formData.buying_timeline,
-          finance_type: "",
-          test_drive: "",
-          notes: ""
-        }
       };
       
-      await createLead(payload as any);
+      await createLead(payload);
       setSuccess(true);
       setTimeout(() => {
         handleClear();
@@ -84,7 +79,6 @@ export default function CaptureLeadPage() {
 
   const modelOptions = config?.lists?.models || [];
   const rtoOptions = config?.rto_options || [];
-  const colorVariantOptions = config?.lists?.colorVariants || [];
 
   return (
     <div className="page capture-page">
@@ -144,6 +138,7 @@ export default function CaptureLeadPage() {
         </fieldset>
 
         <div className="capture-form-grid">
+            <ActivityFields activity={formData.activity} subActivity={formData.sub_activity} onChange={fields => setFormData(current => ({ ...current, ...fields }))} />
             <label>
               Model Interested *
               <select name="model_interest" value={formData.model_interest} onChange={handleChange} required disabled={!modelOptions.length}>
@@ -151,27 +146,6 @@ export default function CaptureLeadPage() {
                 {modelOptions.map(m => (
                   <option key={m} value={m}>{m}</option>
                 ))}
-              </select>
-            </label>
-            <label>
-              Color variant *
-              <select name="variant" value={formData.variant} onChange={handleChange} required disabled={!colorVariantOptions.length}>
-                <option value="">{colorVariantOptions.length ? "Select color variant" : "Add color variants in Lists first"}</option>
-                {colorVariantOptions.map(v => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
-              </select>
-            </label>
-        </div>
-
-        <div className="capture-form-grid">
-            <label>
-              Purchase Timeline *
-              <select name="buying_timeline" value={formData.buying_timeline} onChange={handleChange} required>
-                <option value="">Select timeline</option>
-                <option value="Immediate">Immediate (0-15 days)</option>
-                <option value="Short Term">Short Term (1-2 months)</option>
-                <option value="Long Term">Long Term (2+ months)</option>
               </select>
             </label>
             <label>

@@ -58,6 +58,23 @@ def validate_configured_choice(value, list_name, label):
     return value
 
 
+def validate_activity_pair(attrs, current=None):
+    if not {"activity", "sub_activity"}.intersection(attrs):
+        return attrs
+    activity = attrs.get("activity", getattr(current, "activity", ""))
+    sub_activity = attrs.get("sub_activity", getattr(current, "sub_activity", ""))
+    if current and activity != current.activity and "sub_activity" not in attrs:
+        attrs["sub_activity"] = sub_activity = ""
+    if current and (activity, sub_activity) == (current.activity, current.sub_activity):
+        return attrs  # Retired options remain editable on historical records.
+    lists = SystemConfig.objects.filter(id=1).values_list("lists", flat=True).first() or {}
+    if activity and activity not in lists.get("activities", []):
+        raise serializers.ValidationError({"activity": "Choose an activity from Admin Lists."})
+    if sub_activity and (not activity or sub_activity not in lists.get("subActivities", {}).get(activity, [])):
+        raise serializers.ValidationError({"sub_activity": "Choose a sub-activity belonging to the selected activity."})
+    return attrs
+
+
 PS_CALL_OUTCOME_STATUS_OPTIONS = {
     "Need Test Drive": {Lead.Status.PENDING},
     "Showroom Visit": {Lead.Status.PENDING},
@@ -112,6 +129,9 @@ class LeadSerializer(serializers.ModelSerializer):
     qualification = serializers.SerializerMethodField()
     qualification_input = QualificationSerializer(required=False, write_only=True)
 
+    def validate(self, attrs):
+        return validate_activity_pair(attrs, self.instance)
+
     def get_next_follow_up(self, obj):
         if hasattr(obj, "_next_follow_up"):
             return obj._next_follow_up
@@ -144,8 +164,8 @@ class LeadSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Lead
-        fields = ["id", "uid", "name", "phone", "email", "source", "source_label", "campaign", "model_interest", "city", "rto", "branch", "enquiry_date", "status", "category", "sales_outcome", "assigned_so", "assigned_so_name", "assigned_ps", "assigned_ps_name", "generated_by", "ps_officer_id", "next_follow_up", "call_count", "qualification", "qualification_input", "flagged_to_manager", "needs_cre_reassignment", "needs_so_reassignment", "profession", "created_at", "updated_at"]
-        read_only_fields = ["uid", "assigned_so", "assigned_ps", "generated_by", "needs_cre_reassignment", "needs_so_reassignment", "created_at", "updated_at"]
+        fields = ["id", "uid", "name", "phone", "email", "source", "source_label", "campaign", "activity", "sub_activity", "test_drive_completed_at", "model_interest", "city", "rto", "branch", "enquiry_date", "status", "category", "sales_outcome", "assigned_so", "assigned_so_name", "assigned_ps", "assigned_ps_name", "generated_by", "ps_officer_id", "next_follow_up", "call_count", "qualification", "qualification_input", "flagged_to_manager", "needs_cre_reassignment", "needs_so_reassignment", "profession", "created_at", "updated_at"]
+        read_only_fields = ["test_drive_completed_at", "uid", "assigned_so", "assigned_ps", "generated_by", "needs_cre_reassignment", "needs_so_reassignment", "created_at", "updated_at"]
         extra_kwargs = {"source": {"required": True}}
 
     def create(self, validated_data):
@@ -163,6 +183,7 @@ class SOLeadCreateSerializer(LeadSerializer):
         return validate_so_source(value)
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         if not attrs.get("model_interest"):
             raise serializers.ValidationError({"model_interest": "Choose a vehicle model."})
         if not attrs.get("enquiry_date"):
@@ -228,6 +249,8 @@ class LeadUpdateSerializer(serializers.Serializer):
 
 
 class SOLeadUpdateSerializer(serializers.Serializer):
+    activity = serializers.CharField(max_length=160, required=False, allow_blank=True)
+    sub_activity = serializers.CharField(max_length=160, required=False, allow_blank=True)
     name = serializers.CharField(max_length=160, required=False)
     phone = serializers.RegexField(regex=r"^\d{10}$", required=False)
     email = serializers.EmailField(required=False, allow_blank=True)
@@ -258,6 +281,7 @@ class SOLeadUpdateSerializer(serializers.Serializer):
         return validate_configured_source(value, self.context.get("current_source", ""))
 
     def validate(self, attrs):
+        attrs = validate_activity_pair(attrs, self.context.get("lead"))
         enquiry_date = attrs.get("enquiry_date")
         if enquiry_date and enquiry_date > timezone.localdate():
             raise serializers.ValidationError({"enquiry_date": "Enquiry date cannot be in the future."})
@@ -324,6 +348,11 @@ class FollowUpReviewSerializer(serializers.Serializer):
 class SystemConfigSerializer(serializers.ModelSerializer):
     rto_options = serializers.SerializerMethodField()
     so_lead_sources = serializers.SerializerMethodField()
+    complaint_subtypes = serializers.SerializerMethodField()
+
+    def get_complaint_subtypes(self, obj):
+        from complaints.catalogue import COMPLAINT_SUBTYPES
+        return COMPLAINT_SUBTYPES
 
     def get_so_lead_sources(self, obj):
         return SO_LEAD_SOURCES
@@ -340,7 +369,19 @@ class SystemConfigSerializer(serializers.ModelSerializer):
         normalized = normalize_sources(sources)
         if any(len(source) > 100 for source in normalized):
             raise serializers.ValidationError("Each source must be 100 characters or fewer.")
-        return {**value, "sources": normalized}
+        activities = value.get("activities", [])
+        if not isinstance(activities, list) or any(not isinstance(item, str) or not item.strip() or len(item.strip()) > 160 for item in activities):
+            raise serializers.ValidationError("Activities must be non-empty names of at most 160 characters.")
+        activities = list(dict.fromkeys(item.strip() for item in activities))
+        sub_activities = value.get("subActivities", {})
+        if not isinstance(sub_activities, dict):
+            raise serializers.ValidationError("Sub-activities must be grouped by activity.")
+        cleaned = {}
+        for parent, children in sub_activities.items():
+            if parent not in activities or not isinstance(children, list) or any(not isinstance(item, str) or not item.strip() or len(item.strip()) > 160 for item in children):
+                raise serializers.ValidationError("Each sub-activity must have a configured parent and a name of at most 160 characters.")
+            cleaned[parent] = list(dict.fromkeys(item.strip() for item in children))
+        return {**value, "sources": normalized, "activities": activities, "subActivities": cleaned}
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -351,4 +392,4 @@ class SystemConfigSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SystemConfig
-        fields = ["lists", "rto_options", "so_lead_sources", "updated_at"]
+        fields = ["lists", "rto_options", "so_lead_sources", "complaint_subtypes", "updated_at"]

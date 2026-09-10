@@ -26,7 +26,7 @@ def analytics_cache_key(request, endpoint):
         ],
     }
     digest = hashlib.sha256(json.dumps(identity, separators=(",", ":")).encode()).hexdigest()
-    return f"analytics:v1:{digest}"
+    return f"analytics:v2:{digest}"
 
 
 def cache_analytics(endpoint):

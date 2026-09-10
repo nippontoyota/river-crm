@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 from accounts.models import User
 from accounts.permissions import IsAdmin, IsAdminOrReceptionist, IsAdminReceptionistOrCRE, IsSalesManager, IsSalesOfficer
 from notifications.models import Notification
+from .metrics import etbr_aggregates
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from .serializers import CALL_OUTCOME_STATUS_OPTIONS, PS_CALL_OUTCOME_STATUS_OPTIONS, AssignmentSerializer, BulkDistributeSerializer, FollowUpReviewSerializer, FollowUpSerializer, LeadDetailSerializer, LeadSerializer, LeadUpdateSerializer, PSAssignmentSerializer, SOLeadCreateSerializer, SOLeadListSerializer, SOLeadUpdateSerializer, SystemConfigSerializer
 
@@ -94,6 +95,21 @@ class LeadViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         return Response(LeadDetailSerializer(self.get_object()).data)
+
+    @action(detail=True, methods=["post"], url_path="complete-test-drive")
+    def complete_test_drive(self, request, pk=None):
+        if not request.user.is_active or not (request.user.is_admin or request.user.role == User.Role.SALES_OFFICER):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        visible_lead = self.get_object()
+        with transaction.atomic():
+            lead = Lead.objects.select_for_update().get(pk=visible_lead.pk)
+            if lead.deleted_at or (not request.user.is_admin and lead.assigned_ps_id != request.user.pk):
+                return Response(status=status.HTTP_403_FORBIDDEN)
+            if not lead.test_drive_completed_at:
+                lead.test_drive_completed_at = timezone.now()
+                lead.save(update_fields=["test_drive_completed_at", "updated_at"])
+                LeadAudit.objects.create(lead=lead, actor=request.user, event="test_drive_completed", before={"test_drive_completed_at": None}, after={"test_drive_completed_at": lead.test_drive_completed_at.isoformat()})
+        return Response(LeadDetailSerializer(lead).data)
 
     @action(detail=False, methods=["post"], url_path="so-create", permission_classes=[IsSalesOfficer], serializer_class=SOLeadCreateSerializer)
     def so_create(self, request):
@@ -213,6 +229,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         pending_filter = pending_status & (~followup_filter if is_cre else Q())
         fresh_filter = Q(status=Lead.Status.FRESH) if is_cre else Q(status=Lead.Status.QUALIFIED) & ~Q(call_logs__so=request.user)
         summary = queryset.aggregate(
+            **etbr_aggregates(),
             total=Count("id", distinct=True),
             fresh=Count("id", filter=fresh_filter, distinct=True),
             followups=Count("id", filter=followup_filter, distinct=True),
@@ -269,7 +286,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         user_field = "assigned_so_id" if request.user.role == User.Role.CRE else "assigned_ps_id"
         if not request.user.is_admin and getattr(lead, user_field) != request.user.id:
             return Response({"detail": "This lead is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = SOLeadUpdateSerializer(data=request.data, context={"current_source": lead.source, "self_generated": bool(lead.generated_by_id)})
+        serializer = SOLeadUpdateSerializer(data=request.data, context={"lead": lead, "current_source": lead.source, "self_generated": bool(lead.generated_by_id)})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         sales_status = {Lead.SalesOutcome.BOOKED: Lead.Status.WALKIN, Lead.SalesOutcome.RETAILED: Lead.Status.WON, Lead.SalesOutcome.LOST: Lead.Status.LOST}
@@ -322,7 +339,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             return Response({"detail": "This status transition is not allowed."}, status=status.HTTP_400_BAD_REQUEST)
         if not request.user.is_admin and request.user.role == User.Role.SALES_OFFICER and data.get("qualification"):
             return Response({"detail": "PS/SO users cannot edit CRE qualification details."}, status=status.HTTP_403_FORBIDDEN)
-        editable_fields = ("name", "phone", "email", "source", "source_label", "campaign", "model_interest", "city", "branch", "enquiry_date", "flagged_to_manager")
+        editable_fields = ("name", "phone", "email", "source", "source_label", "campaign", "activity", "sub_activity", "model_interest", "city", "branch", "enquiry_date", "flagged_to_manager")
         before = {field: audit_value(getattr(lead, field)) for field in ("status", "category", "sales_outcome", *editable_fields)}
         with transaction.atomic():
             if not request.user.is_admin:
@@ -756,7 +773,7 @@ class FollowUpViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
 class SystemConfigView(APIView):
     def get(self, request):
-        config, _ = SystemConfig.objects.get_or_create(id=1)
+        config, _ = SystemConfig.objects.get_or_create(id=1, defaults={"lists": {"models": ["River Indie"]}})
         return Response(SystemConfigSerializer(config).data)
 
     def put(self, request):

@@ -1,5 +1,7 @@
 "use client";
 
+import { ActivityFields } from "@/components/activity-fields";
+
 import { useEffect, useState, type FormEvent } from "react";
 import { DateInput } from "@/components/date-input";
 import { createSoLead, getSystemConfig, type CurrentUser, type SystemConfig } from "@/lib/crm";
@@ -9,7 +11,7 @@ export function SOLeadForm({ user, onClose, onCreated }: { user: CurrentUser; on
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name: "", phone: "", email: "", profession: "", city: "", rto: "", source: "", source_label: "", model_interest: "", variant: "", buying_timeline: "", enquiry_date: formatDate(new Date()) });
+  const [form, setForm] = useState({ name: "", phone: "", email: "", profession: "", city: "", rto: "", source: "", source_label: "", activity: "", sub_activity: "", model_interest: "", variant: "", buying_timeline: "", enquiry_date: formatDate(new Date()) });
   const change = (field: keyof typeof form, value: string) => setForm(current => ({ ...current, [field]: value }));
   const models = config?.lists.models || [];
   const colors = config?.lists.colorVariants || [];
@@ -50,6 +52,7 @@ export function SOLeadForm({ user, onClose, onCreated }: { user: CurrentUser; on
               <label>City<input name="city" maxLength={100} value={form.city} onChange={event => change("city", event.target.value)} placeholder="Customer city" /></label>
               <label>RTO (optional)<select name="rto" value={form.rto} onChange={event => change("rto", event.target.value)} disabled={!rtos.length}><option value="">Select Kerala RTO</option>{rtos.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <label>Lead source *<select name="source" required value={form.source} onChange={event => change("source", event.target.value)} disabled={!sources.length}><option value="">Select how you found this customer</option>{sources.map(source => <option key={source} value={source}>{source}</option>)}</select></label>
+              <ActivityFields activity={form.activity} subActivity={form.sub_activity} onChange={fields => setForm(current => ({ ...current, ...fields }))} />
               <label>Enquiry date *<DateInput required value={form.enquiry_date} max={formatDate(new Date())} onChange={value => change("enquiry_date", value)} ariaLabel="Enquiry date, DD/MM/YYYY" /></label>
               <label>Vehicle interest *<select name="model_interest" required value={form.model_interest} onChange={event => change("model_interest", event.target.value)} disabled={!models.length}><option value="">{models.length ? "Select model" : "Add models in Lists first"}</option>{models.map(model => <option key={model} value={model}>{model}</option>)}</select></label>
               <label>Color interested *<select name="variant" required value={form.variant} onChange={event => change("variant", event.target.value)} disabled={!colors.length}><option value="">{colors.length ? "Select color" : "Add color variants in Lists first"}</option>{colors.map(color => <option key={color} value={color}>{color}</option>)}</select></label>

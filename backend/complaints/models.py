@@ -41,6 +41,7 @@ class Complaint(models.Model):
     customer_phone = models.CharField(max_length=10, db_index=True)
     customer_email = models.EmailField(blank=True)
     category = models.CharField(max_length=20, choices=Category.choices, db_index=True)
+    subtype = models.CharField(max_length=100, blank=True)
     priority = models.CharField(max_length=10, choices=Priority.choices, default=Priority.MEDIUM, db_index=True)
     status = models.CharField(max_length=15, choices=Status.choices, default=Status.OPEN, db_index=True)
     subject = models.CharField(max_length=200)

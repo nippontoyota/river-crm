@@ -45,6 +45,7 @@ const complaintLinks = [
 const receptionistLinks = [
   ["/capture", "Capture Lead", "＋"],
   ["/receptionist-dashboard", "Dashboard", "◱"],
+  ["/complaints", "Complaints", "⚑"],
 ] as const;
 
 export function AppShell({ children, role }: AppShellProps) {
@@ -53,7 +54,7 @@ export function AppShell({ children, role }: AppShellProps) {
   const cachedUser = getCachedCurrentUser();
   const cachedUserMatches = cachedUser && roleType(cachedUser) === role;
   const [user, setUser] = useState<CurrentUser | null>(cachedUserMatches ? cachedUser : null);
-  const [checkingAccess, setCheckingAccess] = useState(!cachedUserMatches);
+  const [checkingAccess, setCheckingAccess] = useState(true);
   const [sessionConflict, setSessionConflict] = useState<CurrentUser | null>(null);
   useEffect(() => {
     void getCurrentUser().then(result => {

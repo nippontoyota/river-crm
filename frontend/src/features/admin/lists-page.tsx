@@ -3,7 +3,8 @@
 import { useEffect, useState, FormEvent } from "react";
 import { getSystemConfig, sourceName, updateSystemConfig, type SystemConfig } from "@/lib/crm";
 
-const listSections: { title: string; name: keyof SystemConfig["lists"]; placeholder: string }[] = [
+type ListName = Exclude<keyof SystemConfig["lists"], "subActivities">;
+const listSections: { title: string; name: ListName; placeholder: string }[] = [
   { title: "Branches", name: "branches", placeholder: "Add branch" },
   { title: "Sources", name: "sources", placeholder: "Add source" },
   { title: "Activities", name: "activities", placeholder: "Add activity" },
@@ -15,6 +16,21 @@ export function ListsPage() {
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [activity, setActivity] = useState("");
+  const [subActivity, setSubActivity] = useState("");
+
+  const saveLists = async (lists: SystemConfig["lists"]) => {
+    setSaving(true);
+    setError("");
+    try {
+      setConfig(await updateSystemConfig(lists));
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update list.");
+      return false;
+    } finally { setSaving(false); }
+  };
 
   useEffect(() => {
     getSystemConfig()
@@ -23,33 +39,28 @@ export function ListsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleAdd = async (listName: keyof SystemConfig["lists"], value: string) => {
+  const handleAdd = async (listName: ListName, value: string) => {
     if (!value.trim() || !config) return;
     const currentList = config.lists[listName] || [];
     if (currentList.includes(value.trim())) return; // Duplicate
     
     const newLists = { ...config.lists, [listName]: [...currentList, value.trim()] };
-    try {
-      const updated = await updateSystemConfig(newLists);
-      setConfig(updated);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update list.");
-    }
+    await saveLists(newLists);
   };
 
-  const handleRemove = async (listName: keyof SystemConfig["lists"], value: string) => {
+  const handleRemove = async (listName: ListName, value: string) => {
     if (!config || (listName === "sources" && value === "WALKIN")) return;
     const currentList = config.lists[listName] || [];
     const newLists = { ...config.lists, [listName]: currentList.filter(item => item !== value) };
-    try {
-      const updated = await updateSystemConfig(newLists);
-      setConfig(updated);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update list.");
+    if (listName === "activities") {
+      newLists.subActivities = { ...config.lists.subActivities };
+      delete newLists.subActivities[value];
+      if (activity === value) setActivity("");
     }
+    await saveLists(newLists);
   };
 
-  const ListSection = ({ title, name }: { title: string, name: keyof SystemConfig["lists"] }) => {
+  const ListSection = ({ title, name }: { title: string, name: ListName }) => {
     const items = config?.lists?.[name] || [];
     const placeholder = listSections.find(section => section.name === name)?.placeholder || `Add ${title.toLowerCase()}`;
     return (
@@ -70,14 +81,14 @@ export function ListsPage() {
           }}
           className="list-add-form"
         >
-          <input name="itemValue" required placeholder={placeholder} />
-          <button type="submit" className="button primary">Add</button>
+          <input name="itemValue" required maxLength={name === "activities" ? 160 : name === "sources" ? 100 : undefined} placeholder={placeholder} disabled={saving} />
+          <button type="submit" className="button primary" disabled={saving}>Add</button>
         </form>
         <ul className="list-items">
           {items.length ? items.map(item => (
             <li key={item}>
               <span>{name === "sources" ? sourceName(item) : item}</span>
-              <button type="button" className="button" disabled={name === "sources" && item === "WALKIN"} onClick={() => handleRemove(name, item)}>{name === "sources" && item === "WALKIN" ? "Permanent" : "Remove"}</button>
+              <button type="button" className="button" disabled={saving || (name === "sources" && item === "WALKIN")} onClick={() => handleRemove(name, item)}>{name === "sources" && item === "WALKIN" ? "Permanent" : "Remove"}</button>
             </li>
           )) : <li className="list-empty">No items yet.</li>}
         </ul>
@@ -92,7 +103,7 @@ export function ListsPage() {
       <div className="page-heading compact">
         <div>
           <h1>Lists <span>Administrator</span></h1>
-          <p className="subtext">Maintain lead branches, sources, activities, models, and color variants in one workspace.</p>
+          <p className="subtext">Maintain lead sources, activities and linked sub-activities, branches, models, and color variants.</p>
         </div>
       </div>
       
@@ -100,6 +111,17 @@ export function ListsPage() {
 
       <div className="lists-workspace">
         {listSections.map(section => <ListSection key={section.name} title={section.title} name={section.name} />)}
+        <article className="panel list-manager">
+          <header className="panel-heading list-manager-heading"><div><p className="eyebrow">LINKED TO ACTIVITY</p><h2>Sub-activities</h2></div></header>
+          <label style={{ padding: "12px 20px" }}>Parent activity<select className="filter" aria-label="Parent activity" value={activity} disabled={saving} onChange={event => { setActivity(event.target.value); setSubActivity(""); }}><option value="">Select activity</option>{config?.lists.activities?.map(item => <option key={item}>{item}</option>)}</select></label>
+          <form className="list-add-form" onSubmit={async event => {
+            event.preventDefault();
+            if (!config || !activity || !subActivity.trim() || saving) return;
+            const children = config.lists.subActivities?.[activity] || [];
+            if (await saveLists({ ...config.lists, subActivities: { ...config.lists.subActivities, [activity]: Array.from(new Set([...children, subActivity.trim()])) } })) setSubActivity("");
+          }}><input aria-label="New sub-activity" required maxLength={160} placeholder="e.g. Roadshow at Kochi" value={subActivity} onChange={event => setSubActivity(event.target.value)} disabled={!activity || saving} /><button className="button primary" disabled={!activity || saving}>Add</button></form>
+          <ul className="list-items">{(config?.lists.subActivities?.[activity] || []).map(item => <li key={item}><span>{item}</span><button type="button" className="button" disabled={saving} onClick={() => config && void saveLists({ ...config.lists, subActivities: { ...config.lists.subActivities, [activity]: (config.lists.subActivities?.[activity] || []).filter(child => child !== item) } })}>Remove</button></li>)}</ul>
+        </article>
       </div>
 
       <style>{`

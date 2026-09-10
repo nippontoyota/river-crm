@@ -3,7 +3,7 @@ import { formatDate, toApiDate, toDateInputValue } from "@/lib/dates";
 
 type Paginated<T> = { count?: number; next?: string | null; previous?: string | null; results: T[] };
 type ApiLead = {
-  id: number; name: string; phone: string; email: string; source: string; source_label: string; campaign: string; model_interest: string; city: string; rto: string; generated_by: number | null;
+  id: number; name: string; phone: string; email: string; source: string; source_label: string; test_drive_completed_at: string | null; campaign: string; activity: string; sub_activity: string; model_interest: string; city: string; rto: string; generated_by: number | null;
   branch: string; enquiry_date: string | null; status: string; category: string; sales_outcome: string; assigned_so: number | null; assigned_so_name: string; assigned_ps: number | null; assigned_ps_name: string; needs_cre_reassignment: boolean; needs_so_reassignment: boolean; next_follow_up: string | null; call_count: number; qualification: LeadQualification | null; created_at: string;
 };
 type ApiSalesLead = { id: number; status: string; name: string; phone: string; source: string; flagged_to_manager: boolean };
@@ -11,22 +11,23 @@ type ApiOfficer = { id: number; first_name: string; last_name: string; email: st
 
 export type Lead = {
   id: number; name: string; phone: string; source: string; sourceCode: string; model: string; city: string; rto: string; generated_by: number | null; enquiryDate: string | null; enquiredAt: string;
-  branch: string; campaign: string; category: string; salesOutcome: string; nextFollowUp: string | null; callCount: number; statusCode: string; status: string; assignedSoId: number | null; assignedSoName: string; assignedPsId: number | null; assignedPsName: string; needsCreReassignment: boolean; needsSoReassignment: boolean;
+  branch: string; test_drive_completed_at: string | null; campaign: string; activity: string; sub_activity: string; category: string; salesOutcome: string; nextFollowUp: string | null; callCount: number; statusCode: string; status: string; assignedSoId: number | null; assignedSoName: string; assignedPsId: number | null; assignedPsName: string; needsCreReassignment: boolean; needsSoReassignment: boolean;
 };
 export type SalesLead = { id: number; status: string; statusCode: string; name: string; phone: string; source: string; sourceCode: string; flagged_to_manager: boolean };
-export type LeadInput = { rto?: string; name: string; phone: string; email?: string; source: string; source_label?: string; campaign?: string; model_interest?: string; city?: string; branch?: string; enquiry_date?: string; profession?: string; ps_officer_id?: number; status?: string; category?: string; qualification?: LeadQualification; qualification_input?: LeadQualification };
+export type LeadInput = { rto?: string; name: string; phone: string; email?: string; source: string; source_label?: string; campaign?: string; activity?: string; sub_activity?: string; model_interest?: string; city?: string; branch?: string; enquiry_date?: string; profession?: string; ps_officer_id?: number; status?: string; category?: string; qualification?: LeadQualification; qualification_input?: LeadQualification };
 export type LeadFilters = { source?: string; status?: string; branch?: string; model?: string; city?: string; source_label?: string; date_from?: string; date_to?: string; q?: string };
 export type LeadQualification = { variant: string; buying_timeline: string; finance_type: string; trade_in: boolean | null; test_drive: string; notes: string; updated_at?: string };
 export type CallHistory = { id: number; status: string; outcome: string; remarks: string; so_name: string; created_at: string; call_status?: string };
 export type FollowUpHistory = { id: number; lead: number; customer: string; so_name: string; so_active: boolean; scheduled_for: string; resolved_at: string | null; notified_at: string | null; reminder_held: boolean };
 export type LeadDetail = Lead & { email: string; sourceLabel: string; campaign: string; qualification: LeadQualification | null; callHistory: CallHistory[]; followUpHistory: FollowUpHistory[]; auditHistory: { event: string; before: Record<string, unknown>; after: Record<string, unknown>; actor: string; created_at: string }[] };
-export type SalesDashboard = { summary: { total: number; fresh: number; followups: number; missed: number; pending: number; qualified: number; walkin: number; won: number; lost: number; won_lost: number; untouched: number; called: number; scheduled: number }; section: string; results: SalesLead[] };
-export type PersonalAnalytics = { range: string; summary: { total: number; assigned: number; qualified: number; booked: number; lost: number; retailed: number; conversion_rate: number }; status_counts: { status: string; count: number }[]; source: { source: string; total: number; qualified: number; booked: number; retailed: number }[]; models: { model_interest: string; total: number; qualified: number; booked: number }[]; monthly: { month: string; total: number; qualified: number; booked: number; retailed: number }[] };
+export type EtbrMetrics = { etbr_enquired: number; etbr_test_drive_completed: number; etbr_booked: number; etbr_retailed: number };
+export type SalesDashboard = { summary: EtbrMetrics & { total: number; fresh: number; followups: number; missed: number; pending: number; qualified: number; walkin: number; won: number; lost: number; won_lost: number; untouched: number; called: number; scheduled: number }; section: string; results: SalesLead[] };
+export type PersonalAnalytics = { range: string; summary: EtbrMetrics & { total: number; assigned: number; qualified: number; booked: number; lost: number; retailed: number; conversion_rate: number }; status_counts: { status: string; count: number }[]; source: { source: string; total: number; qualified: number; booked: number; retailed: number }[]; models: { model_interest: string; total: number; qualified: number; booked: number }[]; monthly: { month: string; total: number; qualified: number; booked: number; retailed: number }[] };
 export type Officer = { id: number; name: string; initials: string; color: "blue" | "green" | "violet" | "orange"; location: string; assigned: number; calls: number; qualified: number; won: number };
 export type Metrics = { total_assigned: number; total_called: number; calls_today?: number; qualified: number; walkins: number; won: number; lost: number; conversion_rate: number };
 export type LifecycleEvent = { action: "DISABLED" | "ENABLED" | "DELETED"; reason: string; actor: string; summary: Record<string, unknown>; created_at: string };
 export type AnalyticsOfficer = Metrics & { id: number; name: string; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; account_history?: LifecycleEvent[] };
-export type Analytics = { summary: Metrics; source: { source: string; total: number; qualified: number; won: number }[]; cre: AnalyticsOfficer[]; officers: AnalyticsOfficer[] };
+export type Analytics = { summary: Metrics & EtbrMetrics; source: { source: string; total: number; qualified: number; won: number }[]; cre: AnalyticsOfficer[]; officers: AnalyticsOfficer[] };
 export type CurrentUser = { id: number; first_name: string; last_name: string; email: string; role: "ADMIN" | "CRE" | "SO" | "SALES_MANAGER" | "RECEPTIONIST" | "COMPLAINTS"; is_active?: boolean; deleted_at?: string | null; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; location?: string };
 export type OffboardingRoute = { status: string; destination: "POOL" | "DISTRIBUTE"; recipient_ids: number[] };
 export type OffboardingImpact = {
@@ -40,7 +41,6 @@ let csrfToken = "";
 const currentUserCacheKey = "incheon.currentUser";
 let currentUserRequest: Promise<{ user: CurrentUser }> | null = null;
 let systemConfigRequest: Promise<SystemConfig> | null = null;
-let systemConfigCache: SystemConfig | null = null;
 
 export function cacheCurrentUser(user: CurrentUser) {
   if (typeof window !== "undefined") sessionStorage.setItem(currentUserCacheKey, JSON.stringify(user));
@@ -131,9 +131,13 @@ export async function getLeadsPage(query = "") { const data = await api<Paginate
 export async function getLeads(query = "") { return (await getLeadsPage(query)).results; }
 export async function getMyDashboard(params: Record<string, string>) { const query = new URLSearchParams(params).toString(); const data = await api<{ summary: SalesDashboard["summary"]; section: string; results: ApiSalesLead[] }>(`/api/leads/my-dashboard/${query ? `?${query}` : ""}`); return { ...data, results: data.results.map(toSalesLead) }; }
 export async function getLeadDetail(id: number) { const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"] }>(`/api/leads/${id}/`); return toLeadDetail(data); }
+export async function completeTestDrive(id: number) {
+  const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"] }>(`/api/leads/${id}/complete-test-drive/`, { method: "POST", body: "{}" });
+  return toLeadDetail(data);
+}
 export const deleteLead = (id: number) => api<void>(`/api/leads/${id}/`, { method: "DELETE" });
 const withApiDate = <T extends { enquiry_date?: string | null }>(payload: T): T => payload.enquiry_date === undefined ? payload : { ...payload, enquiry_date: toApiDate(payload.enquiry_date) };
-export async function updateMyLead(id: number, payload: { name?: string; phone?: string; email?: string; source?: string; source_label?: string; campaign?: string; model_interest?: string; city?: string; branch?: string; enquiry_date?: string | null; status?: string; category?: string; sales_outcome?: string; remarks?: string; call_status?: string; call_outcome?: string; follow_up_at?: string | null; ps_officer_id?: number; qualification?: LeadQualification; flagged_to_manager?: boolean }) { const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"] }>(`/api/leads/${id}/so-update/`, { method: "PATCH", body: JSON.stringify(withApiDate(payload)) }); return toLeadDetail(data); }
+export async function updateMyLead(id: number, payload: { name?: string; phone?: string; email?: string; source?: string; source_label?: string; campaign?: string; activity?: string; sub_activity?: string; model_interest?: string; city?: string; branch?: string; enquiry_date?: string | null; status?: string; category?: string; sales_outcome?: string; remarks?: string; call_status?: string; call_outcome?: string; follow_up_at?: string | null; ps_officer_id?: number; qualification?: LeadQualification; flagged_to_manager?: boolean }) { const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"] }>(`/api/leads/${id}/so-update/`, { method: "PATCH", body: JSON.stringify(withApiDate(payload)) }); return toLeadDetail(data); }
 export const createSoLead = (payload: LeadInput) => api<ApiLead>("/api/leads/so-create/", { method: "POST", body: JSON.stringify(withApiDate(payload)) });
 export const createLead = (payload: LeadInput) => api<ApiLead>("/api/leads/", { method: "POST", body: JSON.stringify(withApiDate(payload)) });
 export async function getCres() { const data = await api<Paginated<ApiOfficer>>("/api/auth/cre-users/"); return data.results; }
@@ -142,7 +146,7 @@ export const getAdminAnalytics = () => api<Analytics>("/api/analytics/admin/");
 export const getMyAnalytics = () => api<Metrics>("/api/analytics/me/");
 export async function getMyAnalyticsDashboard(range = "mtd", dateFrom = "", dateTo = "") { const from = toDateInputValue(dateFrom); const to = toDateInputValue(dateTo); const query = new URLSearchParams({ range, ...(from ? { date_from: from } : {}), ...(to ? { date_to: to } : {}) }).toString(); return api<PersonalAnalytics>(`/api/analytics/me/?${query}`); }
 export const exportMyAnalytics = () => download("/api/analytics/me/export/", "incheon-my-analytics.csv");
-export type ManagerSummary = { total: number; untouched: number; contacted: number; open: number; qualified: number; walkin: number; booked: number; retailed: number; lost: number; flagged: number; lead_to_qualified_rate: number; lead_to_retail_rate: number; qualified_to_booked_rate: number; booked_to_retail_rate: number; followups_due: number; stale_untouched: number; delta: Record<string, number> };
+export type ManagerSummary = EtbrMetrics & { total: number; untouched: number; contacted: number; open: number; qualified: number; walkin: number; booked: number; retailed: number; lost: number; flagged: number; lead_to_qualified_rate: number; lead_to_retail_rate: number; qualified_to_booked_rate: number; booked_to_retail_rate: number; followups_due: number; stale_untouched: number; delta: Record<string, number> };
 export type ManagerRoleRow = { id: number; name: string; email: string; location: string; total: number; untouched: number; qualified: number; booked: number; retailed: number; lost: number; calls: number; followups: number; last_activity: string | null; conversion_rate: number; qualification_rate: number };
 export type ManagerPerformanceRow = { total: number; qualified: number; booked: number; retailed: number; lost: number; conversion_rate: number };
 export type ManagerPSFollowupRow = { id: number; name: string; email: string; total_leads: number; test_drive: number; unattended: number; f1: number; f2: number; f3: number; f4: number; f5: number };
@@ -178,15 +182,13 @@ export type UploadRow = { id: number; row_number: number; data: { name?: string 
 export type UploadBatch = { id: number; status: "PARSING" | "READY" | "COMMITTED" | "FAILED"; total_rows: number; parsed_ok: number; duplicates_found: number; crm_duplicates_found: number; file_duplicates_found: number; removed_duplicates: number; pending_duplicates: number; skipped: number; error_message: string; rows?: UploadRow[] };
 
 export type RtoOption = { value: string; label: string };
-export type SystemConfig = { so_lead_sources: string[]; rto_options: RtoOption[]; lists: { branches?: string[]; sources?: string[]; activities?: string[]; models?: string[]; colorVariants?: string[] }; updated_at?: string };
+export type SystemConfig = { complaint_subtypes: Record<string, string[]>; so_lead_sources: string[]; rto_options: RtoOption[]; lists: { branches?: string[]; sources?: string[]; activities?: string[]; subActivities?: Record<string, string[]>; models?: string[]; colorVariants?: string[] }; updated_at?: string };
 export function getSystemConfig() {
-  if (systemConfigCache) return Promise.resolve(systemConfigCache);
-  if (!systemConfigRequest) systemConfigRequest = api<SystemConfig>("/api/system-config/").then(config => systemConfigCache = config).finally(() => { systemConfigRequest = null; });
+  if (!systemConfigRequest) systemConfigRequest = api<SystemConfig>("/api/system-config/").finally(() => { systemConfigRequest = null; });
   return systemConfigRequest;
 }
 export async function updateSystemConfig(lists: SystemConfig["lists"]) {
   const config = await api<SystemConfig>("/api/system-config/", { method: "PUT", body: JSON.stringify({ lists }) });
-  systemConfigCache = config;
   return config;
 }
 export const getUsers = async () => { const data = await api<any>("/api/auth/users/"); return (data.results || data) as CurrentUser[]; };
@@ -198,14 +200,14 @@ export const enableUser = (userId: number) => api<CurrentUser>(`/api/auth/users/
 export const permanentlyDeleteUser = (userId: number, impactVersion: string, routes: OffboardingRoute[], reason: string) => api<{ status: string }>(`/api/auth/users/${userId}/permanent-delete/`, { method: "POST", body: JSON.stringify({ impact_version: impactVersion, routes, reason }) });
 export const reviewFollowUp = (followUpId: number, action: "APPROVE" | "RESOLVE", scheduledFor?: string) => api<FollowUpHistory>(`/api/follow-ups/${followUpId}/review/`, { method: "PATCH", body: JSON.stringify({ action, ...(scheduledFor ? { scheduled_for: scheduledFor } : {}) }) });
 
-export type ReceptionistAnalytics = { summary: { total: number; walkin: number; digital: number }; so_breakdown: { name: string; count: number }[] };
+export type ReceptionistAnalytics = { summary: EtbrMetrics & { total: number; walkin: number; digital: number }; so_breakdown: { name: string; count: number }[] };
 export const getReceptionistAnalytics = () => api<ReceptionistAnalytics>("/api/analytics/receptionist/");
 
 // ── Complaints ────────────────────────────────────────────────────────────────
 export type Complaint = {
   id: number; uid: string; ticket_number: string;
   customer_name: string; customer_phone: string; customer_email: string;
-  category: string; priority: string; status: string;
+  category: string; subtype: string; priority: string; status: string;
   subject: string; description: string; model_interest: string; branch: string; source: string;
   resolution_notes: string; resolved_at: string | null;
   logged_by: number; logged_by_name: string;
@@ -218,7 +220,7 @@ export type ComplaintDetail = Complaint & {
 export type ComplaintNote = { id: number; author_name: string; content: string; created_at: string };
 export type ComplaintInput = {
   customer_name: string; customer_phone: string; customer_email?: string;
-  category: string; priority: string; subject: string; description: string;
+  category: string; subtype: string; priority: string; subject: string; description: string;
   model_interest?: string; branch: string; source?: string;
 };
 export type ComplaintFilters = {

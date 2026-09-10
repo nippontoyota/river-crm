@@ -29,6 +29,7 @@ class ComplaintAccessTests(TestCase):
             "customer_name": "Aarav Customer",
             "customer_phone": phone,
             "category": Complaint.Category.SERVICE_DELAY,
+            "subtype": "Repair delayed",
             "priority": Complaint.Priority.HIGH,
             "subject": "Service delay",
             "description": "The service is delayed.",
@@ -173,11 +174,33 @@ class ComplaintAccessTests(TestCase):
         self.assertEqual(resolver_analytics.data["summary"]["total"], 3)
         self.assertNotIn("by_resolution_team", resolver_analytics.data)
 
-    def test_sales_and_receptionist_roles_have_no_complaint_access(self):
+    def test_sales_role_has_no_complaint_access(self):
         complaint = self.complaint()
-        for user in (self.so, self.receptionist):
+        for user in (self.so,):
             self.client.force_authenticate(user)
             self.assertEqual(self.client.get("/api/complaints/").status_code, 403)
             self.assertEqual(self.client.get(f"/api/complaints/{complaint.id}/").status_code, 403)
             self.assertEqual(self.client.post("/api/complaints/", self.payload("9876543219"), format="json").status_code, 403)
             self.assertEqual(self.client.get("/api/complaints/analytics/").status_code, 403)
+
+    def test_receptionist_logs_and_tracks_own_complaints_only(self):
+        others_ticket = self.complaint()
+        self.client.force_authenticate(self.receptionist)
+        response = self.client.post("/api/complaints/", {**self.payload(), "logged_by": self.cre.pk, "assigned_to": self.resolver.pk}, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["logged_by"], self.receptionist.pk)
+        self.assertIsNone(response.data["assigned_to"])
+        self.assertEqual(response.data["source"], Complaint.Source.WALKIN)
+        own_path = f'/api/complaints/{response.data["id"]}/'
+        self.assertEqual(self.client.get(own_path).status_code, 200)
+        self.assertEqual(self.client.get("/api/complaints/").data["count"], 1)
+        self.assertEqual(self.client.get(f"/api/complaints/{others_ticket.pk}/").status_code, 404)
+        self.assertEqual(self.client.patch(own_path, {"status": "RESOLVED", "resolution_notes": "Done"}, format="json").status_code, 403)
+        self.assertEqual(self.client.post(f"{own_path}add-note/", {"content": "Remark"}, format="json").status_code, 403)
+        self.assertEqual(self.client.delete(own_path).status_code, 403)
+        self.assertEqual(self.client.get("/api/complaints/analytics/").status_code, 403)
+        self.client.force_authenticate(self.cre)
+        self.assertEqual(self.client.get(own_path).status_code, 404)
+        self.client.force_authenticate(self.resolver)
+        self.assertEqual(self.client.get(own_path).status_code, 200)
+        self.assertEqual(self.client.patch(own_path, {"status": "RESOLVED", "resolution_notes": "Customer updated."}, format="json").status_code, 200)

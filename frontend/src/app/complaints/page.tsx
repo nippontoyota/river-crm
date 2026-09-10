@@ -13,18 +13,18 @@ export default function ComplaintsPage() {
   useEffect(() => {
     void getCurrentUser().then(result => {
       const actual = result.user;
-      if (actual.role === "ADMIN" || actual.role === "CRE" || actual.role === "COMPLAINTS") {
+      if (actual.role === "ADMIN" || actual.role === "CRE" || actual.role === "COMPLAINTS" || actual.role === "RECEPTIONIST") {
         setUser(actual);
         return;
       }
-      router.replace(actual.role === "RECEPTIONIST" ? "/capture" : "/my-leads");
+      router.replace(actual.role === "SALES_MANAGER" ? "/manager/analytics" : "/my-leads");
     }).catch(() => router.replace("/"));
   }, [router]);
 
   if (!user) return null;
 
   return (
-    <AppShell role={user.role === "ADMIN" ? "Admin" : "Sales officer"}>
+    <AppShell role={user.role === "ADMIN" ? "Admin" : user.role === "RECEPTIONIST" ? "Receptionist" : "Sales officer"}>
       <ComplaintDesk adminView={user.role === "ADMIN"} currentUser={user} />
     </AppShell>
   );

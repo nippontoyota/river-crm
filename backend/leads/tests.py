@@ -722,7 +722,7 @@ class LeadAccessTests(TestCase):
 
         analytics = self.client.get("/api/analytics/receptionist/")
         self.assertEqual(analytics.status_code, 200)
-        self.assertEqual(analytics.data["summary"], {"total": 1, "walkin": 1, "digital": 0})
+        self.assertEqual(analytics.data["summary"], {"total": 1, "walkin": 1, "digital": 0, "etbr_enquired": 1, "etbr_test_drive_completed": 0, "etbr_booked": 0, "etbr_retailed": 0})
         self.assertEqual(analytics.data["so_breakdown"], [{"name": self.ps_so.email, "count": 1}])
 
         self.client.force_authenticate(self.ps_so)
