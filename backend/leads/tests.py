@@ -668,7 +668,7 @@ class LeadAccessTests(TestCase):
                 "call_status": call_status,
                 "call_outcome": outcome,
                 "status": status_value,
-                "sales_outcome": Lead.SalesOutcome.PENDING,
+                "sales_outcome": Lead.SalesOutcome.BOOKED if outcome == "Booking Done" else Lead.SalesOutcome.PENDING,
                 "remarks": remark,
                 "follow_up_at": follow_up_at.isoformat(),
             }, format="json")
@@ -738,7 +738,7 @@ class LeadAccessTests(TestCase):
                 "call_status": call_status,
                 "call_outcome": outcome,
                 "status": status_value,
-                "sales_outcome": Lead.SalesOutcome.PENDING,
+                "sales_outcome": Lead.SalesOutcome.BOOKED if outcome == "Booking Done" else Lead.SalesOutcome.PENDING,
                 "remarks": remark,
                 "follow_up_at": follow_up_at.isoformat(),
             }, format="json")
@@ -768,25 +768,21 @@ class LeadAccessTests(TestCase):
         self.assertEqual(self.first_lead.status, Lead.Status.QUALIFIED)
 
         self.client.force_authenticate(self.ps_so)
-        response = self.client.patch(f"/api/leads/{self.first_lead.id}/so-update/", {"call_outcome": "LOST", "status": Lead.Status.LOST}, format="json")
+        response = self.client.patch(f"/api/leads/{self.first_lead.id}/so-update/", {"call_status": "Connected", "call_outcome": "Not Interested", "remarks": "Customer declined.", "status": Lead.Status.LOST}, format="json")
         self.assertEqual(response.status_code, 200)
         self.first_lead.refresh_from_db()
         self.assertEqual(self.first_lead.status, Lead.Status.LOST)
 
-    def test_ps_can_manually_mark_not_connected_as_no_response_lost(self):
+    def test_ps_cannot_mark_not_connected_as_no_response_lost(self):
         self.first_lead.status = Lead.Status.QUALIFIED
         self.first_lead.assigned_ps = self.ps_so
         self.first_lead.save(update_fields=["status", "assigned_ps"])
         self.client.force_authenticate(self.ps_so)
-
         response = self.client.patch(f"/api/leads/{self.first_lead.id}/so-update/", {"call_status": "Not Connected", "call_outcome": "No Response", "status": Lead.Status.LOST, "sales_outcome": Lead.SalesOutcome.LOST, "remarks": "No response, marking lost."}, format="json")
-
-        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.status_code, 400, response.data)
         self.first_lead.refresh_from_db()
-        self.assertEqual(self.first_lead.status, Lead.Status.LOST)
-        self.assertEqual(self.first_lead.sales_outcome, Lead.SalesOutcome.LOST)
-        self.assertEqual(self.first_lead.call_logs.latest("id").outcome, "No Response")
-        self.assertFalse(FollowUp.objects.filter(lead=self.first_lead, resolved_at__isnull=True).exists())
+        self.assertEqual(self.first_lead.status, Lead.Status.QUALIFIED)
+        self.assertFalse(self.first_lead.call_logs.exists())
 
     def test_call_outcome_rejects_incompatible_follow_up(self):
         self.client.force_authenticate(self.first_so)
@@ -910,7 +906,7 @@ class LeadAccessTests(TestCase):
         self.first_lead.save(update_fields=["status", "assigned_ps"])
         self.client.force_authenticate(self.ps_so)
 
-        response = self.client.patch(f"/api/leads/{self.first_lead.id}/so-update/", {"status": Lead.Status.WON, "sales_outcome": Lead.SalesOutcome.RETAILED, "remarks": "Sale done."}, format="json")
+        response = self.client.patch(f"/api/leads/{self.first_lead.id}/so-update/", {"call_status": "Connected", "call_outcome": "Retail Done", "status": Lead.Status.WON, "sales_outcome": Lead.SalesOutcome.RETAILED, "remarks": "Sale done."}, format="json")
         self.assertEqual(response.status_code, 200)
         self.first_lead.refresh_from_db()
         self.assertEqual(self.first_lead.status, Lead.Status.WON)

@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 from accounts.models import User
 from accounts.permissions import IsAdmin, IsAdminOrReceptionist, IsAdminReceptionistOrCRE, IsSalesManager, IsSalesOfficer
 from notifications.models import Notification
+from .outcomes import CLOSED_STATUSES, outcome_policy, validate_milestone_change
 from .metrics import etbr_aggregates
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from .serializers import CALL_OUTCOME_STATUS_OPTIONS, PS_CALL_OUTCOME_STATUS_OPTIONS, AssignmentSerializer, BulkDistributeSerializer, FollowUpReviewSerializer, FollowUpSerializer, LeadDetailSerializer, LeadSerializer, LeadUpdateSerializer, PSAssignmentSerializer, SOLeadCreateSerializer, SOLeadListSerializer, SOLeadUpdateSerializer, SystemConfigSerializer
@@ -29,7 +30,6 @@ FORWARD_TRANSITIONS = {
     Lead.Status.QUALIFIED: {Lead.Status.WALKIN, Lead.Status.WON, Lead.Status.LOST},
     Lead.Status.WALKIN: {Lead.Status.WON, Lead.Status.LOST},
 }
-CLOSED_STATUSES = {Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED}
 
 def apply_lead_filters(queryset, filters):
     if value := filters.get("source"):
@@ -94,7 +94,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         return queryset.order_by(ordering if ordering.lstrip("-") in {"created_at", "enquiry_date", "status"} else "-created_at")
 
     def retrieve(self, request, *args, **kwargs):
-        return Response(LeadDetailSerializer(self.get_object()).data)
+        return Response(LeadDetailSerializer(self.get_object(), context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="complete-test-drive")
     def complete_test_drive(self, request, pk=None):
@@ -105,11 +105,13 @@ class LeadViewSet(viewsets.ModelViewSet):
             lead = Lead.objects.select_for_update().get(pk=visible_lead.pk)
             if lead.deleted_at or (not request.user.is_admin and lead.assigned_ps_id != request.user.pk):
                 return Response(status=status.HTTP_403_FORBIDDEN)
+            if not lead.test_drive_completed_at and not outcome_policy(lead, request.user)["can_complete_test_drive"]:
+                raise ValidationError({"detail": "Test drives cannot be completed on closed leads."})
             if not lead.test_drive_completed_at:
                 lead.test_drive_completed_at = timezone.now()
                 lead.save(update_fields=["test_drive_completed_at", "updated_at"])
                 LeadAudit.objects.create(lead=lead, actor=request.user, event="test_drive_completed", before={"test_drive_completed_at": None}, after={"test_drive_completed_at": lead.test_drive_completed_at.isoformat()})
-        return Response(LeadDetailSerializer(lead).data)
+        return Response(LeadDetailSerializer(lead, context={"request": request}).data)
 
     @action(detail=False, methods=["post"], url_path="so-create", permission_classes=[IsSalesOfficer], serializer_class=SOLeadCreateSerializer)
     def so_create(self, request):
@@ -286,13 +288,16 @@ class LeadViewSet(viewsets.ModelViewSet):
         user_field = "assigned_so_id" if request.user.role == User.Role.CRE else "assigned_ps_id"
         if not request.user.is_admin and getattr(lead, user_field) != request.user.id:
             return Response({"detail": "This lead is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = SOLeadUpdateSerializer(data=request.data, context={"lead": lead, "current_source": lead.source, "self_generated": bool(lead.generated_by_id)})
+        serializer = SOLeadUpdateSerializer(data=request.data, context={"lead": lead, "user": request.user, "current_source": lead.source, "self_generated": bool(lead.generated_by_id)})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        sales_call = request.user.role == User.Role.SALES_OFFICER or (request.user.is_admin and (data.get("call_status") or data.get("call_outcome") in PS_CALL_OUTCOME_STATUS_OPTIONS))
         sales_status = {Lead.SalesOutcome.BOOKED: Lead.Status.WALKIN, Lead.SalesOutcome.RETAILED: Lead.Status.WON, Lead.SalesOutcome.LOST: Lead.Status.LOST}
         call_status = {"QUALIFIED": Lead.Status.QUALIFIED, "PENDING": Lead.Status.PENDING, "LOST": Lead.Status.LOST, "RNR": Lead.Status.RNR, "SWITCHED_OFF": Lead.Status.SWITCHED_OFF, "CALLBACK": Lead.Status.CALLBACK}
         call_outcome = data.get("call_outcome")
-        if call_outcome in CALL_OUTCOME_STATUS_OPTIONS:
+        if sales_call:
+            next_status = data.get("status", lead.status)
+        elif call_outcome in CALL_OUTCOME_STATUS_OPTIONS:
             next_status = data.get("status") or {"PENDING": Lead.Status.PENDING, "QUALIFIED": Lead.Status.QUALIFIED, "LOST": Lead.Status.LOST, "RNR": Lead.Status.RNR, "SWITCHED_OFF": Lead.Status.SWITCHED_OFF, "CALLBACK": Lead.Status.CALLBACK}.get(call_outcome)
             if next_status not in CALL_OUTCOME_STATUS_OPTIONS[call_outcome]:
                 return Response({"detail": "Choose a lead status that matches the call outcome."}, status=status.HTTP_400_BAD_REQUEST)
@@ -303,9 +308,9 @@ class LeadViewSet(viewsets.ModelViewSet):
         if call_outcome == "PENDING" and not data.get("follow_up_at"):
             return Response({"detail": "Pending calls require a follow-up time."}, status=status.HTTP_400_BAD_REQUEST)
         follow_up_statuses = {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.WALKIN}
-        if call_outcome in CALL_OUTCOME_STATUS_OPTIONS and next_status not in follow_up_statuses and data.get("follow_up_at"):
+        if not sales_call and call_outcome in CALL_OUTCOME_STATUS_OPTIONS and next_status not in follow_up_statuses and data.get("follow_up_at"):
             return Response({"detail": "This outcome cannot have a follow-up time."}, status=status.HTTP_400_BAD_REQUEST)
-        if call_outcome and call_outcome not in CALL_OUTCOME_STATUS_OPTIONS and call_outcome != "PENDING" and data.get("follow_up_at"):
+        if not sales_call and call_outcome and call_outcome not in CALL_OUTCOME_STATUS_OPTIONS and call_outcome != "PENDING" and data.get("follow_up_at"):
             return Response({"detail": "Only pending calls can have a follow-up time."}, status=status.HTTP_400_BAD_REQUEST)
         if data.get("follow_up_at") and next_status == Lead.Status.FRESH:
             next_status = Lead.Status.CALLBACK
@@ -313,6 +318,9 @@ class LeadViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Only callbacks and walk-ins can have an appointment."}, status=status.HTTP_400_BAD_REQUEST)
         if request.user.role == User.Role.CRE and lead.status == Lead.Status.QUALIFIED and next_status == Lead.Status.QUALIFIED and (call_outcome == "QUALIFIED" or data.get("qualification")):
             return Response({"detail": "This lead is already qualified."}, status=status.HTTP_400_BAD_REQUEST)
+        if not sales_call and any(field in data for field in ("status", "sales_outcome", "call_outcome", "call_status", "remarks", "follow_up_at")):
+            data["status"] = next_status
+            validate_milestone_change(lead, data)
         ps_officer = data.get("ps_officer")
         qualification_update = (
             request.user.role == User.Role.CRE
@@ -401,7 +409,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             if ps_officer and request.user.role == User.Role.CRE:
                 LeadAudit.objects.create(lead=lead, actor=request.user, event="assigned_ps", after={"assigned_ps": ps_officer.id})
                 Notification.objects.create(user=ps_officer, lead=lead, kind=Notification.Kind.ASSIGNMENT, message=f"You have a qualified lead: {lead.name}.")
-        return Response(LeadDetailSerializer(self.get_object()).data)
+        return Response(LeadDetailSerializer(self.get_object(), context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
     def assign(self, request, pk=None):
@@ -688,6 +696,8 @@ class LeadViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="log-call")
     def log_call(self, request, pk=None):
+        if request.user.role == User.Role.SALES_OFFICER or request.data.get("call_outcome") in PS_CALL_OUTCOME_STATUS_OPTIONS:
+            return self.so_update(request, pk)
         with transaction.atomic():
             lead = get_object_or_404(self.get_queryset().select_for_update(), pk=pk)
             user_field = "assigned_so_id" if request.user.role == User.Role.CRE else "assigned_ps_id"
@@ -695,12 +705,14 @@ class LeadViewSet(viewsets.ModelViewSet):
                 return Response({"detail": "This lead is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
             serializer = LeadUpdateSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
+            validate_milestone_change(lead, serializer.validated_data)
             next_status = serializer.validated_data["status"]
             if next_status not in FORWARD_TRANSITIONS.get(lead.status, set()):
                 return Response({"detail": "This status transition is not allowed."}, status=status.HTTP_400_BAD_REQUEST)
             previous = lead.status
             lead.status = next_status
-            lead.save(update_fields=["status", "updated_at"])
+            lead.sales_outcome = serializer.validated_data["sales_outcome"]
+            lead.save(update_fields=["status", "sales_outcome", "updated_at"])
             CallLog.objects.create(lead=lead, so=request.user, status=next_status, call_status=serializer.validated_data.get("call_status", ""), outcome=serializer.validated_data.get("call_outcome", ""), remarks=serializer.validated_data.get("remarks", ""))
             FollowUp.objects.filter(lead=lead, resolved_at__isnull=True).update(resolved_at=timezone.now())
             if follow_up_at := serializer.validated_data.get("follow_up_at"):
@@ -714,17 +726,18 @@ class LeadViewSet(viewsets.ModelViewSet):
             lead = Lead.objects.select_for_update().select_related("assigned_so", "assigned_ps").get(pk=self.get_object().pk)
             if lead.status not in CLOSED_STATUSES:
                 return Response({"detail": "Only closed leads can be reopened."}, status=status.HTTP_400_BAD_REQUEST)
-            before = {"status": lead.status, "assigned_so": lead.assigned_so_id, "assigned_ps": lead.assigned_ps_id}
+            before = {"status": lead.status, "sales_outcome": lead.sales_outcome, "assigned_so": lead.assigned_so_id, "assigned_ps": lead.assigned_ps_id}
             lead.status = Lead.Status.QUALIFIED
+            lead.sales_outcome = Lead.SalesOutcome.PENDING
             if lead.assigned_so and (not lead.assigned_so.is_active or lead.assigned_so.deleted_at):
                 lead.assigned_so = None
                 lead.needs_cre_reassignment = True
             if lead.assigned_ps and (not lead.assigned_ps.is_active or lead.assigned_ps.deleted_at):
                 lead.assigned_ps = None
                 lead.needs_so_reassignment = True
-            lead.save(update_fields=["status", "assigned_so", "assigned_ps", "needs_cre_reassignment", "needs_so_reassignment", "updated_at"])
+            lead.save(update_fields=["status", "sales_outcome", "assigned_so", "assigned_ps", "needs_cre_reassignment", "needs_so_reassignment", "updated_at"])
             FollowUp.objects.filter(lead=lead, resolved_at__isnull=True, so__is_active=False).update(reminder_held=True)
-            LeadAudit.objects.create(lead=lead, actor=request.user, event="reopened", before=before, after={"status": lead.status, "assigned_so": lead.assigned_so_id, "assigned_ps": lead.assigned_ps_id, "needs_cre_reassignment": lead.needs_cre_reassignment, "needs_so_reassignment": lead.needs_so_reassignment})
+            LeadAudit.objects.create(lead=lead, actor=request.user, event="reopened", before=before, after={"status": lead.status, "sales_outcome": lead.sales_outcome, "assigned_so": lead.assigned_so_id, "assigned_ps": lead.assigned_ps_id, "needs_cre_reassignment": lead.needs_cre_reassignment, "needs_so_reassignment": lead.needs_so_reassignment})
         return Response(self.get_serializer(lead).data)
 
 

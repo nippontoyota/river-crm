@@ -15,41 +15,12 @@ import { addDays, formatDate, formatDateTime, parseDate, todayInIST, toApiDate }
 
 type Section = "all" | "fresh" | "followups" | "missed" | "pending" | "qualified" | "walkin" | "won" | "lost" | "won_lost" | "active";
 type WonLostFilter = "all" | "won" | "lost";
-type PsOutcome = { label: string; tone: "qualified" | "lost"; status: string };
 type Draft = {
   status: string; category: string; sales_outcome: string; call_outcome: string; call_status: string; remarks: string; follow_up_at: string;
   model_interest: string; city: string; profession: string; custom_location: string; ps_officer_id: string; lost_reason: string; pending_reason: string;
   qualification: LeadQualification;
 };
 type LeadFields = { name: string; phone: string; email: string; source: string; source_label: string; campaign: string; model_interest: string; city: string; branch: string; enquiry_date: string | null };
-
-const soConnectedOutcomes: PsOutcome[] = [
-  { label: "Need Test Drive", tone: "qualified", status: "PENDING" },
-  { label: "Showroom Visit", tone: "qualified", status: "PENDING" },
-  { label: "Exchange Issue", tone: "qualified", status: "PENDING" },
-  { label: "Booking Done", tone: "qualified", status: "WALKIN" },
-  { label: "Retail Done", tone: "qualified", status: "WON" },
-  { label: "Call Me Back", tone: "qualified", status: "CALLBACK" },
-  { label: "Need time", tone: "qualified", status: "PENDING" },
-  { label: "Need SO Call", tone: "qualified", status: "PENDING" },
-  { label: "Need More Details", tone: "qualified", status: "PENDING" },
-  { label: "Discount Issue", tone: "qualified", status: "PENDING" },
-  { label: "Not Interested", tone: "lost", status: "LOST" },
-  { label: "Already Booked", tone: "lost", status: "LOST" },
-  { label: "Lost to Competition", tone: "lost", status: "LOST" },
-  { label: "Finance Rejected", tone: "lost", status: "LOST" },
-  { label: "Dropped", tone: "lost", status: "LOST" },
-  { label: "Lost to co-dealer", tone: "lost", status: "LOST" }
-];
-const soNotConnectedOutcomes: PsOutcome[] = [
-  { label: "RNR", tone: "qualified", status: "RNR" },
-  { label: "Switch Off", tone: "qualified", status: "SWITCHED_OFF" },
-  { label: "Call Forwarding", tone: "qualified", status: "PENDING" },
-  { label: "Line Busy", tone: "qualified", status: "PENDING" },
-  { label: "Invalid Number", tone: "qualified", status: "PENDING" },
-  { label: "No Response", tone: "lost", status: "LOST" }
-];
-const soOutcomes = [...soConnectedOutcomes, ...soNotConnectedOutcomes];
 
 const sections: { key: Section; label: string; count: keyof SalesDashboard["summary"]; icon: string }[] = [
   { key: "all", label: "All leads", count: "total", icon: "☰" },
@@ -69,12 +40,9 @@ const statusLabels: Record<string, string> = { FRESH: "Fresh", RNR: "RNR", SWITC
 const outcomeLabels: Record<string, string> = { QUALIFIED: "Qualified", LOST: "Lost", PENDING: "Pending" };
 const psOutcomeLabels: Record<string, string> = { BOOKED: "Booked Follow-up", RETAILED: "Retailed", LOST: "Lost" };
 const allOutcomeLabels: Record<string, string> = { ...outcomeLabels, ...psOutcomeLabels };
-soOutcomes.forEach(o => { allOutcomeLabels[o.label] = o.label; });
 
 const statusOptions: Record<string, string[]> = { QUALIFIED: ["QUALIFIED"], LOST: ["LOST"], PENDING: ["PENDING"], BOOKED: ["WALKIN"], RETAILED: ["WON"] };
-soOutcomes.forEach(o => { statusOptions[o.label] = [o.status]; });
-const autoNextDayFollowUpOutcomes = new Set(["RNR", "Switch Off", "Call Forwarding", "Line Busy"]);
-const lostPsOutcomes = new Set(soOutcomes.filter(outcome => outcome.status === "LOST").map(outcome => outcome.label));
+const autoNextDayFollowUpOutcomes = new Set(["RNR", "Switch Off", "Call Forwarding", "Line Busy", "No Response"]);
 const professionOptions = ["Salaried", "Business", "Self Employed", "Doctor", "Govt Employee"];
 const buyingPlanOptions = ["Immediate", "1–2 Months", "2–3 Months", "Greater than 3 months"];
 const financeOptions = ["Inhouse", "Outright"];
@@ -156,6 +124,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const [draft, setDraft] = useState<Draft | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [completingDrive, setCompletingDrive] = useState(false);
   const [notice, setNotice] = useState("");
   const [editingLead, setEditingLead] = useState(false);
   const [leadFields, setLeadFields] = useState<LeadFields | null>(null);
@@ -178,6 +147,8 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const [addLeadPsOptions, setAddLeadPsOptions] = useState<Officer[]>([]);
   const dashboardRequest = useRef(0);
   const isPs = user?.role === "SO";
+  const psVisibleOutcomes = detail && draft ? detail.outcomePolicy.outcomes[draft.call_status] || [] : [];
+  const selectedPsOutcome = psVisibleOutcomes.find(option => option.label === draft?.call_outcome);
   const activeOutcomeLabels = isPs ? psOutcomeLabels : outcomeLabels;
   const branchOptions = branches;
   const selectedLocation = draft ? draft.city.trim() : "";
@@ -251,11 +222,11 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   }, [draft?.call_outcome, isPs, selectedLocation]);
 
   const openLead = async (lead: { id: number }) => {
-    setDetailLoading(true); setError("");
+    setDetailLoading(true); setError(""); setNotice("");
     try {
       const fullLead = await getLeadDetail(lead.id);
       const nextDraft = draftFor(fullLead);
-      if (isPs) nextDraft.call_outcome = fullLead.statusCode === "WALKIN" ? "BOOKED" : fullLead.statusCode === "WON" ? "RETAILED" : fullLead.statusCode === "LOST" ? "LOST" : "";
+      if (isPs) nextDraft.call_outcome = "";
       else if (fullLead.statusCode === "QUALIFIED") nextDraft.call_outcome = "";
       setDetail(fullLead); setDraft(nextDraft); setLeadFields(leadFieldsFor(fullLead)); setEditingLead(false);
     }
@@ -264,16 +235,16 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   };
 
   const save = async () => {
-    if (!detail || !draft || saving) return;
+    if (!detail || !draft || saving || completingDrive || !detail.outcomePolicy.can_update) return;
     
     let followUpAt: string | null = null;
     let remarks = "";
     
     if (isPs) {
       if (!draft.call_status) return setNotice("Choose Connected or Not Connected.");
-      if (!draft.call_outcome) return setNotice("Choose a call outcome.");
+      if (!selectedPsOutcome) return setNotice("Choose an available call outcome.");
       if (!draft.remarks.trim()) return setNotice("Remarks are required.");
-      const nextStatus = statusOptions[draft.call_outcome]?.[0] || "";
+      const nextStatus = selectedPsOutcome.status;
       if (autoNextDayFollowUpOutcomes.has(draft.call_outcome)) {
         followUpAt = followUpIso(draft.follow_up_at || tomorrowFollowUpDay());
         if (!followUpAt) return setNotice("Choose a valid follow-up date.");
@@ -309,9 +280,10 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
       const pendingOutcome = !isPs && draft.call_outcome === "PENDING" ? pendingOutcomeFor(draft.pending_reason) : null;
       await updateMyLead(detail.id, {
         call_outcome: pendingOutcome?.call_outcome || draft.call_outcome,
-        status: pendingOutcome?.status || statusOptions[draft.call_outcome]?.[0] || detail.statusCode,
+        call_status: isPs ? draft.call_status : undefined,
+        status: isPs ? selectedPsOutcome?.status : pendingOutcome?.status || statusOptions[draft.call_outcome]?.[0] || detail.statusCode,
         category: draft.category,
-        sales_outcome: draft.call_outcome === "Retail Done" ? "RETAILED" : draft.call_outcome === "Booking Done" ? "BOOKED" : lostPsOutcomes.has(draft.call_outcome) ? "LOST" : isPs ? "PENDING" : draft.call_outcome === "LOST" ? "LOST" : draft.call_outcome === "BOOKED" ? "BOOKED" : draft.call_outcome === "RETAILED" ? "RETAILED" : "PENDING",
+        sales_outcome: isPs ? selectedPsOutcome?.sales_outcome : draft.call_outcome === "LOST" ? "LOST" : "PENDING",
         remarks,
         follow_up_at: followUpAt,
         model_interest: !isPs && draft.call_outcome === "QUALIFIED" ? draft.model_interest : undefined,
@@ -323,7 +295,18 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
       setDetail(null);
       setDraft(null);
       setNotice("Lead updated and follow-up history saved."); await loadDashboard();
-    } catch (requestError) { const message = requestError instanceof Error ? requestError.message : "Lead update could not be saved."; setError(message); setNotice(message); }
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "Lead update could not be saved.";
+      setError(message);
+      try {
+        const updated = await getLeadDetail(detail.id);
+        setDetail(updated);
+        if (isPs && !updated.outcomePolicy.outcomes[draft.call_status]?.some(option => option.label === draft.call_outcome)) {
+          setDraft({ ...draft, call_outcome: "", follow_up_at: "" });
+          setNotice("Lead progress changed. The unavailable outcome was cleared; your remarks were kept.");
+        }
+      } catch { /* Keep the draft available if refreshing also fails. */ }
+    }
     finally { setSaving(false); }
   };
 
@@ -381,8 +364,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
     : [{label:"Fresh leads", value:summary?.fresh ?? 0, tone:"blue", section:"fresh"}, {label:"Today's follow-ups", value:summary?.followups ?? 0, tone:"yellow", section:"followups"}, {label:"Pending leads", value:summary?.pending ?? 0, tone:"orange", section:"pending"}, {label:"Qualified leads", value:summary?.qualified ?? 0, tone:"green", section:"qualified"}, {label:"Won leads", value:summary?.won ?? 0, tone:"mint", section:"won"}, {label:"Lost leads", value:summary?.lost ?? 0, tone:"red", section:"lost"}];
   const displayStatus = (lead: SalesLead) => !isPs && ["RNR", "SWITCHED_OFF", "CALLBACK"].includes(lead.statusCode) ? "Pending" : lead.status;
   const displayStatusClass = (lead: SalesLead) => !isPs && ["RNR", "SWITCHED_OFF", "CALLBACK"].includes(lead.statusCode) ? "pending" : lead.statusCode.toLowerCase();
-  const psVisibleOutcomes = draft ? (draft.call_status === "Connected" ? soConnectedOutcomes : soNotConnectedOutcomes) : [];
-  const saveTone = draft?.call_outcome && lostPsOutcomes.has(draft.call_outcome) ? "lost" : draft?.call_outcome ? "qualified" : "";
+  const saveTone = selectedPsOutcome?.tone === "lost" ? "lost" : draft?.call_outcome ? "qualified" : "";
   const metricCards = metrics.map(metric => isPs && metric.href ? <Link className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-current={section === metric.section ? "page" : undefined} href={metric.href} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></Link> : <button type="button" className={`sales-metric ${metric.tone} ${section === metric.section ? "active" : ""}`} aria-pressed={section === metric.section} onClick={() => { setSection(metric.section); setCategory(""); setSource(""); setQuery(""); setWonLostFilter("all"); }} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></button>);
   const leadSearch = <label className="sales-search followup-lead-search">⌕<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name or mobile..." /></label>;
 
@@ -423,16 +405,25 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
       <header className="sales-detail-header"><div><p className="eyebrow">LEAD DETAIL · #{String(detail.id).padStart(6, "0")}</p><h2 id="sales-detail-title">Update {detail.name}</h2><p className="subtext">Customer information and call history.</p></div><button className="modal-close" onClick={() => setDetail(null)} aria-label="Close">×</button></header>
       <div className="sales-detail-scroll">
         {error && <p className="form-error" role="alert">{error}</p>}
+        {notice && <p role="status">{notice}</p>}
 
-        <TestDriveCompletion key={detail.id} lead={detail} canComplete={!!isPs} onCompleted={updated => { setDetail(updated); void loadDashboard(); }} /><section className="sales-info-card"><h3>Customer information <button type="button" className="row-action" onClick={() => { setLeadFields(leadFieldsFor(detail)); setEditingLead(true); }}>Edit fields</button></h3><div className="sales-info-grid"><span><small>Name</small><b>{detail.name}</b></span><span><small>Phone</small><b>{detail.phone}</b></span><span><small>Email</small><b>{detail.email || "—"}</b></span><span><small>Source</small><b>{detail.source}</b></span><span><small>Source detail</small><b>{detail.sourceLabel || "—"}</b></span><span><small>Model</small><b>{detail.model}</b></span><span><small>City</small><b>{detail.city || "—"}</b></span><span><small>Enquiry date</small><b>{detail.enquiredAt}</b></span><span><small>Campaign</small><b>{detail.campaign || "—"}</b></span><span><small>Activity</small><b>{detail.activity || "—"}</b></span><span><small>Sub-activity</small><b>{detail.sub_activity || "—"}</b></span><span><small>Branch</small><b>{detail.branch || "—"}</b></span></div><div className="sales-detail-meta"><span>Category <b className={`category-pill ${draft.category.toLowerCase()}`}>{draft.category}</b></span><span>Calls <b>{detail.callCount}</b></span></div></section>
-        {detail.qualification && <section className="sales-info-card"><h3>CE qualification</h3><div className="sales-info-grid"><span><small>Color variant</small><b>{detail.qualification.variant || "—"}</b></span><span><small>Buying plan</small><b>{detail.qualification.buying_timeline || "—"}</b></span><span><small>Finance</small><b>{detail.qualification.finance_type || "—"}</b></span><span><small>Test drive</small><b>{detail.qualification.test_drive || "—"}</b></span><span><small>Trade-in</small><b>{detail.qualification.trade_in === true ? "Yes" : detail.qualification.trade_in === false ? "No" : "—"}</b></span><span><small>Notes</small><b style={{ whiteSpace: "pre-line" }}>{creNoteText(detail.qualification.notes) || "—"}</b></span></div></section>}
+        <TestDriveCompletion key={detail.id} lead={detail} canComplete={!!isPs} disabled={saving} onSavingChange={setCompletingDrive} onCompleted={updated => {
+          setDetail(updated);
+          if (draft.call_outcome && !updated.outcomePolicy.outcomes[draft.call_status]?.some(option => option.label === draft.call_outcome)) {
+            setDraft({ ...draft, call_outcome: "", follow_up_at: "" });
+            setNotice("Test drive completed. The previous outcome was cleared; choose the next action.");
+          }
+          void loadDashboard();
+        }} /><section className="sales-info-card"><h3>Customer information <button type="button" className="row-action" onClick={() => { setLeadFields(leadFieldsFor(detail)); setEditingLead(true); }}>Edit fields</button></h3><div className="sales-info-grid"><span><small>Name</small><b>{detail.name}</b></span><span><small>Phone</small><b>{detail.phone}</b></span><span><small>Email</small><b>{detail.email || "—"}</b></span><span><small>Source</small><b>{detail.source}</b></span><span><small>Source detail</small><b>{detail.sourceLabel || "—"}</b></span><span><small>Model</small><b>{detail.model}</b></span><span><small>City</small><b>{detail.city || "—"}</b></span><span><small>Enquiry date</small><b>{detail.enquiredAt}</b></span><span><small>Campaign</small><b>{detail.campaign || "—"}</b></span><span><small>Activity</small><b>{detail.activity || "—"}</b></span><span><small>Sub-activity</small><b>{detail.sub_activity || "—"}</b></span><span><small>Branch</small><b>{detail.branch || "—"}</b></span></div><div className="sales-detail-meta"><span>Category <b className={`category-pill ${draft.category.toLowerCase()}`}>{draft.category}</b></span><span>Calls <b>{detail.callCount}</b></span></div></section>
+        {detail.qualification && <section className="sales-info-card"><h3>CE qualification</h3><div className="sales-info-grid"><span><small>Color variant</small><b>{detail.qualification.variant || "—"}</b></span><span><small>Buying plan</small><b>{detail.qualification.buying_timeline || "—"}</b></span><span><small>Finance</small><b>{detail.qualification.finance_type || "—"}</b></span><span><small>Test-drive request at qualification</small><b>{detail.qualification.test_drive || "—"}</b></span><span><small>Trade-in</small><b>{detail.qualification.trade_in === true ? "Yes" : detail.qualification.trade_in === false ? "No" : "—"}</b></span><span><small>Notes</small><b style={{ whiteSpace: "pre-line" }}>{creNoteText(detail.qualification.notes) || "—"}</b></span></div></section>}
+        {detail.outcomePolicy.can_update ? <>
         <section className="sales-form-card sales-outcome-card"><h3>Lead Status Update</h3><div className="sales-stepper">{["F1", "F2", "F3", "F4", "F5"].map((step, index) => <span className={progressState(detail.callCount, index)} key={step}>{index < Math.min(detail.callCount, 4) ? "✓" : index === Math.min(detail.callCount, 4) ? "○" : "▣"} {step}</span>)}</div>
           {isPs ? (
              <div style={{ marginTop: "1rem" }}>
                <h4 style={{ fontSize: "0.85rem", color: "var(--text-light)", marginBottom: "0.5rem" }}>Call status *</h4>
                <div className="sales-choice-row sales-status-update">
-                 <button type="button" className={draft.call_status === "Connected" ? "chosen qualified" : ""} onClick={() => { choose("call_status", "Connected"); choose("call_outcome", ""); }}>Connected</button>
-                 <button type="button" className={draft.call_status === "Not Connected" ? "chosen pending" : ""} onClick={() => { choose("call_status", "Not Connected"); choose("call_outcome", ""); }}>Not Connected</button>
+                 <button type="button" className={draft.call_status === "Connected" ? "chosen qualified" : ""} onClick={() => { choose("call_status", "Connected"); choose("call_outcome", ""); choose("follow_up_at", ""); }}>Connected</button>
+                 <button type="button" className={draft.call_status === "Not Connected" ? "chosen pending" : ""} onClick={() => { choose("call_status", "Not Connected"); choose("call_outcome", ""); choose("follow_up_at", ""); }}>Not Connected</button>
                </div>
                
                {draft.call_status && (
@@ -440,7 +431,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
                    <h4 style={{ fontSize: "0.85rem", color: "var(--text-light)", marginBottom: "0.5rem" }}>Outcome *</h4>
                    <div className="sales-choice-row sales-status-update" style={{ flexWrap: "wrap", justifyContent: "flex-start", gap: "0.5rem" }}>
                      {psVisibleOutcomes.map(o => (
-                       <button type="button" key={o.label} className={`${draft.call_outcome === o.label ? "chosen " + o.tone : ""}`} onClick={() => choose("call_outcome", o.label)} style={{ padding: "0.4rem 1rem", borderRadius: "20px", fontSize: "0.85rem", flex: "none", whiteSpace: "nowrap" }}>{o.label}</button>
+                       <button type="button" key={o.label} className={`${draft.call_outcome === o.label ? "chosen " + o.tone : ""}`} onClick={() => selectCallOutcome(o.label)} style={{ padding: "0.4rem 1rem", borderRadius: "20px", fontSize: "0.85rem", flex: "none", whiteSpace: "nowrap" }}>{o.label}</button>
                      ))}
                    </div>
                  </div>
@@ -448,7 +439,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
                
 
 
-               {draft.call_outcome && ["PENDING", "WALKIN", "CALLBACK"].includes(statusOptions[draft.call_outcome]?.[0] || "") && (
+               {selectedPsOutcome?.requires_follow_up && (
                  <div style={{ marginTop: "1.5rem" }}>
                    <h4 style={{ fontSize: "0.85rem", color: "var(--text-light)", marginBottom: "0.5rem" }}>Follow Up Date *</h4>
                    <DateInput min={minimumFollowUpDay()} max={maximumFollowUpDay()} value={draft.follow_up_at} onChange={value => choose("follow_up_at", value)} style={{ width: "100%" }} ariaLabel="Follow-up date, DD/MM/YYYY" />
@@ -489,9 +480,10 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
 
         {!isPs && draft.call_outcome === "RETAILED" && <section className="sales-branch-card sales-single-branch"><h3>Retail Details</h3><label>Remarks<textarea value={draft.remarks} onChange={event => choose("remarks", event.target.value)} placeholder="Add sale confirmation notes" /></label><p className="sales-warning">Lead will be marked as won and retailed after update.</p></section>}
 
-        <section className="sales-history"><h3>History</h3>{detail.callHistory.length ? detail.callHistory.map(call => <div className="sales-history-row" key={`call-${call.id}`}><span className="history-dot" /><div><b>{allOutcomeLabels[call.outcome] || statusLabels[call.status] || call.status}</b><small>{call.remarks || "No remarks"} · {call.so_name || "You"}</small></div><time>{formatFollowUp(call.created_at)}</time></div>) : <p className="subtext">No calls recorded yet.</p>}{detail.followUpHistory.length ? detail.followUpHistory.map(followUp => <div className="sales-history-row" key={`follow-${followUp.id}`}><span className="history-dot follow" /><div><b>Follow-up {followUp.resolved_at ? "completed" : "scheduled"}</b><small>{formatFollowUp(followUp.scheduled_for)}</small></div><time>{followUp.resolved_at ? "Resolved" : "Open"}</time></div>) : null}</section>
+        </> : <p className="subtext">Outcome updates are unavailable for this lead.</p>}
+        <section className="sales-history"><h3>History</h3>{detail.auditHistory.filter(event => event.event === "test_drive_completed").map(event => <div className="sales-history-row" key={`drive-${event.created_at}`}><span className="history-dot" /><div><b>Test drive completed</b><small>{event.actor}</small></div><time>{formatDateTime(event.created_at)}</time></div>)}{detail.callHistory.length ? detail.callHistory.map(call => <div className="sales-history-row" key={`call-${call.id}`}><span className="history-dot" /><div><b>{allOutcomeLabels[call.outcome] || call.outcome || statusLabels[call.status] || call.status}</b><small>{call.call_status ? `${call.call_status} · ` : ""}{call.remarks || "No remarks"} · {call.so_name || "You"}</small></div><time>{formatFollowUp(call.created_at)}</time></div>) : <p className="subtext">No calls recorded yet.</p>}{detail.followUpHistory.length ? detail.followUpHistory.map(followUp => <div className="sales-history-row" key={`follow-${followUp.id}`}><span className="history-dot follow" /><div><b>Follow-up {followUp.resolved_at ? "completed" : "scheduled"}</b><small>{formatFollowUp(followUp.scheduled_for)}</small></div><time>{followUp.resolved_at ? "Resolved" : "Open"}</time></div>) : null}</section>
       </div>
-      <footer className="sales-detail-footer"><button className="filter" onClick={() => setDetail(null)}>Close</button><button className={`button primary ${saveTone}`} disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : submitLabel}</button></footer>
+      <footer className="sales-detail-footer"><button className="filter" onClick={() => setDetail(null)}>Close</button>{detail.outcomePolicy.can_update && <button className={`button primary ${saveTone}`} disabled={saving || completingDrive} onClick={() => void save()}>{saving ? "Saving…" : submitLabel}</button>}</footer>
     </section></div>}
     {addingSoLead && isPs && user && <SOLeadForm user={user} onClose={() => setAddingSoLead(false)} onCreated={name => { setAddingSoLead(false); setNotice(`${name} added to your Fresh leads.`); void loadDashboard(); }} />}
     {addingLead && <div className="modal-layer" role="presentation"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="add-lead-title"><button className="modal-close" onClick={() => setAddingLead(false)} aria-label="Close">×</button><p className="eyebrow">LEAD INTAKE</p><h2 id="add-lead-title">Add a lead</h2><form className="lead-form" onSubmit={event => { event.preventDefault(); void saveLead(); }}><div className="form-grid"><label>Full name<input required maxLength={160} value={newLead.name} onChange={event => setNewLead(current => ({ ...current, name: event.target.value }))} placeholder="Customer name" /></label><label>Phone number<input required inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={newLead.phone} onChange={event => setNewLead(current => ({ ...current, phone: event.target.value.replace(/\D/g, "") }))} placeholder="10-digit mobile number" /></label><label>Email<input type="email" inputMode="email" pattern={emailPattern.source} title="Use a complete email such as name@example.com" value={newLead.email} onChange={event => setNewLead(current => ({ ...current, email: event.target.value }))} placeholder="name@example.com" /></label><label>City<input maxLength={100} value={newLead.city} onChange={event => setNewLead(current => ({ ...current, city: event.target.value }))} placeholder="City" /></label><label>RTO (optional)<select name="rto" value={newLead.rto || ""} onChange={event => setNewLead(current => ({ ...current, rto: event.target.value }))} disabled={!rtoOptions.length}><option value="">{rtoOptions.length ? "Select Kerala RTO" : "RTO list unavailable"}</option>{rtoOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><label>Lead source<select value={newLead.source} onChange={event => setNewLead(current => ({ ...current, source: event.target.value }))}>{sourceOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><ActivityFields activity={newLead.activity} subActivity={newLead.sub_activity} onChange={fields => setNewLead(current => ({ ...current, ...fields }))} /><label>Enquiry date<DateInput required value={newLead.enquiry_date || ""} max={formatDate(new Date())} onChange={value => setNewLead(current => ({ ...current, enquiry_date: value }))} ariaLabel="Enquiry date, DD/MM/YYYY" /></label><label>Vehicle interest<select required value={newLead.model_interest || ""} onChange={event => setNewLead(current => ({ ...current, model_interest: event.target.value }))} disabled={!modelOptions.length}><option value="">{modelOptions.length ? "Select model" : "Add models in Lists first"}</option>{modelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select></label><label>Campaign<input maxLength={160} value={newLead.campaign} onChange={event => setNewLead(current => ({ ...current, campaign: event.target.value }))} placeholder="Campaign name" /></label><label>Branch *<select required value={newLead.branch || ""} onChange={event => setNewLead(current => ({ ...current, branch: event.target.value, ps_officer_id: undefined }))}><option value="">Select branch</option>{branchOptions.map(branch => <option key={branch} value={branch}>{branch}</option>)}</select></label><label>PS Name *<select required value={newLead.ps_officer_id || ""} onChange={event => setNewLead(current => ({ ...current, ps_officer_id: Number(event.target.value) }))}><option value="">{addLeadPsOptions.length ? "Select PS" : newLead.branch ? "No PS in this branch" : "Select branch first"}</option>{addLeadPsOptions.map(ps => <option key={ps.id} value={ps.id}>{ps.name}</option>)}</select></label></div><label style={{ marginTop: "13px", display: "block" }}>Source detail<input maxLength={100} value={newLead.source_label} onChange={event => setNewLead(current => ({ ...current, source_label: event.target.value }))} placeholder="Ad set, partner, referral, or other detail" /></label>{addLeadError && <p className="form-error" role="alert">{addLeadError}</p>}<p className="subtext">The new lead will be automatically assigned to the selected PS as a Qualified lead.</p><footer><button type="button" className="filter" onClick={() => setAddingLead(false)}>Cancel</button><button className="button primary" disabled={creatingLead || !newLead.ps_officer_id}>{creatingLead ? "Adding…" : "Add lead"}</button></footer></form></section></div>}

@@ -3,6 +3,7 @@ from django.utils import timezone
 
 from accounts.models import User
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
+from .outcomes import PS_CALL_OUTCOME_STATUS_OPTIONS, outcome_policy, validate_sales_call
 from .rtos import KERALA_RTO_CHOICES
 
 SO_LEAD_SOURCES = ["Referral", "Existing customer", "Friends / Family", "Personal contact", "Local networking", "Self prospecting", "Other"]
@@ -75,30 +76,6 @@ def validate_activity_pair(attrs, current=None):
     return attrs
 
 
-PS_CALL_OUTCOME_STATUS_OPTIONS = {
-    "Need Test Drive": {Lead.Status.PENDING},
-    "Showroom Visit": {Lead.Status.PENDING},
-    "Exchange Issue": {Lead.Status.PENDING},
-    "Booking Done": {Lead.Status.WALKIN},
-    "Retail Done": {Lead.Status.WON},
-    "Need time": {Lead.Status.PENDING},
-    "Need SO Call": {Lead.Status.PENDING},
-    "Need More Details": {Lead.Status.PENDING},
-    "Discount Issue": {Lead.Status.PENDING},
-    "Not Interested": {Lead.Status.LOST},
-    "Already Booked": {Lead.Status.LOST},
-    "Lost to Competition": {Lead.Status.LOST},
-    "Finance Rejected": {Lead.Status.LOST},
-    "Dropped": {Lead.Status.LOST},
-    "Lost to co-dealer": {Lead.Status.LOST},
-    "No Response": {Lead.Status.LOST},
-    "RNR": {Lead.Status.RNR, Lead.Status.PENDING},
-    "Switch Off": {Lead.Status.SWITCHED_OFF, Lead.Status.PENDING},
-    "Call Me Back": {Lead.Status.CALLBACK, Lead.Status.PENDING},
-    "Call Forwarding": {Lead.Status.PENDING},
-    "Line Busy": {Lead.Status.PENDING},
-    "Invalid Number": {Lead.Status.PENDING},
-}
 
 CALL_OUTCOME_STATUS_OPTIONS = {
     "PENDING": {Lead.Status.PENDING},
@@ -130,6 +107,8 @@ class LeadSerializer(serializers.ModelSerializer):
     qualification_input = QualificationSerializer(required=False, write_only=True)
 
     def validate(self, attrs):
+        if self.instance and any(field in attrs and attrs[field] != getattr(self.instance, field) for field in ("status", "sales_outcome")):
+            raise serializers.ValidationError({"status": "Use the lead outcome update action to change sales progress."})
         return validate_activity_pair(attrs, self.instance)
 
     def get_next_follow_up(self, obj):
@@ -175,6 +154,13 @@ class LeadSerializer(serializers.ModelSerializer):
             LeadQualification.objects.create(lead=lead, **qualification_data)
         return lead
 
+    def update(self, instance, validated_data):
+        # These fields may be echoed by older detail forms, but only outcome
+        # actions may write them (including when a detail form is stale).
+        validated_data.pop("status", None)
+        validated_data.pop("sales_outcome", None)
+        return super().update(instance, validated_data)
+
 
 class SOLeadCreateSerializer(LeadSerializer):
     phone = serializers.RegexField(regex=r"^\d{10}$")
@@ -204,6 +190,12 @@ class SOLeadListSerializer(serializers.ModelSerializer):
 
 
 class LeadDetailSerializer(LeadSerializer):
+    outcome_policy = serializers.SerializerMethodField()
+
+    def get_outcome_policy(self, obj):
+        request = self.context.get("request")
+        return outcome_policy(obj, request.user if request else None)
+
     call_history = serializers.SerializerMethodField()
     follow_up_history = serializers.SerializerMethodField()
     audit_history = serializers.SerializerMethodField()
@@ -218,7 +210,7 @@ class LeadDetailSerializer(LeadSerializer):
         return [{"event": event.event, "before": event.before, "after": event.after, "actor": event.actor.history_display_name if event.actor else "System", "created_at": event.created_at} for event in obj.audit_events.select_related("actor").order_by("-created_at")[:30]]
 
     class Meta(LeadSerializer.Meta):
-        fields = LeadSerializer.Meta.fields + ["call_history", "follow_up_history", "audit_history"]
+        fields = LeadSerializer.Meta.fields + ["call_history", "follow_up_history", "audit_history", "outcome_policy"]
 
 
 class CallLogSerializer(serializers.ModelSerializer):
@@ -285,6 +277,11 @@ class SOLeadUpdateSerializer(serializers.Serializer):
         enquiry_date = attrs.get("enquiry_date")
         if enquiry_date and enquiry_date > timezone.localdate():
             raise serializers.ValidationError({"enquiry_date": "Enquiry date cannot be in the future."})
+        user = self.context.get("user")
+        if user and (user.role == User.Role.SALES_OFFICER or (user.is_admin and (attrs.get("call_status") or attrs.get("call_outcome") in PS_CALL_OUTCOME_STATUS_OPTIONS))):
+            return validate_sales_call(self.context["lead"], user, attrs)
+        if attrs.get("call_outcome") and attrs["call_outcome"] not in {"PENDING", "QUALIFIED", "LOST", "RNR", "SWITCHED_OFF", "CALLBACK", "Call Me Back", "Switch Off"}:
+            raise serializers.ValidationError({"call_outcome": "Choose an outcome from your lead workflow."})
         next_status = attrs.get("status") or {"PENDING": Lead.Status.PENDING, "QUALIFIED": Lead.Status.QUALIFIED, "LOST": Lead.Status.LOST, "RNR": Lead.Status.RNR, "SWITCHED_OFF": Lead.Status.SWITCHED_OFF, "CALLBACK": Lead.Status.CALLBACK}.get(attrs.get("call_outcome"))
         follow_up_at = attrs.get("follow_up_at")
         call_outcome = attrs.get("call_outcome")
