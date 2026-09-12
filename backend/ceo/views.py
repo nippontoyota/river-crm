@@ -28,6 +28,8 @@ from .reporting import account_row, branch_options, complaint_queryset, complain
 
 class CEOReadPermission(BasePermission):
     def has_permission(self, request, view):
+        if getattr(request.user, "role", None) == "CEO" and view.kwargs.get("section") == "finance":
+            return False
         return bool(request.user and request.user.is_authenticated and request.user.is_active and request.user.role in {"CEO", "ADMIN"} and request.method in SAFE_METHODS)
 
 
@@ -53,7 +55,9 @@ def lead_sort(params):
     return sort
 
 
-def history_order(queryset, params):
+def history_order(queryset, params, include_finance=False):
+    if not include_finance:
+        queryset = queryset.exclude(kind__startswith="finance_")
     if params.get("kind"):
         queryset = queryset.filter(kind=params["kind"])
     order = "occurred_at" if params.get("order") == "oldest" else "-occurred_at"
@@ -80,10 +84,12 @@ def lead_rows(queryset):
     return rows
 
 
-def event_row(event):
+def event_row(event, include_finance=True):
+    def details(data):
+        return data if include_finance else {key: value for key, value in data.items() if key != "finance_type"}
     return {"id": event.id, "kind": event.kind, "occurred_at": event.occurred_at,
         "actor": event.actor.history_display_name if event.actor else None, "actor_role": event.actor.role if event.actor else None,
-        "branch": event.branch, "before": event.before, "after": event.after, "provenance": event.provenance,
+        "branch": event.branch, "before": details(event.before), "after": details(event.after), "provenance": event.provenance,
         "snapshot": event.snapshot, "lead_id": event.lead_id, "complaint_id": event.complaint_id}
 
 
@@ -110,7 +116,7 @@ class CEOOptionsView(CEOView):
 
 
 class CEOReportView(CEOView):
-    @cache_analytics("ceo-report", max_ttl=60)
+    @cache_analytics("ceo-operational-report", max_ttl=60)
     def get(self, request, section="overview"):
         filters = ReportFilters(request.query_params)
         if section == "overview":
@@ -151,7 +157,10 @@ class CEOLeadDetailView(CEOView):
         record["milestones"] = list(lead.milestones.values("kind", "occurred_on", "occurred_at", "branch", "provenance", "actor_id", "cre_id", "so_id"))
         record["archived"] = bool(lead.deleted_at)
         record["related_complaints"] = list(lead.complaints.values("id", "ticket_number", "subject", "status"))
-        record["finance"] = next((account_row(account) for account in financial_accounts(ReportFilters(request.query_params)).filter(lead=lead)), None)
+        if request.user.is_admin:
+            record["finance"] = next((account_row(account) for account in financial_accounts(ReportFilters(request.query_params)).filter(lead=lead)), None)
+        elif record.get("qualification"):
+            record["qualification"].pop("finance_type", None)
         return Response(record)
 
 
@@ -165,7 +174,7 @@ class CEOHistoryView(CEOView):
             queryset = OperationEvent.objects.filter(complaint_id=pk)
         else:
             raise ValidationError({"entity": "Unknown record type."})
-        return self.page(history_order(queryset.select_related("actor"), request.query_params), request, lambda rows: [event_row(e) for e in rows])
+        return self.page(history_order(queryset.select_related("actor"), request.query_params, request.user.is_admin), request, lambda rows: [event_row(e, request.user.is_admin) for e in rows])
 
 
 class CEOComplaintDetailView(CEOView):
@@ -197,8 +206,10 @@ class TargetMaintenanceView(APIView):
 class TargetHistoryView(CEOView):
     def get(self, request, pk):
         target = get_object_or_404(SalesTarget, pk=pk)
+        def values(data):
+            return data if request.user.is_admin else {key: value for key, value in data.items() if key != "retail_value"}
         return self.page(target.revisions.select_related("actor").order_by("-created_at"), request,
-            lambda rows: [{"id": r.id, "actor": r.actor.history_display_name, "before": r.before, "after": r.after, "created_at": r.created_at} for r in rows])
+            lambda rows: [{"id": r.id, "actor": r.actor.history_display_name, "before": values(r.before), "after": values(r.after), "created_at": r.created_at} for r in rows])
 
 
 class FinanceMaintenanceView(APIView):
@@ -212,6 +223,8 @@ class FinanceMaintenanceView(APIView):
 
 
 class FinanceEntriesView(CEOView):
+    permission_classes = [IsAdmin]
+
     def get(self, request, pk):
         queryset = FinancialEntry.objects.filter(account__lead_id=pk).select_related("actor", "account", "reversal")
         return self.page(queryset, request, lambda rows: [entry_row(row) for row in rows])
@@ -255,7 +268,7 @@ class CEOExportView(CEOView):
             if not pk or not pk.isdigit():
                 raise ValidationError({"lead": "Choose a lead to export its history."})
             get_object_or_404(Lead, pk=pk)
-            rows = (event_row(row) for row in history_order(OperationEvent.objects.filter(lead_id=pk).select_related("actor"), request.query_params).iterator(chunk_size=500))
+            rows = (event_row(row, request.user.is_admin) for row in history_order(OperationEvent.objects.filter(lead_id=pk).select_related("actor"), request.query_params, request.user.is_admin).iterator(chunk_size=500))
         else:
             payload = summary(filters) if section == "overview" else None
             if payload is None:

@@ -59,7 +59,7 @@ class ReportFilters:
             raise ValidationError({"age": "Choose a valid lead age band."})
         if params.get("metric") and params["metric"] not in {"E", "T", "B", "R"}:
             raise ValidationError({"metric": "Choose E, T, B or R."})
-        if params.get("followup") and params["followup"] not in {"overdue", "due", "missing", "unassigned", "reassignment", "untouched", "flagged", "incomplete", "missing_finance"}:
+        if params.get("followup") and params["followup"] not in {"overdue", "due", "missing", "unassigned", "reassignment", "untouched", "flagged", "incomplete"}:
             raise ValidationError({"followup": "Choose a valid workload filter."})
 
     def period(self, queryset, field):
@@ -142,7 +142,6 @@ class ReportFilters:
             "untouched": ~Q(pk__in=OperationEvent.objects.filter(kind="call").values("lead_id")) & active,
             "flagged": Q(flagged_to_manager=True),
             "incomplete": Q(rto="") | Q(branch=""),
-            "missing_finance": Q(sales_outcome__in=["BOOKED", "RETAILED"]) & (Q(sale_account__isnull=True) | Q(sale_account__agreed_amount__isnull=True)),
         }
         return queryset.filter(filters[self.params["followup"]]) if self.params.get("followup") else queryset
 

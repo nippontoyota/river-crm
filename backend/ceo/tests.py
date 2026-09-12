@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from accounts.models import User
 from complaints.models import Complaint
-from leads.models import CallLog, FollowUp, Lead, LeadAudit, SystemConfig
+from leads.models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from .models import FinancialEntry, Milestone, OperationEvent, SaleAccount, SalesTarget
 from .tracking import milestone
 
@@ -65,7 +65,7 @@ class CEOTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["etbr"], {"E": 2, "T": 1, "B": 1, "R": 1})
         self.assertEqual(sum(row["E"] for row in response.data["branches"]), 2)
-        for section in ["branches", "people", "leads", "segments", "finance", "complaints", "options"]:
+        for section in ["branches", "people", "leads", "segments", "complaints", "options"]:
             result = self.get(section)
             self.assertEqual(result.status_code, 200, (section, getattr(result, "data", None)))
         for kind in "ETBR":
@@ -135,7 +135,7 @@ class CEOTests(TestCase):
         self.lead.status, self.lead.sales_outcome = "WON", "RETAILED"
         self.lead.save()
         milestone(self.lead, "R", self.so)
-        self.auth(self.ceo)
+        self.auth(self.admin)
         summary = self.get("finance").data["summary"]
         self.assertEqual(Decimal(str(summary["net_collections"])), Decimal("600"))
         self.assertEqual(Decimal(str(summary["outstanding"])), Decimal("400"))
@@ -155,6 +155,59 @@ class CEOTests(TestCase):
         self.assertEqual(target["allocation_gap"]["retails"], -1)
         self.assertFalse(self.get("overview", "range=today").data["targets"]["available"])
         self.assertEqual(self.get(f"targets/{response.data['id']}/history").data["count"], 1)
+
+    def test_ceo_reports_and_exports_exclude_financial_data(self):
+        self.auth(self.admin)
+        LeadQualification.objects.create(lead=self.lead, finance_type="Bank")
+        self.assertEqual(self.finance(kind="VALUATION", agreed_amount="123456.00").status_code, 200)
+        self.assertEqual(self.finance(amount="12345.00", notes="Financial history marker").status_code, 200)
+        data = {"month": timezone.localdate().replace(day=1).isoformat(), "branch": "Kochi",
+                "enquiries": 20, "test_drives": 10, "bookings": 5, "retails": 3, "retail_value": "123456.00"}
+        target = self.client.post("/api/management/targets/", data, format="json")
+        self.assertEqual(target.status_code, 200, target.data)
+        self.assertEqual(self.client.post("/api/management/targets/", {**data, "so": self.so.id}, format="json").status_code, 200)
+        for kind in "TBR":
+            milestone(self.lead, kind, self.so)
+        self.auth(self.ceo)
+
+        for section in ["finance", "export/finance", f"finance/{self.lead.id}/entries"]:
+            self.assertEqual(self.get(section).status_code, 403, section)
+        self.assertEqual(self.get("leads", "followup=missing_finance").status_code, 400)
+
+        def assert_operational_only(value):
+            if isinstance(value, dict):
+                self.assertTrue({"finance", "finance_type", "retail_value", "agreed_amount", "retail_amount", "net_collected", "missing_finance"}.isdisjoint(value))
+                for child in value.values():
+                    assert_operational_only(child)
+            elif isinstance(value, list):
+                for child in value:
+                    assert_operational_only(child)
+
+        for section in ["overview", "branches", "people", "segments", f"leads/{self.lead.id}", f"targets/{target.data['id']}/history"]:
+            response = self.get(section, "range=mtd")
+            self.assertEqual(response.status_code, 200, response.data)
+            assert_operational_only(response.data)
+        self.assertEqual(self.get("overview").data["etbr"], dict.fromkeys("ETBR", 1))
+        history = self.get(f"leads/{self.lead.id}/history").data
+        self.assertEqual(history["count"], 1)
+        self.assertEqual(history["results"][0]["kind"], "created")
+        self.assertEqual(self.get(f"leads/{self.lead.id}/history", "kind=finance_payment").data["count"], 0)
+
+        for section in ["overview", "branches", "people", "segments", "history"]:
+            response = self.get(f"export/{section}", f"range=mtd&lead={self.lead.id}")
+            self.assertEqual(response.status_code, 200)
+            content = b"".join(response.streaming_content).decode()
+            for removed in ["retail_value", "agreed_amount", "net_collections", "missing_finance", "Financial history marker", "finance_payment", "finance_valuation"]:
+                self.assertNotIn(removed, content)
+
+        # Admin tools and stored records are preserved.
+        self.auth(self.admin)
+        self.assertEqual(self.get("finance").status_code, 200)
+        self.assertEqual(self.get(f"finance/{self.lead.id}/entries").data["count"], 2)
+        self.assertIn("finance", self.get(f"leads/{self.lead.id}").data)
+        self.assertEqual(self.get(f"leads/{self.lead.id}").data["qualification"]["finance_type"], "Bank")
+        self.assertEqual(self.get(f"leads/{self.lead.id}/history").data["count"], 3)
+        self.assertIn("retail_value", self.get(f"targets/{target.data['id']}/history").data["results"][0]["after"])
 
     def test_invalid_filters_and_csv_formula_safety(self):
         self.assertEqual(self.get("overview", "range=custom&date_from=no&date_to=2026-01-01").status_code, 400)

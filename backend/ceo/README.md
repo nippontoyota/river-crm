@@ -2,7 +2,10 @@
 
 The CEO workspace is `/ceo`. Admins create CEO accounts in Team and maintain
 monthly targets and customer financial records at `/business-controls`.
-CEO access permits company-wide reads and CSV exports. Business mutations remain
+CEO access permits company-wide operational reads and CSV exports. Revenue values,
+financial targets, payments and financial history are excluded from CEO reports,
+lead drawers and exports. Financial endpoints are admin-only. ETBR counts and
+unit targets remain available. Business mutations remain
 blocked at authentication and report permission boundaries; login, refresh and
 logout keep their normal authentication behavior.
 
@@ -21,7 +24,7 @@ take time on large databases; run it in the normal release maintenance window.
 - Enquiry cohorts select leads by enquiry date and current dimensions, then show
   their verified achievements through today. Conversion denominators use these
   cohorts, with chronological intersections for T→B and B→R.
-- Current workload and balances are independent of enquiry-period filters.
+- Current workload is independent of enquiry-period filters.
   Lead register defaults to enquiries in the period and provides an all-dates
   workload option. Milestone drilldowns use the same query as their parent total.
 - Current ownership is separate from activity by the actual recorded actor.
@@ -35,7 +38,7 @@ take time on large databases; run it in the normal release maintenance window.
   into past events. Use enquiry cohorts for existing leads grouped by today's
   branch/owner. Unverified booking and retail states appear in reporting coverage.
 
-## Financial and target controls
+## Admin financial and target controls
 
 Amounts are INR final customer totals after discounts, including taxes/charges.
 Agreed values, confirmed retail values and dated cash entries are separate.
@@ -55,8 +58,9 @@ overallocation. Targets only appear for matching monthly reporting scopes.
 ## API and verification
 
 `/api/ceo/` exposes `options`, `overview`, `branches`, `people`, `leads`, `segments`,
-`finance` and `complaints`; record details/history, finance entries and target
-revisions are separate endpoints. `/api/management/targets/` and
+and `complaints`; record details/history and target revisions are separate
+endpoints. The existing `finance` report, export and entry endpoints require admin
+access, as do `/api/management/targets/` and
 `/api/management/finance/` are admin controls. Reports are cached for at most
 60 seconds; Refresh explicitly bypasses the cache.
 

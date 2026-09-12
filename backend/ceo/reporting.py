@@ -9,12 +9,13 @@ from django.utils import timezone
 from accounts.models import User
 from complaints.models import Complaint
 from leads.models import FollowUp, Lead, SystemConfig
-from .finance import TARGET_FIELDS, signed_amount
+from .finance import signed_amount
 from .filters import AGE_BANDS, ROLES, ReportFilters
 from .models import FinancialEntry, Milestone, OperationEvent, SaleAccount, SalesTarget
 from .tracking import branch_key
 
 KINDS = "ETBR"
+TARGET_FIELDS = ("enquiries", "test_drives", "bookings", "retails")
 CLOSED = ["WON", "LOST", "UNQUALIFIED"]
 TARGET_DIMENSIONS = ("rto", "source", "campaign", "activity", "sub_activity", "model_interest", "status", "category", "followup", "age", "q")
 
@@ -44,7 +45,6 @@ def current_counts(queryset):
         reassignment=Count("id", filter=Q(needs_cre_reassignment=True) | Q(needs_so_reassignment=True), distinct=True),
         incomplete=Count("id", filter=Q(rto="") | Q(branch=""), distinct=True),
         flagged=Count("id", filter=Q(flagged_to_manager=True), distinct=True),
-        missing_finance=Count("id", filter=Q(sales_outcome__in=["BOOKED", "RETAILED"]) & (Q(sale_account__isnull=True) | Q(sale_account__agreed_amount__isnull=True)), distinct=True),
     )
 
 
@@ -232,7 +232,7 @@ def summary(filters):
     return {**filters.metadata(), "ageing": ageing, "trend": trend, "trend_interval": "month" if monthly else "day", "previous_etbr": previous_counts, "etbr": counts, "conversions": conversions(filters), "current": current_counts(cohort),
         "activity": {**activity, "connection_rate": ratio(activity["connected"], calls.exclude(after__call_status="").count()),
                      "cancellations": events.filter(kind="booking_cancelled").count()},
-        "finance": financial_summary(filters), "complaints": complaint_summary(filters), "targets": target_summary(filters),
+        "complaints": complaint_summary(filters), "targets": target_summary(filters),
         "coverage": {"unknown_dates": Milestone.objects.filter(lead__in=cohort, occurred_on__isnull=True).count(),
                      "legacy_events": milestones.filter(provenance="legacy").count(),
                      "unknown_branch": milestones.filter(branch="").count(),
@@ -247,8 +247,7 @@ def segment_rows(filters, dimension="branch"):
         field = "lead__" + dimension
     qs = qs.annotate(group_key=Lower(Trim(field)) if dimension == "branch" else F(field))
     rows = {row["group_key"] or "": row for row in qs.values("group_key").annotate(
-        **{kind: Count("lead_id", filter=Q(kind=kind), distinct=True) for kind in KINDS},
-        retail_value=Sum("lead__sale_account__retail_amount", filter=Q(kind="R"))).order_by()}
+        **{kind: Count("lead_id", filter=Q(kind=kind), distinct=True) for kind in KINDS}).order_by()}
     current = filters.base_leads().annotate(group_key=Lower(Trim(dimension)) if dimension == "branch" else F(dimension)).values("group_key").annotate(
         current_leads=Count("id", distinct=True), current_booked=Count("id", filter=Q(sales_outcome="BOOKED"), distinct=True),
         current_lost=Count("id", filter=Q(status__in=["LOST", "UNQUALIFIED"]), distinct=True),
@@ -256,11 +255,11 @@ def segment_rows(filters, dimension="branch"):
     labels = branch_options() if dimension == "branch" else {}
     for row in current:
         key = row["group_key"] or ""
-        rows.setdefault(key, {"group_key": key, **dict.fromkeys(KINDS, 0), "retail_value": None}).update(row)
+        rows.setdefault(key, {"group_key": key, **dict.fromkeys(KINDS, 0)}).update(row)
     if dimension == "branch":
         for key in labels:
             if not filters.branches or key in filters.branches:
-                rows.setdefault(key, {"group_key": key, **dict.fromkeys(KINDS, 0), "retail_value": None})
+                rows.setdefault(key, {"group_key": key, **dict.fromkeys(KINDS, 0)})
     # Cohort conversion uses intersection with enquiries for this segment.
     cohort = filters.period(filters.base_leads(), "enquiry_date").annotate(group_key=Lower(Trim(dimension)) if dimension == "branch" else F(dimension))
     rates = {r["group_key"] or "": ratio(r["retails"], r["total"]) for r in cohort.values("group_key").annotate(total=Count("id", distinct=True), retails=Count("id", filter=Q(milestones__kind="R"), distinct=True))}

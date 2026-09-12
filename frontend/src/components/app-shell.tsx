@@ -18,7 +18,7 @@ function roleType(user: CurrentUser) {
 
 const ceoLinks = [
   ["/ceo", "Overview", "◱"], ["/ceo/branches", "Branches", "▦"], ["/ceo/people", "People", "◬"],
-  ["/ceo/leads", "Leads & follow-ups", "☷"], ["/ceo/markets", "Markets", "◎"], ["/ceo/operations", "Finance & complaints", "◫"],
+  ["/ceo/leads", "Leads & follow-ups", "☷"], ["/ceo/markets", "Markets", "◎"], ["/ceo/operations", "Complaints", "◫"],
 ] as const;
 const adminLinks = [
   ["/business-controls", "Targets & finance", "◫"],
