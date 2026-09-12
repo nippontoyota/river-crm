@@ -9,6 +9,7 @@ from django.db import connection, transaction
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 from accounts.models import User, UserLifecycleEvent
+from ceo.models import FinancialEntry, Milestone, OperationEvent, SaleAccount, SalesTarget, TargetRevision
 from complaints.models import Complaint, ComplaintNote
 from leads.models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from notifications.models import Notification
@@ -17,6 +18,12 @@ from uploads.storage import delete_paths
 
 
 DELETE_MODELS = [
+    OperationEvent,
+    Milestone,
+    TargetRevision,
+    SalesTarget,
+    FinancialEntry,
+    SaleAccount,
     UserLifecycleEvent,
     ComplaintNote,
     Notification,
@@ -74,6 +81,7 @@ class Command(BaseCommand):
         password_hash = keeper.password
         with transaction.atomic():
             keeper = User.objects.select_for_update().get(pk=keeper.pk)
+            FinancialEntry.objects.filter(kind="REVERSAL").delete()
             for model in DELETE_MODELS:
                 model.objects.all().delete()
             keeper.groups.clear()

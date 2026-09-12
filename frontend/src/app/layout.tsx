@@ -7,6 +7,7 @@ import "./sales-theme.css";
 import "./call-outcome.css";
 import "./responsive.css";
 import "./complaint.css";
+import "./ceo.css";
 
 export const metadata: Metadata = {
   title: "Incheon Mobility CRM",

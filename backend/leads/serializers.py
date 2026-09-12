@@ -151,7 +151,10 @@ class LeadSerializer(serializers.ModelSerializer):
         qualification_data = validated_data.pop("qualification_input", None)
         lead = super().create(validated_data)
         if qualification_data:
-            LeadQualification.objects.create(lead=lead, **qualification_data)
+            request = self.context.get("request")
+            actor = request.user if request else None
+            LeadQualification.objects.create(lead=lead, updated_by=actor, **qualification_data)
+            LeadAudit.objects.create(lead=lead, actor=actor, event="qualification_updated", after=qualification_data)
         return lead
 
     def update(self, instance, validated_data):
@@ -159,7 +162,17 @@ class LeadSerializer(serializers.ModelSerializer):
         # actions may write them (including when a detail form is stale).
         validated_data.pop("status", None)
         validated_data.pop("sales_outcome", None)
-        return super().update(instance, validated_data)
+        from django.db import transaction
+        def serial(value):
+            return value.isoformat() if hasattr(value, "isoformat") else value.pk if hasattr(value, "pk") else value
+        with transaction.atomic():
+            before = {key: serial(getattr(instance, key)) for key in validated_data if hasattr(instance, key)}
+            updated = super().update(instance, validated_data)
+            after = {key: serial(getattr(updated, key)) for key in before}
+            request = self.context.get("request")
+            if before != after:
+                LeadAudit.objects.create(lead=updated, actor=request.user if request else None, event="details_updated", before=before, after=after)
+            return updated
 
 
 class SOLeadCreateSerializer(LeadSerializer):

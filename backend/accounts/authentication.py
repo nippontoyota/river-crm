@@ -19,4 +19,7 @@ class CookieJWTAuthentication(JWTAuthentication):
         validated_token = self.get_validated_token(raw_token)
         if not header:
             self.enforce_csrf(request)
-        return self.get_user(validated_token), validated_token
+        user = self.get_user(validated_token)
+        if user.role == "CEO" and request.method not in {"GET", "HEAD", "OPTIONS"} and request.path != "/api/auth/logout/":
+            raise exceptions.PermissionDenied("CEO access is read-only.")
+        return user, validated_token

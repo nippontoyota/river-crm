@@ -1,7 +1,7 @@
 import uuid
 
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 
 from .rtos import KERALA_RTO_CHOICES
 
@@ -84,7 +84,24 @@ class CallLog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class FollowUpQuerySet(models.QuerySet):
+    @transaction.atomic
+    def update(self, **kwargs):
+        resolving = kwargs.get("resolved_at")
+        records = list(self.filter(resolved_at__isnull=True).select_related("lead")) if resolving else []
+        result = super().update(**kwargs)
+        if records:
+            from ceo.models import OperationEvent
+            from ceo.tracking import lead_snapshot
+            OperationEvent.objects.bulk_create([OperationEvent(lead=record.lead, kind="followup_resolved", occurred_at=resolving,
+                source_key=f"followup-resolved:{record.pk}", branch=lead_snapshot(record.lead)["branch"], snapshot=lead_snapshot(record.lead),
+                after={"followup_id": record.pk, "scheduled_for": record.scheduled_for.isoformat(), "owner_id": record.so_id}) for record in records], ignore_conflicts=True)
+        return result
+
+
 class FollowUp(models.Model):
+    objects = FollowUpQuerySet.as_manager()
+
     lead = models.ForeignKey(Lead, on_delete=models.PROTECT, related_name="follow_ups")
     so = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="follow_ups")
     scheduled_for = models.DateTimeField(db_index=True)
@@ -106,7 +123,19 @@ class LeadQualification(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
+class LeadAuditManager(models.Manager):
+    @transaction.atomic
+    def bulk_create(self, objs, **kwargs):
+        from ceo.tracking import record_audit
+        records = super().bulk_create(objs, **kwargs)
+        for record in records:
+            record_audit(record)
+        return records
+
+
 class LeadAudit(models.Model):
+    objects = LeadAuditManager()
+
     lead = models.ForeignKey(Lead, on_delete=models.PROTECT, related_name="audit_events")
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
     event = models.CharField(max_length=60)

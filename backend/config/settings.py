@@ -12,7 +12,7 @@ ALLOWED_HOSTS = [host for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localh
 INSTALLED_APPS = [
     "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes", "django.contrib.sessions",
     "django.contrib.messages", "django.contrib.staticfiles", "corsheaders", "rest_framework",
-    "drf_spectacular", "rest_framework_simplejwt.token_blacklist", "accounts", "leads", "analytics", "uploads", "notifications", "complaints",
+    "drf_spectacular", "rest_framework_simplejwt.token_blacklist", "accounts", "leads", "analytics", "uploads", "notifications", "complaints", "ceo",
 ]
 MIDDLEWARE = [
     "config.middleware.PerformanceMiddleware", "django.middleware.security.SecurityMiddleware", "whitenoise.middleware.WhiteNoiseMiddleware", "django.contrib.sessions.middleware.SessionMiddleware",
@@ -33,7 +33,7 @@ USE_TZ = True
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["accounts.authentication.CookieJWTAuthentication"],
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated", "accounts.permissions.ReadOnlyCEO"],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,

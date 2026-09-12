@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, FormEvent } from "react";
 import { createUser, disableUser, enableUser, getOffboardingImpact, getSystemConfig, getUsers, permanentlyDeleteUser, type CurrentUser, type OffboardingImpact, type OffboardingRoute } from "@/lib/crm";
 
 const roleOptions = [
+  { value: "CEO", label: "CEO" },
   { value: "ADMIN", label: "Administrator" },
   { value: "CRE", label: "CE" },
   { value: "SO", label: "PS/SO" },
@@ -53,6 +54,7 @@ export function TeamPage() {
     let backendRole = "ADMIN";
     if (uiRole === "CE") backendRole = "CRE";
     if (uiRole === "PS/SO") backendRole = "SO";
+    if (uiRole === "CEO") backendRole = "CEO";
     if (uiRole === "Sales Manager") backendRole = "SALES_MANAGER";
     if (uiRole === "Complaints department") backendRole = "COMPLAINTS";
     if (uiRole === "Receptionist") backendRole = "RECEPTIONIST";
@@ -193,6 +195,7 @@ export function TeamPage() {
                 <select name="role" required value={selectedRole} onChange={e => setSelectedRole(e.target.value)}>
                   <option value="">Select...</option>
                   <option value="Admin">Admin</option>
+                  <option value="CEO">CEO</option>
                   <option value="CE">CE</option>
                   <option value="PS/SO">PS/SO</option>
                   <option value="Sales Manager">Sales Manager</option>

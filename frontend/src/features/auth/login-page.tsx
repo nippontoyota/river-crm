@@ -17,7 +17,7 @@ export function LoginPage() {
     const formData = new FormData(event.currentTarget);
     const submittedEmail = String(formData.get("email") || "").trim();
     const submittedPassword = String(formData.get("password") || "");
-    try { const result = await login(submittedEmail, submittedPassword); cacheCurrentUser(result.user); router.push(result.user.role === "ADMIN" ? "/leads" : result.user.role === "SALES_MANAGER" ? "/manager/analytics" : result.user.role === "RECEPTIONIST" ? "/capture" : result.user.role === "COMPLAINTS" ? "/complaints" : "/my-leads"); }
+    try { const result = await login(submittedEmail, submittedPassword); cacheCurrentUser(result.user); router.push(result.user.role === "CEO" ? "/ceo" : result.user.role === "ADMIN" ? "/leads" : result.user.role === "SALES_MANAGER" ? "/manager/analytics" : result.user.role === "RECEPTIONIST" ? "/capture" : result.user.role === "COMPLAINTS" ? "/complaints" : "/my-leads"); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Unable to sign in."); }
     finally { setLoading(false); }
   };

@@ -231,13 +231,13 @@ def offboard_user(user_id, actor, action, impact_version, routes, reason=""):
     if followups:
         FollowUp.objects.bulk_update(followups, ["so", "reminder_held"], batch_size=1000)
     if complaints:
-        ComplaintNote.objects.bulk_create([
-            ComplaintNote(complaint=complaint, author=actor, content=f"Returned to the complaint pool when {user.get_full_name() or user.email} was {action.lower()}.")
-            for complaint in complaints
-        ])
+        from ceo.tracking import complaint_event
         for complaint in complaints:
+            ComplaintNote.objects.create(complaint=complaint, author=actor, content=f"Returned to the complaint pool when {user.get_full_name() or user.email} was {action.lower()}.")
+            before = {"assigned_to_id": complaint.assigned_to_id}
             complaint.assigned_to = None
             complaint.updated_at = now
+            complaint_event(complaint, actor, "complaint_updated", before)
         Complaint.objects.bulk_update(complaints, ["assigned_to", "updated_at"], batch_size=1000)
 
     Notification.objects.bulk_create([

@@ -29,17 +29,19 @@ def analytics_cache_key(request, endpoint):
     return f"analytics:v2:{digest}"
 
 
-def cache_analytics(endpoint):
+def cache_analytics(endpoint, max_ttl=None):
     def decorator(view):
         @wraps(view)
         def wrapped(self, request, *args, **kwargs):
-            ttl = settings.CACHE_TTL_SECONDS
+            ttl = min(settings.CACHE_TTL_SECONDS, max_ttl) if max_ttl else settings.CACHE_TTL_SECONDS
+            if max_ttl and request.query_params.get("refresh"):
+                ttl = 0
             if ttl <= 0:
                 response = view(self, request, *args, **kwargs)
                 response["X-Cache"] = "BYPASS"
                 return response
 
-            key = analytics_cache_key(request, endpoint)
+            key = analytics_cache_key(request, endpoint + ":" + request.path if max_ttl else endpoint)
             try:
                 payload = cache.get(key, _MISSING)
             except Exception as error:

@@ -134,6 +134,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             })
         return Response(LeadSerializer(lead).data, status=status.HTTP_201_CREATED)
 
+    @transaction.atomic
     def perform_create(self, serializer):
         is_walkin = (
             serializer.validated_data.get("source") == Lead.Source.WALKIN
@@ -395,10 +396,13 @@ class LeadViewSet(viewsets.ModelViewSet):
             lead.save(update_fields=update_fields)
             if qualification := data.get("qualification"):
                 record, _ = LeadQualification.objects.get_or_create(lead=lead)
+                qualification_before = {field: getattr(record, field) for field in qualification}
                 for field, value in qualification.items():
                     setattr(record, field, value)
                 record.updated_by = request.user
                 record.save()
+                if qualification_before != qualification:
+                    LeadAudit.objects.create(lead=lead, actor=request.user, event="qualification_updated", before=qualification_before, after=qualification)
             if any(field in data for field in ("status", "sales_outcome", "remarks", "call_status", "call_outcome", "follow_up_at")):
                 FollowUp.objects.filter(lead=lead, resolved_at__isnull=True).update(resolved_at=timezone.now())
                 CallLog.objects.create(lead=lead, so=request.user, status=next_status, call_status=data.get("call_status", ""), outcome=data.get("call_outcome", ""), remarks=data.get("remarks", ""))

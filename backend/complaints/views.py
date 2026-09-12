@@ -1,3 +1,5 @@
+from django.db import transaction
+from ceo.tracking import complaint_event
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q
 from django.db.models.functions import TruncDate
 from django.utils import timezone
@@ -79,17 +81,21 @@ class ComplaintViewSet(ModelViewSet):
         )
         serializer.save(logged_by=self.request.user, source=source)
 
+    @transaction.atomic
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         # Return the full list representation
         complaint = serializer.instance
+        complaint_event(complaint, request.user, "complaint_created")
         output = ComplaintListSerializer(complaint).data
         return Response(output, status=http_status.HTTP_201_CREATED)
 
+    @transaction.atomic
     def update(self, request, *args, **kwargs):
         complaint = self.get_object()
+        before = {"status": complaint.status, "priority": complaint.priority, "assigned_to_id": complaint.assigned_to_id}
         previous_resolution_notes = complaint.resolution_notes
         serializer = ComplaintUpdateSerializer(
             data=request.data, context={"complaint": complaint}
@@ -103,12 +109,15 @@ class ComplaintViewSet(ModelViewSet):
                 complaint.resolved_at = timezone.now()
             elif data["status"] == Complaint.Status.CLOSED and not complaint.resolved_at:
                 complaint.resolved_at = timezone.now()
+            elif data["status"] not in [Complaint.Status.RESOLVED, Complaint.Status.CLOSED]:
+                complaint.resolved_at = None
         if "priority" in data:
             complaint.priority = data["priority"]
         if "resolution_notes" in data:
             complaint.resolution_notes = data["resolution_notes"]
         complaint.assigned_to = request.user
         complaint.save()
+        complaint_event(complaint, request.user, "complaint_updated", before)
         if (
             "resolution_notes" in data
             and data["resolution_notes"].strip()

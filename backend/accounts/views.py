@@ -53,6 +53,7 @@ class RefreshView(APIView):
 
 
 class LogoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
     def post(self, request):
         response = Response(status=status.HTTP_204_NO_CONTENT)
         response.delete_cookie("river_access")

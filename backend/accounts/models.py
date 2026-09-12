@@ -23,6 +23,7 @@ class UserManager(BaseUserManager):
 class User(AbstractUser):
     class Role(models.TextChoices):
         ADMIN = "ADMIN", "Admin"
+        CEO = "CEO", "CEO"
         # Keep the stored role code compatible with existing accounts and API clients.
         CRE = "CRE", "CE"
         SALES_OFFICER = "SO", "PS/SO"
