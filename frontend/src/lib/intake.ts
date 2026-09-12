@@ -1,0 +1,24 @@
+import { api } from './crm';
+
+export const customerFields = ['name', 'phone', 'email', 'model_interest', 'city', 'rto', 'profession', 'branch', 'enquiry_date', 'campaign', 'source_label', 'activity', 'sub_activity'] as const;
+export type CustomerField = typeof customerFields[number];
+export type CustomerValues = Partial<Record<CustomerField, string | null>>;
+export type IntakeState = 'RECEIVED' | 'PROCESSING' | 'NEEDS_REVIEW' | 'IMPORTED' | 'LINKED' | 'FAILED' | 'DISMISSED';
+export const intakeStates: IntakeState[] = ['RECEIVED', 'PROCESSING', 'NEEDS_REVIEW', 'IMPORTED', 'LINKED', 'FAILED', 'DISMISSED'];
+export type Entry = { id: string; label: string; value: string | number | null };
+export type MappingRules = { fields?: Record<string, string>; defaults?: Record<string, string | null>; value_aliases?: Record<string, Record<string, string>>; primary?: Record<string, string>; required?: string[] };
+export type Mapping = { id: number; form: number | null; template_name: string; version: number; rules: MappingRules; created_by: number; created_at: string };
+export type IntakeForm = { id: number; connection: number; name: string; external_id: string; page_id: string; enabled: boolean; activated_at: string; checkpoint: string | null; last_reconciled_at: string | null; reconcile_error: string };
+export type IntakeConnection = { id: number; name: string; origin: 'WEBSITE' | 'META'; source: string; enabled: boolean; activated_at: string; paused_reason: string; credentials_ready: boolean; last_receipt_at: string | null; last_import_at: string | null; created_at: string };
+export type IntakeReceipt = { id: string; connection: number; form: number; origin: 'WEBSITE' | 'META'; form_name: string; external_id: string; source: string; state: IntakeState; received_at: string; submitted_at: string | null; resolved_at: string | null; mapped_values: CustomerValues; errors: Record<string, string>; review_reason: string; mapping_version: number | null; answers_expired: boolean; lead: number | null; blocked_by: string | null; attempts: number; next_attempt_at: string | null; attribution: Record<string, string>; campaign_name: string };
+export type ReceiptDetail = IntakeReceipt & { answers: Entry[]; ignored_labels: string[]; history: { id: number; action: string; actor_name: string; created_at: string; lead: number | null; mapping_version: number | null }[]; matching_leads: { id: number; name: string; phone: string; status: string; assigned_so: number | null; assigned_ps: number | null }[]; pending_receipts: { id: string; state: IntakeState; received_at: string }[] };
+export type IntakeHealth = { enabled: boolean; heartbeats: Record<string, string>; connections: (IntakeConnection & { counts: Partial<Record<IntakeState, number>>; oldest_pending_at: string | null; backlog_age_seconds: number; forms: IntakeForm[] })[] };
+export type MappingPreview = { values: CustomerValues & { source?: string }; errors: Record<string, string>; entries: { id: string; label: string; sample: string; destination: string }[] };
+export const getReceipts = (params: URLSearchParams) => api<{ count: number; results: IntakeReceipt[] }>(`/api/intake/submissions/?${params}`);
+export const getReceipt = (id: string) => api<ReceiptDetail>(`/api/intake/submissions/${id}/`);
+export const getIntakeHealth = () => api<IntakeHealth>('/api/intake/connections/health/');
+export const getMappings = (params = '') => api<Mapping[]>(`/api/intake/mappings/${params}`);
+export const previewMapping = (entries: Entry[], rules: MappingRules, excel = false) => api<MappingPreview>('/api/intake/mappings/preview/', { method: 'POST', body: JSON.stringify({ entries, rules, excel }) });
+export const saveMapping = (form: number | null, template_name: string, rules: MappingRules) => api<Mapping>('/api/intake/mappings/', { method: 'POST', body: JSON.stringify({ form, template_name, rules }) });
+export const reprocessMapping = (id: number, receipt_ids: string[]) => api<{ queued: number }>(`/api/intake/mappings/${id}/reprocess/`, { method: 'POST', body: JSON.stringify({ receipt_ids }) });
+export const resolveReceipt = (id: string, action: 'correct' | 'link' | 'create_separately' | 'dismiss' | 'retry', corrections?: CustomerValues, lead_id?: number) => api<ReceiptDetail>(`/api/intake/submissions/${id}/resolve/`, { method: 'POST', body: JSON.stringify({ action, corrections, lead_id }) });

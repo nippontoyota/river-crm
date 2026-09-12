@@ -1,19 +1,8 @@
-services:
-  - type: web
-    name: revera-api
-    runtime: python
-    plan: free
-    rootDir: backend
-    buildCommand: bash build.sh
-    startCommand: gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker
-    healthCheckPath: /api/schema/
+envVarGroups:
+  - name: revera-runtime
     envVars:
       - key: DATABASE_URL
         sync: false
-      - key: CACHE_URL
-        sync: false
-      - key: CACHE_TTL_SECONDS
-        value: "50"
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: JWT_SIGNING_KEY
@@ -21,16 +10,85 @@ services:
       - key: DJANGO_DEBUG
         value: "false"
       - key: CELERY_TASK_ALWAYS_EAGER
-        value: "true"
+        value: "false"
+      - key: INTAKE_ENABLED
+        value: "false"
+      - key: INTAKE_FINGERPRINT_KEY
+        generateValue: true
+      - key: INTAKE_SECRETS_JSON
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_VERIFY_TOKEN
+        sync: false
+      - key: META_GRAPH_VERSION
+        sync: false
+      - key: WHATSAPP_MODE
+        value: "preview"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SECRET_KEY
         sync: false
       - key: SUPABASE_UPLOAD_BUCKET
         value: crm-imports
+services:
+  - type: keyvalue
+    name: revera-queue
+    plan: starter
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+  - type: web
+    name: revera-api
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: bash build.sh
+    preDeployCommand: python manage.py migrate --noinput
+    startCommand: gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker
+    healthCheckPath: /api/schema/
+    envVars:
+      - fromGroup: revera-runtime
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: revera-queue
+          property: connectionString
+      - key: CACHE_URL
+        sync: false
+      - key: CACHE_TTL_SECONDS
+        value: "50"
       - key: DJANGO_ALLOWED_HOSTS
         sync: false
       - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: CSRF_TRUSTED_ORIGINS
         sync: false
+  - type: worker
+    name: revera-worker
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manage.py migrate --check && celery -A config worker --loglevel=warning --concurrency=2
+    envVars:
+      - fromGroup: revera-runtime
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: revera-queue
+          property: connectionString
+  - type: worker
+    name: revera-scheduler
+    runtime: python
+    plan: starter
+    numInstances: 1
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manage.py migrate --check && celery -A config beat --loglevel=warning --schedule=/tmp/celerybeat-schedule
+    envVars:
+      - fromGroup: revera-runtime
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: revera-queue
+          property: connectionString

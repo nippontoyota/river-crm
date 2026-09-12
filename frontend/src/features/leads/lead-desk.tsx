@@ -1,6 +1,10 @@
 "use client";
 
+import { getMappings, type Mapping } from "@/lib/intake";
+import { UploadReview } from "@/features/intake/upload-review";
 import { TestDriveCompletion } from "@/components/test-drive-completion";
+
+import { WhatsAppHistory } from "@/components/whatsapp-history";
 
 import { ActivityFields } from "@/components/activity-fields";
 
@@ -130,6 +134,8 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
   const [newLeadColor, setNewLeadColor] = useState("");
   const [draggedOfficerId, setDraggedOfficerId] = useState<number | null>(null);
   const [dropTargetId, setDropTargetId] = useState<number | null>(null);
+  const [uploadTemplate, setUploadTemplate] = useState("");
+  const [uploadTemplates, setUploadTemplates] = useState<Mapping[]>([]);
   const [upload, setUpload] = useState<UploadBatch | null>(null);
   const [uploading, setUploading] = useState(false);
   const [checkingUpload, setCheckingUpload] = useState(false);
@@ -196,6 +202,14 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
 
   useEffect(() => { const timer = window.setTimeout(() => void refresh(), 0); return () => window.clearTimeout(timer); }, [refresh]);
   useEffect(() => {
+    if (officerMode) return;
+    const poll = () => { if (document.visibilityState === "visible") void refresh(); };
+    const timer = window.setInterval(poll, 30_000);
+    document.addEventListener("visibilitychange", poll);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", poll); };
+  }, [officerMode, refresh]);
+  useEffect(() => {
+    if (!officerMode) void getMappings("?excel=true").then(setUploadTemplates).catch(() => {});
     void getSystemConfig().then(config => {
       setModels(config.lists?.models || []);
       setBranches(config.lists?.branches || []);
@@ -214,6 +228,8 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
   useEffect(() => { const timer = window.setTimeout(() => { setPage(1); setActiveFilters(current => JSON.stringify(current) === JSON.stringify(filters) ? current : { ...filters }); }, 250); return () => window.clearTimeout(timer); }, [filters]);
   useEffect(() => {
     const open = () => setAddingLead(true);
+    const initialQuery = new URLSearchParams(window.location.search).get("q");
+    if (initialQuery) setQuery(initialQuery);
     window.addEventListener("incheon:add-lead", open);
     if (!officerMode && new URLSearchParams(window.location.search).get("addLead") === "1") { open(); window.history.replaceState({}, "", "/leads"); }
     return () => window.removeEventListener("incheon:add-lead", open);
@@ -434,7 +450,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
   const selectFile = async (file?: File) => {
     if (!file) return;
     setUploading(true); setError("");
-    try { const batch = await uploadLeads(file); setUpload(batch); setNotice("File received. Check import when parsing finishes."); }
+    try { const batch = await uploadLeads(file, uploadTemplate ? Number(uploadTemplate) : undefined); setUpload(batch); setNotice("File received. Check import when parsing finishes."); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Upload failed."); }
     finally { setUploading(false); }
   };
@@ -443,7 +459,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
     setCheckingUpload(true);
     try {
       const summary = await getUpload(upload.id);
-      const nextUpload = summary.status === "READY" && (summary.removed_duplicates > 0 || summary.pending_duplicates > 0) ? await getUpload(upload.id, true) : summary;
+      const nextUpload = summary.status === "READY" ? await getUpload(upload.id, true) : summary;
       setUpload(nextUpload);
       if (nextUpload.status === "READY" && nextUpload.removed_duplicates > 0) {
         setNotice(`${nextUpload.removed_duplicates} duplicate ${nextUpload.removed_duplicates === 1 ? "row was" : "rows were"} removed: ${nextUpload.crm_duplicates_found} already in CRM, ${nextUpload.file_duplicates_found} repeated in this file.`);
@@ -508,6 +524,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
     <section className="panel admin-filter-band">
       <section className="lead-toolbar admin-filter-toolbar">
         <label className="search"><span>⌕</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name or mobile..." /></label>
+        <select className="filter" aria-label="Upload mapping template" value={uploadTemplate} onChange={event => setUploadTemplate(event.target.value)}><option value="">Automatic upload mapping</option>{uploadTemplates.map(mapping => <option key={mapping.id} value={mapping.id}>{mapping.template_name} · v{mapping.version}</option>)}</select>
         <label className="button filter bulk-upload-button">{uploading ? "Uploading…" : "Bulk Upload"}<input hidden type="file" accept=".xlsx,.csv" onChange={event => void selectFile(event.target.files?.[0])} /></label>
         <button className="filter sample-download" onClick={() => downloadLeadSample(sourceOptions.find(item => item !== "WALKIN") || "WALKIN")}>Download sample format</button>
         <button className="button primary" onClick={() => { setError(""); setAddingLead(true); }}>＋ Add lead</button>
@@ -561,6 +578,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
         )}
         {duplicateRows.length > 0 && <div style={{ marginTop: "1rem" }}><p className="subtext">Duplicates need review. Remove them from this import to keep the existing lead.</p><button className="filter" onClick={() => void removeDuplicates(duplicateRows.map(row => row.id))}>Remove all duplicates</button><div style={{ display: "grid", gap: ".5rem", marginTop: ".75rem" }}>{duplicateRows.map(row => <div key={row.id} className="lead-summary"><b>Row {row.row_number} · {row.data.name || "Unnamed lead"}</b><span>{row.duplicate_type === "CRM" ? "Already in CRM" : "Duplicate in Excel"}</span><small>{row.normalized_phone} · Matches {row.existing_name || "matching lead"}</small><button className="row-action" onClick={() => void removeDuplicates([row.id])}>Remove duplicate</button></div>)}</div></div>}
         {upload.error_message && <p className="subtext">{upload.error_message}</p>}
+        <UploadReview key={upload.id} batch={upload} onChange={setUpload} />
       </section>
     )}
     {error && <div className="empty-state">{error}</div>}
@@ -608,6 +626,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
           )}
 
         </section>
+        {leadDetail && <WhatsAppHistory key={`whatsapp-${leadDetail.id}-${leadDetail.phone}`} lead={leadDetail} onUpdated={setLeadDetail} />}
         {leadDetail?.followUpHistory.some(item => item.reminder_held && !item.resolved_at) && <section className="sales-form-card held-followup-review">
           <header><div><p className="eyebrow">ADMIN REVIEW REQUIRED</p><h3>Held follow-up reminders</h3></div><span>{leadDetail.followUpHistory.filter(item => item.reminder_held && !item.resolved_at).length}</span></header>
           <p>These schedules were preserved during an employee handoff. Review each one before a reminder is sent.</p>

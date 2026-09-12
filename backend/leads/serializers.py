@@ -1,4 +1,6 @@
 from rest_framework import serializers
+from django.db import transaction
+from .phone_lock import guard_manual_phone, lock_phones
 from django.utils import timezone
 
 from accounts.models import User
@@ -147,7 +149,9 @@ class LeadSerializer(serializers.ModelSerializer):
         read_only_fields = ["test_drive_completed_at", "uid", "assigned_so", "assigned_ps", "generated_by", "needs_cre_reassignment", "needs_so_reassignment", "created_at", "updated_at"]
         extra_kwargs = {"source": {"required": True}}
 
+    @transaction.atomic
     def create(self, validated_data):
+        guard_manual_phone(validated_data.get("phone", ""))
         qualification_data = validated_data.pop("qualification_input", None)
         lead = super().create(validated_data)
         if qualification_data:
@@ -166,6 +170,10 @@ class LeadSerializer(serializers.ModelSerializer):
         def serial(value):
             return value.isoformat() if hasattr(value, "isoformat") else value.pk if hasattr(value, "pk") else value
         with transaction.atomic():
+            if "phone" in validated_data and validated_data["phone"] != instance.phone:
+                lock_phones(instance.phone, validated_data["phone"])
+                guard_manual_phone(validated_data["phone"], instance.pk)
+            instance = Lead.objects.select_for_update().get(pk=instance.pk)
             before = {key: serial(getattr(instance, key)) for key in validated_data if hasattr(instance, key)}
             updated = super().update(instance, validated_data)
             after = {key: serial(getattr(updated, key)) for key in before}
@@ -204,6 +212,24 @@ class SOLeadListSerializer(serializers.ModelSerializer):
 
 class LeadDetailSerializer(LeadSerializer):
     outcome_policy = serializers.SerializerMethodField()
+    whatsapp = serializers.SerializerMethodField()
+
+    def get_whatsapp(self, obj):
+        from notifications.models import WhatsAppContact
+        from notifications.serializers import WhatsAppMessageSerializer
+        from notifications.whatsapp import may_record_agreement, normalize_phone, whatsapp_mode
+        request = self.context.get("request")
+        contact = WhatsAppContact.objects.select_related("recorded_by").filter(lead=obj).first()
+        return {
+            "mode": whatsapp_mode(),
+            "agreed": bool(contact and contact.agreed and contact.phone == normalize_phone(obj.phone)),
+            "phone": contact.phone if contact else "",
+            "recorded_at": contact.recorded_at if contact else None,
+            "recorded_by": contact.recorded_by.history_display_name if contact and contact.recorded_by else None,
+            "enrolled_at": contact.enrolled_at if contact else None,
+            "can_record_agreement": may_record_agreement(request.user if request else None, obj),
+            "messages": WhatsAppMessageSerializer(obj.whatsapp_messages.all()[:30], many=True).data,
+        }
 
     def get_outcome_policy(self, obj):
         request = self.context.get("request")
@@ -223,7 +249,7 @@ class LeadDetailSerializer(LeadSerializer):
         return [{"event": event.event, "before": event.before, "after": event.after, "actor": event.actor.history_display_name if event.actor else "System", "created_at": event.created_at} for event in obj.audit_events.select_related("actor").order_by("-created_at")[:30]]
 
     class Meta(LeadSerializer.Meta):
-        fields = LeadSerializer.Meta.fields + ["call_history", "follow_up_history", "audit_history", "outcome_policy"]
+        fields = LeadSerializer.Meta.fields + ["call_history", "follow_up_history", "audit_history", "outcome_policy", "whatsapp"]
 
 
 class CallLogSerializer(serializers.ModelSerializer):
@@ -254,6 +280,7 @@ class LeadUpdateSerializer(serializers.Serializer):
 
 
 class SOLeadUpdateSerializer(serializers.Serializer):
+    whatsapp_agreed = serializers.BooleanField(required=False)
     activity = serializers.CharField(max_length=160, required=False, allow_blank=True)
     sub_activity = serializers.CharField(max_length=160, required=False, allow_blank=True)
     name = serializers.CharField(max_length=160, required=False)
@@ -291,6 +318,10 @@ class SOLeadUpdateSerializer(serializers.Serializer):
         if enquiry_date and enquiry_date > timezone.localdate():
             raise serializers.ValidationError({"enquiry_date": "Enquiry date cannot be in the future."})
         user = self.context.get("user")
+        if "whatsapp_agreed" in attrs:
+            from notifications.whatsapp import may_record_agreement
+            if not may_record_agreement(user, self.context["lead"]):
+                raise serializers.ValidationError({"whatsapp_agreed": "Only the assigned CE or an administrator can record agreement."})
         if user and (user.role == User.Role.SALES_OFFICER or (user.is_admin and (attrs.get("call_status") or attrs.get("call_outcome") in PS_CALL_OUTCOME_STATUS_OPTIONS))):
             return validate_sales_call(self.context["lead"], user, attrs)
         if attrs.get("call_outcome") and attrs["call_outcome"] not in {"PENDING", "QUALIFIED", "LOST", "RNR", "SWITCHED_OFF", "CALLBACK", "Call Me Back", "Switch Off"}:

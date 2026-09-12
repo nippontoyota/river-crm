@@ -16,8 +16,11 @@ from rest_framework.views import APIView
 from accounts.models import User
 from accounts.permissions import IsAdmin, IsAdminOrReceptionist, IsAdminReceptionistOrCRE, IsSalesManager, IsSalesOfficer
 from notifications.models import Notification
+from notifications.serializers import WhatsAppAgreementSerializer
+from notifications.whatsapp import may_record_agreement, save_agreement
 from .outcomes import CLOSED_STATUSES, outcome_policy, validate_milestone_change
 from .metrics import etbr_aggregates
+from .phone_lock import guard_manual_phone, lock_phones
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from .serializers import CALL_OUTCOME_STATUS_OPTIONS, PS_CALL_OUTCOME_STATUS_OPTIONS, AssignmentSerializer, BulkDistributeSerializer, FollowUpReviewSerializer, FollowUpSerializer, LeadDetailSerializer, LeadSerializer, LeadUpdateSerializer, PSAssignmentSerializer, SOLeadCreateSerializer, SOLeadListSerializer, SOLeadUpdateSerializer, SystemConfigSerializer
 
@@ -95,6 +98,19 @@ class LeadViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         return Response(LeadDetailSerializer(self.get_object(), context={"request": request}).data)
+
+    @action(detail=True, methods=["patch"], url_path="whatsapp-agreement", serializer_class=WhatsAppAgreementSerializer)
+    def whatsapp_agreement(self, request, pk=None):
+        visible_lead = self.get_object()
+        serializer = WhatsAppAgreementSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            actor = User.objects.select_for_update().get(pk=request.user.pk)
+            lead = Lead.objects.select_for_update().get(pk=visible_lead.pk)
+            if lead.deleted_at or not may_record_agreement(actor, lead):
+                return Response(status=status.HTTP_403_FORBIDDEN)
+            save_agreement(lead, serializer.validated_data["agreed"], actor)
+        return Response(LeadDetailSerializer(lead, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="complete-test-drive")
     def complete_test_drive(self, request, pk=None):
@@ -351,7 +367,10 @@ class LeadViewSet(viewsets.ModelViewSet):
         editable_fields = ("name", "phone", "email", "source", "source_label", "campaign", "activity", "sub_activity", "model_interest", "city", "branch", "enquiry_date", "flagged_to_manager")
         before = {field: audit_value(getattr(lead, field)) for field in ("status", "category", "sales_outcome", *editable_fields)}
         with transaction.atomic():
-            if not request.user.is_admin:
+            if "phone" in data and data["phone"] != lead.phone:
+                lock_phones(lead.phone, data["phone"])
+                guard_manual_phone(data["phone"], lead.pk)
+            if not request.user.is_admin or "whatsapp_agreed" in data:
                 actor = User.objects.select_for_update().filter(
                     pk=request.user.pk,
                     is_active=True,
@@ -394,6 +413,8 @@ class LeadViewSet(viewsets.ModelViewSet):
                 lead.assigned_ps = ps_officer
                 update_fields.append("assigned_ps")
             lead.save(update_fields=update_fields)
+            if "whatsapp_agreed" in data:
+                save_agreement(lead, data["whatsapp_agreed"], actor)
             if qualification := data.get("qualification"):
                 record, _ = LeadQualification.objects.get_or_create(lead=lead)
                 qualification_before = {field: getattr(record, field) for field in qualification}
@@ -714,6 +735,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             if next_status not in FORWARD_TRANSITIONS.get(lead.status, set()):
                 return Response({"detail": "This status transition is not allowed."}, status=status.HTTP_400_BAD_REQUEST)
             previous = lead.status
+            previous_sales_outcome = lead.sales_outcome
             lead.status = next_status
             lead.sales_outcome = serializer.validated_data["sales_outcome"]
             lead.save(update_fields=["status", "sales_outcome", "updated_at"])
@@ -721,7 +743,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             FollowUp.objects.filter(lead=lead, resolved_at__isnull=True).update(resolved_at=timezone.now())
             if follow_up_at := serializer.validated_data.get("follow_up_at"):
                 FollowUp.objects.create(lead=lead, so=request.user, scheduled_for=follow_up_at)
-            LeadAudit.objects.create(lead=lead, actor=request.user, event="status_changed", before={"status": previous}, after={"status": next_status})
+            LeadAudit.objects.create(lead=lead, actor=request.user, event="status_changed", before={"status": previous, "sales_outcome": previous_sales_outcome}, after={"status": next_status, "sales_outcome": lead.sales_outcome})
         return Response(self.get_serializer(lead).data)
 
     @action(detail=True, methods=["post"])

@@ -21,7 +21,15 @@ export type CallHistory = { id: number; status: string; outcome: string; remarks
 export type FollowUpHistory = { id: number; lead: number; customer: string; so_name: string; so_active: boolean; scheduled_for: string; resolved_at: string | null; notified_at: string | null; reminder_held: boolean };
 export type SalesOutcomeOption = { label: string; status: string; sales_outcome: string; tone: "qualified" | "lost"; requires_follow_up: boolean };
 export type OutcomePolicy = { can_update: boolean; can_complete_test_drive: boolean; outcomes: Record<string, SalesOutcomeOption[]> };
-export type LeadDetail = Lead & { outcomePolicy: OutcomePolicy; email: string; sourceLabel: string; campaign: string; qualification: LeadQualification | null; callHistory: CallHistory[]; followUpHistory: FollowUpHistory[]; auditHistory: { event: string; before: Record<string, unknown>; after: Record<string, unknown>; actor: string; created_at: string }[] };
+export type WhatsAppSummary = {
+  mode: "preview" | "disabled"; agreed: boolean; phone: string; recorded_at: string | null;
+  recorded_by: string | null; enrolled_at: string | null; can_record_agreement: boolean;
+  messages: { id: number; kind: "INTRODUCTION" | "REASSIGNMENT"; mode: string; recipient: string;
+    template: string; language: string; variables: Record<string, string>; body: string;
+    status: "PREVIEW" | "SKIPPED" | "CANCELLED"; status_label: string; reason: string;
+    created_at: string; updated_at: string }[];
+};
+export type LeadDetail = Lead & { whatsapp: WhatsAppSummary; outcomePolicy: OutcomePolicy; email: string; sourceLabel: string; campaign: string; qualification: LeadQualification | null; callHistory: CallHistory[]; followUpHistory: FollowUpHistory[]; auditHistory: { event: string; before: Record<string, unknown>; after: Record<string, unknown>; actor: string; created_at: string }[] };
 export type EtbrMetrics = { etbr_enquired: number; etbr_test_drive_completed: number; etbr_booked: number; etbr_retailed: number };
 export type SalesDashboard = { summary: EtbrMetrics & { total: number; fresh: number; followups: number; missed: number; pending: number; qualified: number; walkin: number; won: number; lost: number; won_lost: number; untouched: number; called: number; scheduled: number }; section: string; results: SalesLead[] };
 export type PersonalAnalytics = { range: string; summary: EtbrMetrics & { total: number; assigned: number; qualified: number; booked: number; lost: number; retailed: number; conversion_rate: number }; status_counts: { status: string; count: number }[]; source: { source: string; total: number; qualified: number; booked: number; retailed: number }[]; models: { model_interest: string; total: number; qualified: number; booked: number }[]; monthly: { month: string; total: number; qualified: number; booked: number; retailed: number }[] };
@@ -30,10 +38,10 @@ export type Metrics = { total_assigned: number; total_called: number; calls_toda
 export type LifecycleEvent = { action: "DISABLED" | "ENABLED" | "DELETED"; reason: string; actor: string; summary: Record<string, unknown>; created_at: string };
 export type AnalyticsOfficer = Metrics & { id: number; name: string; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; account_history?: LifecycleEvent[] };
 export type Analytics = { summary: Metrics & EtbrMetrics; source: { source: string; total: number; qualified: number; won: number }[]; cre: AnalyticsOfficer[]; officers: AnalyticsOfficer[] };
-export type CurrentUser = { id: number; first_name: string; last_name: string; email: string; role: "ADMIN" | "CEO" | "CRE" | "SO" | "SALES_MANAGER" | "RECEPTIONIST" | "COMPLAINTS"; is_active?: boolean; deleted_at?: string | null; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; location?: string };
+export type CurrentUser = { id: number; first_name: string; last_name: string; email: string; role: "ADMIN" | "CEO" | "CRE" | "SO" | "SALES_MANAGER" | "RECEPTIONIST" | "COMPLAINTS" | "FEEDBACK"; is_active?: boolean; deleted_at?: string | null; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; location?: string };
 export type OffboardingRoute = { status: string; destination: "POOL" | "DISTRIBUTE"; recipient_ids: number[] };
 export type OffboardingImpact = {
-  version: string; assignment_role: "CRE" | "SO"; actionable_count: number; closed_count: number; followup_count: number; complaint_count: number;
+  version: string; assignment_role: "CRE" | "SO" | "FEEDBACK"; actionable_count: number; closed_count: number; followup_count: number; complaint_count: number;
   lead_groups: { status: string; label: string; count: number; branches: string[] }[];
   eligible_users: { id: number; name: string; location: string; load: number }[];
 };
@@ -126,20 +134,24 @@ export const statusName = (status: string) => statusNames[status] || status;
 export const sourceClass = (source: string) => sourceName(source).toLowerCase().replaceAll(" ", "-");
 export const toLead = (lead: ApiLead): Lead => ({ ...lead, source: sourceName(lead.source), sourceCode: lead.source, model: lead.model_interest || "—", enquiryDate: lead.enquiry_date, enquiredAt: formatDate(lead.enquiry_date || lead.created_at), statusCode: lead.status, status: statusName(lead.status), category: lead.category, salesOutcome: lead.sales_outcome, nextFollowUp: lead.next_follow_up, callCount: lead.call_count, assignedSoId: lead.assigned_so, assignedSoName: lead.assigned_so_name, assignedPsId: lead.assigned_ps, assignedPsName: lead.assigned_ps_name, needsCreReassignment: lead.needs_cre_reassignment, needsSoReassignment: lead.needs_so_reassignment });
 const toSalesLead = (lead: ApiSalesLead): SalesLead => ({ id: lead.id, name: lead.name, phone: lead.phone, source: sourceName(lead.source), sourceCode: lead.source, statusCode: lead.status, status: statusName(lead.status), flagged_to_manager: lead.flagged_to_manager });
-const toLeadDetail = (lead: ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"]; outcome_policy: OutcomePolicy }): LeadDetail => ({ ...toLead(lead), email: lead.email, sourceLabel: lead.source_label, campaign: lead.campaign, qualification: lead.qualification, callHistory: lead.call_history, followUpHistory: lead.follow_up_history, auditHistory: lead.audit_history, outcomePolicy: lead.outcome_policy });
+const toLeadDetail = (lead: ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"]; outcome_policy: OutcomePolicy; whatsapp: WhatsAppSummary }): LeadDetail => ({ ...toLead(lead), email: lead.email, sourceLabel: lead.source_label, campaign: lead.campaign, qualification: lead.qualification, callHistory: lead.call_history, followUpHistory: lead.follow_up_history, auditHistory: lead.audit_history, outcomePolicy: lead.outcome_policy, whatsapp: lead.whatsapp });
 export const toOfficer = (officer: ApiOfficer, metrics?: Metrics): Officer => ({ id: officer.id, name: `${officer.first_name} ${officer.last_name}`.trim() || officer.email, initials: `${officer.first_name[0] || ""}${officer.last_name[0] || ""}` || officer.email.slice(0, 2).toUpperCase(), color: colors[officer.id % colors.length], location: officer.location, assigned: metrics?.total_assigned || 0, calls: metrics?.calls_today || 0, qualified: metrics?.qualified || 0, won: metrics?.won || 0 });
 
 export async function getLeadsPage(query = "") { const data = await api<Paginated<ApiLead>>(`/api/leads/${query}`); return { count: data.count ?? data.results.length, next: data.next ?? null, previous: data.previous ?? null, results: data.results.map(toLead) }; }
 export async function getLeads(query = "") { return (await getLeadsPage(query)).results; }
 export async function getMyDashboard(params: Record<string, string>) { const query = new URLSearchParams(params).toString(); const data = await api<{ summary: SalesDashboard["summary"]; section: string; results: ApiSalesLead[] }>(`/api/leads/my-dashboard/${query ? `?${query}` : ""}`); return { ...data, results: data.results.map(toSalesLead) }; }
-export async function getLeadDetail(id: number) { const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"]; outcome_policy: OutcomePolicy }>(`/api/leads/${id}/`); return toLeadDetail(data); }
+export async function getLeadDetail(id: number) { const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"]; outcome_policy: OutcomePolicy; whatsapp: WhatsAppSummary }>(`/api/leads/${id}/`); return toLeadDetail(data); }
 export async function completeTestDrive(id: number) {
-  const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"]; outcome_policy: OutcomePolicy }>(`/api/leads/${id}/complete-test-drive/`, { method: "POST", body: "{}" });
+  const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"]; outcome_policy: OutcomePolicy; whatsapp: WhatsAppSummary }>(`/api/leads/${id}/complete-test-drive/`, { method: "POST", body: "{}" });
+  return toLeadDetail(data);
+}
+export async function updateWhatsAppAgreement(id: number, agreed: boolean) {
+  const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"]; outcome_policy: OutcomePolicy; whatsapp: WhatsAppSummary }>(`/api/leads/${id}/whatsapp-agreement/`, { method: "PATCH", body: JSON.stringify({ agreed }) });
   return toLeadDetail(data);
 }
 export const deleteLead = (id: number) => api<void>(`/api/leads/${id}/`, { method: "DELETE" });
 const withApiDate = <T extends { enquiry_date?: string | null }>(payload: T): T => payload.enquiry_date === undefined ? payload : { ...payload, enquiry_date: toApiDate(payload.enquiry_date) };
-export async function updateMyLead(id: number, payload: { name?: string; phone?: string; email?: string; source?: string; source_label?: string; campaign?: string; activity?: string; sub_activity?: string; model_interest?: string; city?: string; branch?: string; enquiry_date?: string | null; status?: string; category?: string; sales_outcome?: string; remarks?: string; call_status?: string; call_outcome?: string; follow_up_at?: string | null; ps_officer_id?: number; qualification?: LeadQualification; flagged_to_manager?: boolean }) { const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"]; outcome_policy: OutcomePolicy }>(`/api/leads/${id}/so-update/`, { method: "PATCH", body: JSON.stringify(withApiDate(payload)) }); return toLeadDetail(data); }
+export async function updateMyLead(id: number, payload: { whatsapp_agreed?: boolean; name?: string; phone?: string; email?: string; source?: string; source_label?: string; campaign?: string; activity?: string; sub_activity?: string; model_interest?: string; city?: string; branch?: string; enquiry_date?: string | null; status?: string; category?: string; sales_outcome?: string; remarks?: string; call_status?: string; call_outcome?: string; follow_up_at?: string | null; ps_officer_id?: number; qualification?: LeadQualification; flagged_to_manager?: boolean }) { const data = await api<ApiLead & { call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"]; outcome_policy: OutcomePolicy; whatsapp: WhatsAppSummary }>(`/api/leads/${id}/so-update/`, { method: "PATCH", body: JSON.stringify(withApiDate(payload)) }); return toLeadDetail(data); }
 export const createSoLead = (payload: LeadInput) => api<ApiLead>("/api/leads/so-create/", { method: "POST", body: JSON.stringify(withApiDate(payload)) });
 export const createLead = (payload: LeadInput) => api<ApiLead>("/api/leads/", { method: "POST", body: JSON.stringify(withApiDate(payload)) });
 export async function getCres() { const data = await api<Paginated<ApiOfficer>>("/api/auth/cre-users/"); return data.results; }
@@ -176,12 +188,12 @@ export function getCurrentUser() {
   if (!currentUserRequest) currentUserRequest = api<{ user: CurrentUser }>("/api/auth/me/").finally(() => { currentUserRequest = null; });
   return currentUserRequest;
 }
-export const uploadLeads = (file: File) => { const body = new FormData(); body.append("file", file); return api<UploadBatch>("/api/uploads/", { method: "POST", body }); };
+export const uploadLeads = (file: File, mappingVersion?: number) => { const body = new FormData(); body.append("file", file); if (mappingVersion) body.append("mapping_version", String(mappingVersion)); return api<UploadBatch>("/api/uploads/", { method: "POST", body }); };
 export const getUpload = (id: number, includeRows = false) => api<UploadBatch>(`/api/uploads/${id}/${includeRows ? "?include_rows=true" : ""}`);
 export const resolveUploadDuplicates = (id: number, rows: { id: number; resolution: "SKIP" }[]) => api<{ detail: string; duplicates_found: number }>(`/api/uploads/${id}/resolve-duplicates/`, { method: "POST", body: JSON.stringify({ rows }) });
 export const commitUpload = (id: number) => api<{ created: number; overwritten: number; skipped: number }>(`/api/uploads/${id}/commit/`, { method: "POST", body: JSON.stringify({}) });
-export type UploadRow = { id: number; row_number: number; data: { name?: string }; normalized_phone: string; validation_error: string; duplicate_of: number | null; existing_name: string; existing_status: string; duplicate_type: "CRM" | "FILE" | ""; resolution: "PENDING" | "SKIP" | "OVERWRITE" | "IMPORT" };
-export type UploadBatch = { id: number; status: "PARSING" | "READY" | "COMMITTED" | "FAILED"; total_rows: number; parsed_ok: number; duplicates_found: number; crm_duplicates_found: number; file_duplicates_found: number; removed_duplicates: number; pending_duplicates: number; skipped: number; error_message: string; rows?: UploadRow[] };
+export type UploadRow = { answers: import("./intake").Entry[]; ignored_labels: string[]; answers_expired: boolean; validation_errors: Record<string, string>; id: number; row_number: number; data: { name?: string }; normalized_phone: string; validation_error: string; duplicate_of: number | null; existing_name: string; existing_status: string; duplicate_type: "CRM" | "FILE" | "INTAKE" | ""; resolution: "PENDING" | "SKIP" | "OVERWRITE" | "IMPORT" };
+export type UploadBatch = { mapping_version: number | null; original_deleted_at: string | null; validation_errors_found: number; id: number; status: "PARSING" | "READY" | "COMMITTED" | "FAILED"; total_rows: number; parsed_ok: number; duplicates_found: number; crm_duplicates_found: number; file_duplicates_found: number; removed_duplicates: number; pending_duplicates: number; skipped: number; error_message: string; rows?: UploadRow[] };
 
 export type RtoOption = { value: string; label: string };
 export type SystemConfig = { complaint_subtypes: Record<string, string[]>; so_lead_sources: string[]; rto_options: RtoOption[]; lists: { branches?: string[]; sources?: string[]; activities?: string[]; subActivities?: Record<string, string[]>; models?: string[]; colorVariants?: string[] }; updated_at?: string };
@@ -195,6 +207,7 @@ export async function updateSystemConfig(lists: SystemConfig["lists"]) {
 }
 export const getUsers = async () => { const data = await api<any>("/api/auth/users/"); return (data.results || data) as CurrentUser[]; };
 export const createUser = (payload: any) => api<CurrentUser>("/api/auth/users/", { method: "POST", body: JSON.stringify(payload) });
+export const updateUserBranch = (userId: number, location: string) => api<CurrentUser>(`/api/auth/users/${userId}/`, { method: "PATCH", body: JSON.stringify({ location }) });
 export const getOffboardingImpact = (userId: number) => api<OffboardingImpact>(`/api/auth/users/${userId}/offboarding-impact/`);
 export const getUserLifecycleHistory = (userId: number) => api<{ id: number; name: string; lifecycle_status: "ACTIVE" | "DISABLED" | "DELETED"; account_history: LifecycleEvent[] }>(`/api/auth/users/${userId}/lifecycle-history/`);
 export const disableUser = (userId: number, impactVersion: string, routes: OffboardingRoute[]) => api<{ status: string }>(`/api/auth/users/${userId}/disable/`, { method: "POST", body: JSON.stringify({ impact_version: impactVersion, routes }) });

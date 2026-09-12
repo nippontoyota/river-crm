@@ -19,6 +19,8 @@ class UploadBatch(models.Model):
     skipped = models.PositiveIntegerField(default=0)
     error_message = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    mapping_version = models.ForeignKey("intake.MappingVersion", null=True, blank=True, on_delete=models.PROTECT)
+    original_deleted_at = models.DateTimeField(null=True, blank=True)
     committed_at = models.DateTimeField(null=True, blank=True)
 
 
@@ -33,6 +35,11 @@ class UploadRow(models.Model):
     row_number = models.PositiveIntegerField()
     data = models.JSONField(default=dict)
     normalized_phone = models.CharField(max_length=10, blank=True)
-    validation_error = models.CharField(max_length=255, blank=True)
+    answers = models.JSONField(default=list)
+    ignored_labels = models.JSONField(default=list)
+    answers_expired = models.BooleanField(default=False)
+    validation_errors = models.JSONField(default=dict)
+    validation_error = models.TextField(blank=True)
+    resolution_explicit = models.BooleanField(default=False)
     duplicate_of = models.ForeignKey("leads.Lead", null=True, blank=True, on_delete=models.SET_NULL)
     resolution = models.CharField(max_length=12, choices=Resolution.choices, default=Resolution.IMPORT)

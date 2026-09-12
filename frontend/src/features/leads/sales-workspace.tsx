@@ -1,5 +1,7 @@
 "use client";
 
+import { WhatsAppHistory, whatsappAgreementLabel } from "@/components/whatsapp-history";
+
 import { TestDriveCompletion } from "@/components/test-drive-completion";
 
 import { EtbrTiles } from "@/components/etbr-tiles";
@@ -18,7 +20,7 @@ type WonLostFilter = "all" | "won" | "lost";
 type Draft = {
   status: string; category: string; sales_outcome: string; call_outcome: string; call_status: string; remarks: string; follow_up_at: string;
   model_interest: string; city: string; profession: string; custom_location: string; ps_officer_id: string; lost_reason: string; pending_reason: string;
-  qualification: LeadQualification;
+  qualification: LeadQualification; whatsapp_agreed: boolean;
 };
 type LeadFields = { name: string; phone: string; email: string; source: string; source_label: string; campaign: string; model_interest: string; city: string; branch: string; enquiry_date: string | null };
 
@@ -94,7 +96,7 @@ function draftFor(lead: LeadDetail): Draft {
   qualification.notes = creNoteText(qualification.notes);
   const latestOutcome = lead.callHistory[0]?.outcome;
   const call_outcome = ["PENDING", "QUALIFIED", "LOST"].includes(latestOutcome || "") ? latestOutcome : lead.statusCode === "PENDING" ? "PENDING" : lead.statusCode === "QUALIFIED" ? "QUALIFIED" : lead.statusCode === "LOST" ? "LOST" : "";
-  return { status: lead.statusCode, category: lead.category || "WARM", sales_outcome: lead.salesOutcome || "PENDING", call_outcome, call_status: "", remarks: "", follow_up_at: "", model_interest: lead.model === "—" ? "" : lead.model, city: lead.city, profession: "", custom_location: "", ps_officer_id: lead.assignedPsId ? String(lead.assignedPsId) : "", lost_reason: "", pending_reason: "", qualification };
+  return { status: lead.statusCode, category: lead.category || "WARM", sales_outcome: lead.salesOutcome || "PENDING", call_outcome, call_status: "", remarks: "", follow_up_at: "", model_interest: lead.model === "—" ? "" : lead.model, city: lead.city, profession: "", custom_location: "", ps_officer_id: lead.assignedPsId ? String(lead.assignedPsId) : "", lost_reason: "", pending_reason: "", qualification, whatsapp_agreed: lead.whatsapp.agreed };
 }
 
 function leadFieldsFor(lead: LeadDetail): LeadFields {
@@ -278,7 +280,8 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
     try {
       const notes = draft.qualification.notes.trim();
       const pendingOutcome = !isPs && draft.call_outcome === "PENDING" ? pendingOutcomeFor(draft.pending_reason) : null;
-      await updateMyLead(detail.id, {
+      const updated = await updateMyLead(detail.id, {
+        whatsapp_agreed: !isPs && draft.call_outcome === "QUALIFIED" ? draft.whatsapp_agreed : undefined,
         call_outcome: pendingOutcome?.call_outcome || draft.call_outcome,
         call_status: isPs ? draft.call_status : undefined,
         status: isPs ? selectedPsOutcome?.status : pendingOutcome?.status || statusOptions[draft.call_outcome]?.[0] || detail.statusCode,
@@ -294,7 +297,8 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
       });
       setDetail(null);
       setDraft(null);
-      setNotice("Lead updated and follow-up history saved."); await loadDashboard();
+      const message = !isPs && draft.call_outcome === "QUALIFIED" ? updated.whatsapp.messages[0] : null;
+      setNotice(`Lead updated and follow-up history saved.${message ? ` WhatsApp: ${message.status_label}${message.reason ? ` — ${message.reason}` : ""}` : ""}`); await loadDashboard();
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Lead update could not be saved.";
       setError(message);
@@ -319,7 +323,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
     setSaving(true); setError("");
     try {
       const updated = await updateMyLead(detail.id, { ...leadFields, enquiry_date: enquiryDate });
-      setDetail(updated); setLeadFields(leadFieldsFor(updated)); setEditingLead(false); setNotice("Customer details updated."); await loadDashboard();
+      setDetail(updated); setDraft(current => current ? { ...current, whatsapp_agreed: updated.whatsapp.agreed } : current); setLeadFields(leadFieldsFor(updated)); setEditingLead(false); setNotice("Customer details updated."); await loadDashboard();
     } catch (requestError) { const message = requestError instanceof Error ? requestError.message : "Customer details could not be saved."; setError(message); setNotice(message); }
     finally { setSaving(false); }
   };
@@ -407,6 +411,9 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
         {error && <p className="form-error" role="alert">{error}</p>}
         {notice && <p role="status">{notice}</p>}
 
+        <WhatsAppHistory key={`whatsapp-${detail.id}-${detail.phone}`} lead={detail} disabled={saving} onUpdated={updated => {
+          setDetail(updated); setDraft(current => current ? { ...current, whatsapp_agreed: updated.whatsapp.agreed } : current);
+        }} />
         <TestDriveCompletion key={detail.id} lead={detail} canComplete={!!isPs} disabled={saving} onSavingChange={setCompletingDrive} onCompleted={updated => {
           setDetail(updated);
           if (draft.call_outcome && !updated.outcomePolicy.outcomes[draft.call_status]?.some(option => option.label === draft.call_outcome)) {
@@ -461,6 +468,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
           <article className="sales-branch-card"><h3>Color variant</h3><label>Color variant *<select value={draft.qualification.variant} onChange={event => chooseQualification("variant", event.target.value)} disabled={!colorVariantOptions.length && !draft.qualification.variant}><option value="">{colorVariantOptions.length ? "Select color variant" : "Add color variants in Lists first"}</option>{optionsWithCurrent(colorVariantOptions, draft.qualification.variant).map(option => <option value={option} key={option}>{option}</option>)}</select></label></article>
           <article className="sales-branch-card"><h3>Customer Details</h3><label>Profession</label><ChoiceRow options={professionOptions} value={draft.profession} onChange={value => choose("profession", value)} /><label>Preferred branch *<select value={draft.city} onChange={event => setDraft(current => current ? { ...current, city: event.target.value, custom_location: "", ps_officer_id: "" } : current)}><option value="">Select branch</option>{branchOptions.map(option => <option value={option} key={option}>{option}</option>)}</select></label></article>
           <article className="sales-branch-card"><h3>Assign PS/SO</h3><label>PS/SO for {selectedLocation || "selected branch"} *<select value={draft.ps_officer_id} disabled={!selectedLocation || psLoading} onChange={event => choose("ps_officer_id", event.target.value)}><option value="">{psLoading ? "Loading PS/SO..." : selectedLocation ? "Select PS/SO" : "Select branch first"}</option>{psOptions.map(officer => <option value={officer.id} key={officer.id}>{officer.name} - {officer.location}</option>)}</select></label>{selectedLocation && !psLoading && !psOptions.length && <small>No active PS/SO found for this branch.</small>}</article>
+          <article className="sales-branch-card"><h3>WhatsApp introduction</h3><label className="whatsapp-agreement"><input type="checkbox" checked={draft.whatsapp_agreed} onChange={event => choose("whatsapp_agreed", event.target.checked)} /><span>{whatsappAgreementLabel}</span></label><small>Optional. If unchecked, qualification continues and the WhatsApp introduction is skipped.</small></article>
           <article className="sales-branch-card"><h3>Purchase Planning</h3><label>Buying Plan *</label><ChoiceRow options={buyingPlanOptions} value={draft.qualification.buying_timeline} onChange={value => chooseQualification("buying_timeline", value)} /></article>
           <article className="sales-branch-card"><h3>Finance Options</h3><label>Finance Option *</label><ChoiceRow options={financeOptions} value={draft.qualification.finance_type} onChange={value => chooseQualification("finance_type", value)} /></article>
           <article className="sales-branch-card"><h3>Qualification Notes</h3><label>Remarks *<textarea value={draft.qualification.notes} onChange={event => chooseQualification("notes", event.target.value)} placeholder="Add qualification notes" /></label></article>

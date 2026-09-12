@@ -1,118 +1,131 @@
 import csv
 import io
-import re
-from datetime import datetime
+from datetime import date, datetime
 
 from celery import shared_task
 from django.db import transaction
 from django.utils import timezone
 
+from intake.mapping import map_entries, normalize_phone, parse_date, sanitize_entries
 from leads.models import Lead
-from leads.serializers import configured_source, configured_values
+from leads.serializers import configured_source
 from .models import UploadBatch, UploadRow
-from .storage import download_bytes
-
-def value(row, *names):
-    lowered = {str(key).strip().lower(): value for key, value in row.items() if key}
-    return next((str(lowered[name]).strip() for name in names if lowered.get(name) not in (None, "")), "")
-
-
-def normalize_phone(phone):
-    digits = re.sub(r"\D", "", phone)
-    if digits.startswith("91") and len(digits) == 12:
-        digits = digits[2:]
-    if digits.startswith("0") and len(digits) == 11:
-        digits = digits[1:]
-    return digits if len(digits) == 10 else ""
+from .storage import delete_paths, download_bytes
 
 
 def classify_source(raw):
     source = configured_source(raw)
-    return source or raw.strip(), raw, "" if source else "Choose a lead source from Admin Lists."
-
-
-def parse_date(raw):
-    for format_string in ("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y"):
-        try:
-            return datetime.strptime(raw, format_string).date()
-        except ValueError:
-            continue
-    return timezone.localdate()
-
-
-def invalid_model_error(model):
-    allowed = configured_values("models")
-    return "Choose a vehicle model from Admin Lists." if model and allowed and model not in allowed else ""
+    return source or raw.strip(), raw, '' if source else 'Choose a lead source from Admin Lists.'
 
 
 def read_rows(filename, content):
-    if filename.lower().endswith(".csv"):
-        yield from csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
+    if filename.lower().endswith('.csv'):
+        rows = csv.reader(io.StringIO(content.decode('utf-8-sig')))
+        headers = next(rows, [])
+        for values in rows:
+            yield [{'id': f'column:{index + 1}', 'label': str(headers[index] or '') if index < len(headers) else f'Column {index + 1}', 'value': value}
+                   for index, value in enumerate(values + [''] * max(0, len(headers) - len(values)))]
         return
     from openpyxl import load_workbook
     workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-    sheet = workbook.active
-    headers = [str(cell.value or "").strip() for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
-    for values in sheet.iter_rows(min_row=2, values_only=True):
-        yield dict(zip(headers, values))
-
-
-@shared_task
-def parse_upload_batch(batch_id):
-    batch = UploadBatch.objects.get(id=batch_id)
     try:
-        content = download_bytes(batch.storage_path)
-        parsed_rows = []
-        skipped = 0
-        for row_number, row in enumerate(read_rows(batch.filename, content), start=2):
-            name = value(row, "name", "customer name")
-            phone = normalize_phone(value(row, "phone", "mobile"))
-            if not name and not phone:
-                continue
-            error = "" if name and phone else "Name and phone are required."
-            enquiry_date = parse_date(value(row, "date", "enquiry date"))
-            if enquiry_date > timezone.localdate():
-                error = "Enquiry date cannot be in the future."
-            source, source_label, source_error = classify_source(value(row, "source"))
-            model_interest = value(row, "model", "vehicle interest", "model / vehicle interest")
-            error = error or source_error or invalid_model_error(model_interest)
-            if error:
-                skipped += 1
-            parsed_rows.append({"row_number": row_number, "phone": phone, "validation_error": error, "data": {"name": name, "email": value(row, "email"), "source": source, "source_label": source_label, "campaign": value(row, "campaign"), "model_interest": model_interest, "city": value(row, "city", "location"), "enquiry_date": enquiry_date.isoformat()}})
-        existing_leads = {}
-        for lead in Lead.objects.filter(phone__in={row["phone"] for row in parsed_rows if row["phone"]}, deleted_at__isnull=True).only("id", "phone").order_by("id"):
-            existing_leads.setdefault(lead.phone, lead)
-        staged = []
-        first_uploaded_phone = {}
-        duplicates = 0
-        for row in parsed_rows:
-            data = row["data"].copy()
-            duplicate = existing_leads.get(row["phone"]) if not row["validation_error"] else None
-            resolution = UploadRow.Resolution.IMPORT
-            if duplicate:
-                data["_duplicate_type"] = "CRM"
-                resolution = UploadRow.Resolution.SKIP
-                duplicates += 1
-            elif not row["validation_error"] and row["phone"] in first_uploaded_phone:
-                first_row = first_uploaded_phone[row["phone"]]
-                data["_duplicate_type"] = "FILE"
-                data["_duplicate_label"] = f"Row {first_row['row_number']} - {first_row['data'].get('name') or 'first matching row'}"
-                resolution = UploadRow.Resolution.SKIP
-                duplicates += 1
-            elif not row["validation_error"] and row["phone"]:
-                first_uploaded_phone[row["phone"]] = row
-            staged.append(UploadRow(batch=batch, row_number=row["row_number"], normalized_phone=row["phone"], validation_error=row["validation_error"], duplicate_of=duplicate, resolution=resolution, data=data))
+        sheet = workbook.active
+        rows = sheet.iter_rows(values_only=True)
+        headers = next(rows, [])
+        for values in rows:
+            yield [{'id': f'column:{index + 1}', 'label': str(headers[index] or '') if index < len(headers) else f'Column {index + 1}',
+                    'value': value.date().isoformat() if isinstance(value, datetime) else value.isoformat() if isinstance(value, date) else value}
+                   for index, value in enumerate(values)]
+    finally:
+        workbook.close()
+
+
+def classify_rows(batch, rows):
+    existing = {}
+    for lead in Lead.objects.filter(phone__in={row.normalized_phone for row in rows if row.normalized_phone}, deleted_at__isnull=True).only('id', 'phone').order_by('id'):
+        existing.setdefault(lead.phone, lead)
+    first = {}
+    for row in rows:
+        for key in list(row.data):
+            if key.startswith('_'):
+                del row.data[key]
+        row.duplicate_of = None
+        row.resolution = UploadRow.Resolution.IMPORT
+        if row.validation_error:
+            continue
+        row.duplicate_of = existing.get(row.normalized_phone)
+        if row.duplicate_of:
+            row.data['_duplicate_type'] = 'CRM'
+            row.resolution = UploadRow.Resolution.SKIP
+        elif row.normalized_phone in first:
+            row.data['_duplicate_type'] = 'FILE'
+            row.data['_duplicate_label'] = f'Row {first[row.normalized_phone]}'
+            row.resolution = UploadRow.Resolution.SKIP
+        else:
+            first[row.normalized_phone] = row.row_number
+    return rows
+
+
+def refresh_counts(batch):
+    rows = list(batch.rows.all())
+    batch.total_rows = len(rows)
+    batch.parsed_ok = sum(not r.validation_error and r.resolution != UploadRow.Resolution.SKIP for r in rows)
+    batch.duplicates_found = sum(r.resolution == UploadRow.Resolution.PENDING for r in rows)
+    batch.skipped = sum(bool(r.validation_error) or r.resolution == UploadRow.Resolution.SKIP for r in rows)
+    batch.save(update_fields=['total_rows', 'parsed_ok', 'duplicates_found', 'skipped'])
+
+
+def delete_original(batch_id):
+    batch = UploadBatch.objects.get(pk=batch_id)
+    if batch.original_deleted_at:
+        return
+    try:
+        delete_paths([batch.storage_path])
+    except Exception:
+        return  # Retention retries this deletion without logging the path or credentials.
+    UploadBatch.objects.filter(pk=batch_id).update(original_deleted_at=timezone.now())
+
+
+@shared_task(ignore_result=True)
+def parse_upload_batch(batch_id):
+    try:
         with transaction.atomic():
-            UploadRow.objects.filter(batch=batch).delete()
-            UploadRow.objects.bulk_create(staged)
-            batch.total_rows = len(staged)
-            batch.parsed_ok = len([row for row in staged if not row.validation_error and row.resolution != UploadRow.Resolution.SKIP])
-            batch.duplicates_found = 0
-            batch.skipped = skipped + duplicates
+            batch = UploadBatch.objects.select_for_update(of=('self',)).select_related('mapping_version').get(pk=batch_id)
+            if batch.status == UploadBatch.Status.COMMITTED:
+                return
+            if batch.status != UploadBatch.Status.PARSING:
+                return
+            rules = batch.mapping_version.rules if batch.mapping_version else {}
+            previous = list(batch.rows.all().order_by('row_number'))
+            if previous:
+                incoming = [(row.row_number, row.answers) for row in previous]
+            elif not batch.original_deleted_at:
+                incoming = enumerate(read_rows(batch.filename, download_bytes(batch.storage_path)), start=2)
+            else:
+                raise ValueError('Original input expired.')
+            rows = []
+            for row_number, entries in incoming:
+                if not previous and all(entry['value'] is None or str(entry['value']).strip() == '' for entry in entries):
+                    continue
+                retained, ignored = sanitize_entries(entries, rules, excel=True)
+                result = map_entries(retained, rules, excel=True)
+                data = result['values']
+                phone = normalize_phone(data.pop('phone'))
+                if not data.get('source_label'):
+                    data['source_label'] = next((str(e['value'] or '').strip() for e in retained if e['label'].strip().casefold() == 'source'), '')
+                    if len(data['source_label']) > 100:
+                        result['errors']['source_label'] = 'Maximum length is 100 characters.'
+                rows.append(UploadRow(batch=batch, row_number=row_number, answers=retained, ignored_labels=ignored,
+                    data=data, normalized_phone=phone, validation_error=' '.join(result['errors'].values()), validation_errors=result['errors']))
+            classify_rows(batch, rows)
+            batch.rows.all().delete()
+            UploadRow.objects.bulk_create(rows)
             batch.status = UploadBatch.Status.READY
-            batch.save(update_fields=["total_rows", "parsed_ok", "duplicates_found", "skipped", "status"])
-    except Exception as error:
-        batch.status = UploadBatch.Status.FAILED
-        batch.error_message = str(error)[:1000]
-        batch.save(update_fields=["status", "error_message"])
-        raise
+            batch.error_message = ''
+            batch.save(update_fields=['status', 'error_message'])
+            refresh_counts(batch)
+            # Once parsed, sanitized entries are sufficient for mapping/reparse.
+            # Delete the original immediately so ignored/prohibited answers cannot linger in a file.
+            transaction.on_commit(lambda: delete_original(batch.id))
+    except Exception:
+        UploadBatch.objects.filter(pk=batch_id).exclude(status=UploadBatch.Status.COMMITTED).update(status=UploadBatch.Status.FAILED, error_message='Unable to parse this file. Check the file format and retry.')

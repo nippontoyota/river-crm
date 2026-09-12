@@ -1,3 +1,4 @@
+import "./intake.css";
 import type { Metadata } from "next";
 import "./globals.css";
 import "./accessibility.css";
@@ -8,6 +9,7 @@ import "./call-outcome.css";
 import "./responsive.css";
 import "./complaint.css";
 import "./ceo.css";
+import "./feedback.css";
 
 export const metadata: Metadata = {
   title: "Incheon Mobility CRM",

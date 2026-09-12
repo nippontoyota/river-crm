@@ -11,8 +11,10 @@ from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, Ou
 from accounts.models import User, UserLifecycleEvent
 from ceo.models import FinancialEntry, Milestone, OperationEvent, SaleAccount, SalesTarget, TargetRevision
 from complaints.models import Complaint, ComplaintNote
+from feedback.models import FeedbackAssignment, FeedbackAttempt, FeedbackTask
+from intake.models import Connection, Heartbeat, IntakeAudit, IntakeForm, MappingVersion, Submission
 from leads.models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
-from notifications.models import Notification
+from notifications.models import Notification, WhatsAppContact, WhatsAppMessage
 from uploads.models import UploadBatch, UploadRow
 from uploads.storage import delete_paths
 
@@ -27,6 +29,13 @@ DELETE_MODELS = [
     UserLifecycleEvent,
     ComplaintNote,
     Notification,
+    FeedbackAssignment,
+    FeedbackAttempt,
+    FeedbackTask,
+    WhatsAppMessage,
+    WhatsAppContact,
+    IntakeAudit,
+    Submission,
     UploadRow,
     LeadQualification,
     CallLog,
@@ -34,6 +43,10 @@ DELETE_MODELS = [
     LeadAudit,
     Complaint,
     UploadBatch,
+    MappingVersion,
+    IntakeForm,
+    Connection,
+    Heartbeat,
     Lead,
     SystemConfig,
     BlacklistedToken,

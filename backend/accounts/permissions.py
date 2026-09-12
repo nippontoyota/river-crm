@@ -40,4 +40,6 @@ class ReadOnlyCEO(BasePermission):
     message = "CEO access is read-only."
 
     def has_permission(self, request, view):
+        if getattr(request.user, "role", None) == "FEEDBACK":
+            return request.path.startswith(("/api/auth/", "/api/notifications/", "/api/feedback/"))
         return getattr(request.user, "role", None) != "CEO" or request.method in {"GET", "HEAD", "OPTIONS"}

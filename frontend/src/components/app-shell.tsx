@@ -4,11 +4,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { cacheCurrentUser, clearCachedCurrentUser, getCachedCurrentUser, getCurrentUser, logout, type CurrentUser } from "@/lib/crm";
+import { FeedbackBell } from "@/components/feedback-bell";
 import { formatDate, formatWeekday } from "@/lib/dates";
 
-type AppShellProps = { children: ReactNode; role: "CEO" | "Admin" | "Sales officer" | "Sales manager" | "Receptionist" };
+type AppShellProps = { children: ReactNode; role: "CEO" | "Admin" | "Sales officer" | "Sales manager" | "Receptionist" | "Feedback Caller" };
 
 function roleType(user: CurrentUser) {
+  if (user.role === "FEEDBACK") return "Feedback Caller";
   if (user.role === "CEO") return "CEO";
   if (user.role === "ADMIN") return "Admin";
   if (user.role === "SALES_MANAGER") return "Sales manager";
@@ -17,16 +19,19 @@ function roleType(user: CurrentUser) {
 }
 
 const ceoLinks = [
-  ["/ceo", "Overview", "◱"], ["/ceo/branches", "Branches", "▦"], ["/ceo/people", "People", "◬"],
+  ["/ceo/feedback", "Feedback", "◷"], ["/ceo", "Overview", "◱"], ["/ceo/branches", "Branches", "▦"], ["/ceo/people", "People", "◬"],
   ["/ceo/leads", "Leads & follow-ups", "☷"], ["/ceo/markets", "Markets", "◎"], ["/ceo/operations", "Complaints", "◫"],
 ] as const;
+const feedbackLinks = [["/feedback", "Feedback calls", "◷"]] as const;
 const adminLinks = [
+  ["/feedback", "Feedback", "◷"],
   ["/business-controls", "Targets & finance", "◫"],
   ["/analytics", "Analytics", "◱"],
   ["/complaints", "Complaints", "⚑"],
   ["/team", "Users", "◬"],
   ["/lists", "Lists", "▤"],
   ["/leads", "Assignment", "▦"],
+  ["/lead-intake", "Lead Intake", "⇥"],
   ["/all-leads", "All leads", "☷"],
 ] as const;
 const officerLinks = [
@@ -36,6 +41,7 @@ const officerLinks = [
   ["/my-analytics", "My results", "◔"],
 ] as const;
 const managerLinks = [
+  ["/feedback", "Feedback", "◷"],
   ["/manager/analytics", "Analytics", "◱"],
   ["/manager/leads", "Branch leads", "☷"],
 ] as const;
@@ -84,8 +90,8 @@ export function AppShell({ children, role }: AppShellProps) {
   const displayName = user ? `${user.first_name} ${user.last_name}`.trim() || user.email : "Sign in";
   const initials = user ? `${user.first_name[0] || ""}${user.last_name[0] || ""}` || user.email.slice(0, 2).toUpperCase() : "?";
   const workspaceRole = user?.role === "CRE" ? "CE" : user?.role === "SO" ? "PS/SO" : user?.role === "SALES_MANAGER" ? "Sales Manager" : user?.role === "RECEPTIONIST" ? "Receptionist" : user?.role === "COMPLAINTS" ? "Complaints department" : role;
-  const links = role === "CEO" ? ceoLinks : role === "Admin" ? adminLinks : role === "Sales manager" ? managerLinks : role === "Sales officer" ? user?.role === "CRE" ? creLinks : user?.role === "COMPLAINTS" ? complaintLinks : officerLinks : receptionistLinks;
-  const shellRoleClass = role === "CEO" ? "ceo-shell" : role === "Sales manager" ? "manager-shell" : role === "Sales officer" ? user?.role === "SO" ? "ps-shell" : user?.role === "COMPLAINTS" ? "complaints-shell" : "cre-shell" : role === "Receptionist" ? "receptionist-shell" : "";
+  const links = role === "Feedback Caller" ? feedbackLinks : role === "CEO" ? ceoLinks : role === "Admin" ? adminLinks : role === "Sales manager" ? managerLinks : role === "Sales officer" ? user?.role === "CRE" ? creLinks : user?.role === "COMPLAINTS" ? complaintLinks : officerLinks : receptionistLinks;
+  const shellRoleClass = role === "Feedback Caller" ? "feedback-shell" : role === "CEO" ? "ceo-shell" : role === "Sales manager" ? "manager-shell" : role === "Sales officer" ? user?.role === "SO" ? "ps-shell" : user?.role === "COMPLAINTS" ? "complaints-shell" : "cre-shell" : role === "Receptionist" ? "receptionist-shell" : "";
   const signOut = async () => {
     try { await logout(); }
     finally { clearCachedCurrentUser(); router.replace("/"); }
@@ -94,8 +100,8 @@ export function AppShell({ children, role }: AppShellProps) {
   if (checkingAccess) return null;
 
   if (sessionConflict) {
-    const actualRole = sessionConflict.role === "CEO" ? "CEO" : sessionConflict.role === "ADMIN" ? "Admin" : sessionConflict.role === "SALES_MANAGER" ? "Sales Manager" : sessionConflict.role === "RECEPTIONIST" ? "Receptionist" : sessionConflict.role === "CRE" ? "CE" : sessionConflict.role === "COMPLAINTS" ? "Complaints department" : "PS/SO";
-    const actualHome = sessionConflict.role === "CEO" ? "/ceo" : sessionConflict.role === "ADMIN" ? "/leads" : sessionConflict.role === "SALES_MANAGER" ? "/manager/analytics" : sessionConflict.role === "RECEPTIONIST" ? "/capture" : sessionConflict.role === "COMPLAINTS" ? "/complaints" : "/my-leads";
+    const actualRole = sessionConflict.role === "FEEDBACK" ? "Feedback Caller" : sessionConflict.role === "CEO" ? "CEO" : sessionConflict.role === "ADMIN" ? "Admin" : sessionConflict.role === "SALES_MANAGER" ? "Sales Manager" : sessionConflict.role === "RECEPTIONIST" ? "Receptionist" : sessionConflict.role === "CRE" ? "CE" : sessionConflict.role === "COMPLAINTS" ? "Complaints department" : "PS/SO";
+    const actualHome = sessionConflict.role === "FEEDBACK" ? "/feedback" : sessionConflict.role === "CEO" ? "/ceo" : sessionConflict.role === "ADMIN" ? "/leads" : sessionConflict.role === "SALES_MANAGER" ? "/manager/analytics" : sessionConflict.role === "RECEPTIONIST" ? "/capture" : sessionConflict.role === "COMPLAINTS" ? "/complaints" : "/my-leads";
     const actualName = `${sessionConflict.first_name} ${sessionConflict.last_name}`.trim() || sessionConflict.email;
     return (
       <main className="page" style={{ maxWidth: "32rem", margin: "6rem auto", textAlign: "center" }}>
@@ -115,7 +121,7 @@ export function AppShell({ children, role }: AppShellProps) {
     );
   }
 
-  const homeHref = role === "CEO" ? "/ceo" : role === "Admin" ? "/leads" : role === "Sales manager" ? "/manager/analytics" : role === "Receptionist" ? "/capture" : user?.role === "COMPLAINTS" ? "/complaints" : "/my-leads";
+  const homeHref = role === "Feedback Caller" ? "/feedback" : role === "CEO" ? "/ceo" : role === "Admin" ? "/leads" : role === "Sales manager" ? "/manager/analytics" : role === "Receptionist" ? "/capture" : user?.role === "COMPLAINTS" ? "/complaints" : "/my-leads";
 
   return <div className={`app-shell ${["Sales officer", "Sales manager"].includes(role) ? "sales-shell" : ""} ${shellRoleClass}`}>
     <aside className="sidebar">
@@ -140,7 +146,7 @@ export function AppShell({ children, role }: AppShellProps) {
       </div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><div><b>{role === "CEO" ? "Company performance" : role === "Admin" ? "Lead control" : role === "Sales manager" ? "Branch command" : role === "Receptionist" ? "Front Desk" : user?.role === "COMPLAINTS" ? "Complaint queue" : user?.role === "SO" ? displayName : `${workspaceRole} pipeline`}</b><small>{formatWeekday(new Date())}, {formatDate(new Date())}</small></div><div className="top-actions">{role === "Admin" && <button className="button primary" onClick={() => ["/leads", "/all-leads"].includes(pathname) ? window.dispatchEvent(new Event("incheon:add-lead")) : router.push("/leads?addLead=1")}>＋ Add lead</button>}<button className="mobile-signout" onClick={() => void signOut()} aria-label="Sign out" title="Sign out">↪</button></div></header>
+      <header className="topbar"><div><b>{role === "CEO" ? "Company performance" : role === "Admin" ? "Lead control" : role === "Sales manager" ? "Branch command" : role === "Receptionist" ? "Front Desk" : user?.role === "COMPLAINTS" ? "Complaint queue" : user?.role === "SO" ? displayName : role === "Feedback Caller" ? "Customer feedback" : `${workspaceRole} pipeline`}</b><small>{formatWeekday(new Date())}, {formatDate(new Date())}</small></div><div className="top-actions">{user?.role === "FEEDBACK" && <FeedbackBell />}{role === "Admin" && <button className="button primary" onClick={() => ["/leads", "/all-leads"].includes(pathname) ? window.dispatchEvent(new Event("incheon:add-lead")) : router.push("/leads?addLead=1")}>＋ Add lead</button>}<button className="mobile-signout" onClick={() => void signOut()} aria-label="Sign out" title="Sign out">↪</button></div></header>
       {children}
     </main>
   </div>;

@@ -4,6 +4,11 @@ from .models import UploadBatch, UploadRow
 
 
 class UploadBatchSerializer(serializers.ModelSerializer):
+    validation_errors_found = serializers.SerializerMethodField()
+
+    def get_validation_errors_found(self, batch):
+        return batch.rows.exclude(validation_error="").count()
+
     crm_duplicates_found = serializers.SerializerMethodField()
     file_duplicates_found = serializers.SerializerMethodField()
     removed_duplicates = serializers.SerializerMethodField()
@@ -11,7 +16,7 @@ class UploadBatchSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UploadBatch
-        fields = ["id", "filename", "status", "total_rows", "parsed_ok", "duplicates_found", "crm_duplicates_found", "file_duplicates_found", "removed_duplicates", "pending_duplicates", "skipped", "error_message", "created_at", "committed_at"]
+        fields = ["id", "filename", "status", "total_rows", "parsed_ok", "duplicates_found", "crm_duplicates_found", "file_duplicates_found", "removed_duplicates", "pending_duplicates", "skipped", "error_message", "created_at", "committed_at", "mapping_version", "original_deleted_at", "validation_errors_found"]
 
     def get_crm_duplicates_found(self, batch):
         return batch.rows.filter(duplicate_of__isnull=False).count()
@@ -33,7 +38,7 @@ class UploadRowSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UploadRow
-        fields = ["id", "row_number", "data", "normalized_phone", "validation_error", "duplicate_of", "existing_name", "existing_status", "duplicate_type", "resolution"]
+        fields = ["id", "row_number", "data", "normalized_phone", "validation_error", "duplicate_of", "existing_name", "existing_status", "duplicate_type", "resolution", "answers", "ignored_labels", "answers_expired", "validation_errors"]
 
     def get_existing_name(self, row):
         if row.duplicate_of:

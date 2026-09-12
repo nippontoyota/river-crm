@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import timedelta
 from pathlib import Path
 
@@ -12,7 +13,7 @@ ALLOWED_HOSTS = [host for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localh
 INSTALLED_APPS = [
     "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes", "django.contrib.sessions",
     "django.contrib.messages", "django.contrib.staticfiles", "corsheaders", "rest_framework",
-    "drf_spectacular", "rest_framework_simplejwt.token_blacklist", "accounts", "leads", "analytics", "uploads", "notifications", "complaints", "ceo",
+    "drf_spectacular", "rest_framework_simplejwt.token_blacklist", "accounts", "leads", "analytics", "uploads", "notifications", "complaints", "ceo", "intake", "feedback",
 ]
 MIDDLEWARE = [
     "config.middleware.PerformanceMiddleware", "django.middleware.security.SecurityMiddleware", "whitenoise.middleware.WhiteNoiseMiddleware", "django.contrib.sessions.middleware.SessionMiddleware",
@@ -86,7 +87,35 @@ CELERY_TASK_EAGER_PROPAGATES = CELERY_TASK_ALWAYS_EAGER
 CELERY_TASK_ACKS_LATE = True
 CELERY_TASK_TIME_LIMIT = 300
 CELERY_BEAT_SCHEDULE = {"follow-up-reminders": {"task": "notifications.tasks.create_due_follow_up_notifications", "schedule": 900}}
+CELERY_BEAT_SCHEDULE["feedback-reminders"] = {"task": "feedback.tasks.process_feedback_queue", "schedule": 60}
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", os.environ.get("SUPABASE_SERVICE_ROLE_KEY", ""))
 SUPABASE_BUCKET = os.environ.get("SUPABASE_UPLOAD_BUCKET", "crm-imports")
+
+# Only credential-free preview or disabled mode is supported until a provider is selected.
+WHATSAPP_MODE = os.environ.get("WHATSAPP_MODE", "preview").strip().lower()
+WHATSAPP_BUSINESS_NAME = os.environ.get("WHATSAPP_BUSINESS_NAME", "Incheon Mobility")
+WHATSAPP_LANGUAGE = os.environ.get("WHATSAPP_LANGUAGE", "en")
+WHATSAPP_TEMPLATE_INTRODUCTION = os.environ.get("WHATSAPP_TEMPLATE_INTRODUCTION", "so_introduction")
+WHATSAPP_TEMPLATE_REASSIGNMENT = os.environ.get("WHATSAPP_TEMPLATE_REASSIGNMENT", "so_reassignment")
+
+# References are persisted; credentials are supplied only through backend secrets.
+INTAKE_ENABLED = os.environ.get("INTAKE_ENABLED", "false").lower() == "true"
+INTAKE_SECRETS = json.loads(os.environ.get("INTAKE_SECRETS_JSON", "{}"))
+INTAKE_FINGERPRINT_KEY = os.environ.get("INTAKE_FINGERPRINT_KEY", SECRET_KEY)
+INTAKE_MAX_BYTES = 64 * 1024
+INTAKE_MAX_FIELDS = 100
+INTAKE_RATE_PER_MINUTE = 120
+META_APP_SECRET = os.environ.get("META_APP_SECRET", "")
+META_VERIFY_TOKEN = os.environ.get("META_VERIFY_TOKEN", "")
+# No moving/latest default: verify the supported version during account setup.
+META_GRAPH_VERSION = os.environ.get("META_GRAPH_VERSION", "")
+CELERY_BEAT_SCHEDULER = "intake.scheduler:HeartbeatScheduler"
+CELERY_BROKER_CONNECTION_TIMEOUT = 2
+CELERY_TASK_PUBLISH_RETRY = False
+CELERY_BEAT_SCHEDULE.update({
+    "intake-recovery": {"task": "intake.tasks.sweep_receipts", "schedule": 60},
+    "intake-reconciliation": {"task": "intake.tasks.reconcile_forms", "schedule": 900},
+    "intake-retention": {"task": "intake.tasks.purge_expired_answers", "schedule": 3600},
+})

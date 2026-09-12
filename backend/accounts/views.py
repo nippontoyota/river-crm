@@ -78,7 +78,7 @@ class UserLifecycleHistoryView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, request, user_id):
-        user = get_user_model().objects.filter(pk=user_id, role__in=[get_user_model().Role.CRE, get_user_model().Role.SALES_OFFICER]).first()
+        user = get_user_model().objects.filter(pk=user_id, role__in=[get_user_model().Role.CRE, get_user_model().Role.SALES_OFFICER, get_user_model().Role.FEEDBACK]).first()
         if not user:
             return Response({"detail": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
         events = [{
@@ -114,7 +114,7 @@ class SalesOfficerViewSet(RoleUserViewSet):
     role = get_user_model().Role.SALES_OFFICER
 
     def get_permissions(self):
-        if self.action == "list":
+        if self.action == "list" and getattr(self.request.user, "role", None) != "FEEDBACK":
             return [permissions.IsAuthenticated()]
         return super().get_permissions()
 

@@ -127,9 +127,11 @@ class LeadAuditManager(models.Manager):
     @transaction.atomic
     def bulk_create(self, objs, **kwargs):
         from ceo.tracking import record_audit
+        from notifications.whatsapp import record_lead_audit
         records = super().bulk_create(objs, **kwargs)
         for record in records:
             record_audit(record)
+            record_lead_audit(record)
         return records
 
 

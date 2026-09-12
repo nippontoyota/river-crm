@@ -30,6 +30,7 @@ class User(AbstractUser):
         SALES_MANAGER = "SALES_MANAGER", "Sales Manager"
         RECEPTIONIST = "RECEPTIONIST", "Receptionist"
         COMPLAINTS = "COMPLAINTS", "Complaints department"
+        FEEDBACK = "FEEDBACK", "Feedback Caller"
 
     username = None
     email = models.EmailField(unique=True)

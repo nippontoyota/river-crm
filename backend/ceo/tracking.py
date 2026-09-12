@@ -24,6 +24,8 @@ def milestone(lead, kind, actor=None, occurred_at=None):
 
 
 def record_audit(audit):
+    from feedback.services import record_audit as record_feedback_audit
+    record_feedback_audit(audit)
     lead = audit.lead
     snapshot = lead_snapshot(lead)
     OperationEvent.objects.get_or_create(source_key=f"audit:{audit.pk}", defaults={
