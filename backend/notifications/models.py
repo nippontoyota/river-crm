@@ -4,6 +4,7 @@ from django.db import models
 
 class Notification(models.Model):
     class Kind(models.TextChoices):
+        SERVICE_UPDATE = "SERVICE_UPDATE", "Service update"
         ASSIGNMENT = "ASSIGNMENT", "Assignment"
         FOLLOW_UP = "FOLLOW_UP", "Follow-up"
         OVERDUE = "OVERDUE", "Overdue"
@@ -14,6 +15,7 @@ class Notification(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")
     lead = models.ForeignKey("leads.Lead", null=True, blank=True, on_delete=models.CASCADE)
     feedback_task = models.ForeignKey("feedback.FeedbackTask", null=True, blank=True, on_delete=models.CASCADE)
+    service_request = models.ForeignKey("servicing.ServiceRequest", null=True, blank=True, on_delete=models.CASCADE)
     dedupe_key = models.CharField(max_length=120, null=True, blank=True, unique=True)
     kind = models.CharField(max_length=20, choices=Kind.choices)
     message = models.CharField(max_length=280)

@@ -90,6 +90,7 @@ def validate_sales_call(lead, user, attrs):
             raise ValidationError({"follow_up_at": "Choose a future follow-up within the next 3 days."})
     elif follow_up:
         raise ValidationError({"follow_up_at": "Closed outcomes cannot have a follow-up."})
+    validate_retail_vehicle(lead, attrs)
     return attrs
 
 
@@ -106,3 +107,9 @@ def validate_milestone_change(lead, attrs):
     if attrs.get("sales_outcome") and attrs["sales_outcome"] != expected:
         raise ValidationError({"sales_outcome": "Choose a sales outcome matching the lead status."})
     attrs["sales_outcome"] = expected
+    validate_retail_vehicle(lead, attrs)
+
+
+def validate_retail_vehicle(lead, attrs):
+    if (attrs.get("sales_outcome") == "RETAILED" or attrs.get("status") == "WON") and lead.sales_outcome != "RETAILED" and not lead.vehicles.exists():
+        raise ValidationError({"chassis_number": "Register the scooter chassis in Vehicle & service history before marking this sale Retailed."})

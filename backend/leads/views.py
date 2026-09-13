@@ -404,6 +404,8 @@ class LeadViewSet(viewsets.ModelViewSet):
                     {"detail": "This lead is no longer assigned to you. Refresh the page."},
                     status=status.HTTP_409_CONFLICT,
                 )
+            from .outcomes import validate_retail_vehicle
+            validate_retail_vehicle(lead, data)
             lead.status = next_status
             for field in ("category", "sales_outcome", *editable_fields):
                 if field in data:

@@ -15,6 +15,7 @@ from feedback.models import FeedbackAssignment, FeedbackAttempt, FeedbackTask
 from intake.models import Connection, Heartbeat, IntakeAudit, IntakeForm, MappingVersion, Submission
 from leads.models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from notifications.models import Notification, WhatsAppContact, WhatsAppMessage
+from servicing.models import ServiceEvent, ServiceRequest, Vehicle, VehicleEvent
 from uploads.models import UploadBatch, UploadRow
 from uploads.storage import delete_paths
 
@@ -29,6 +30,10 @@ DELETE_MODELS = [
     UserLifecycleEvent,
     ComplaintNote,
     Notification,
+    ServiceEvent,
+    ServiceRequest,
+    VehicleEvent,
+    Vehicle,
     FeedbackAssignment,
     FeedbackAttempt,
     FeedbackTask,

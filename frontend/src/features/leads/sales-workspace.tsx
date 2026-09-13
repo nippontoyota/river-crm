@@ -1,5 +1,7 @@
 "use client";
 
+import { VehiclePanel } from "@/features/servicing/vehicle-panel";
+
 import { WhatsAppHistory, whatsappAgreementLabel } from "@/components/whatsapp-history";
 
 import { TestDriveCompletion } from "@/components/test-drive-completion";
@@ -411,6 +413,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
         {error && <p className="form-error" role="alert">{error}</p>}
         {notice && <p role="status">{notice}</p>}
 
+        <VehiclePanel key={`vehicle-${detail.id}`} lead={detail} />
         <WhatsAppHistory key={`whatsapp-${detail.id}-${detail.phone}`} lead={detail} disabled={saving} onUpdated={updated => {
           setDetail(updated); setDraft(current => current ? { ...current, whatsapp_agreed: updated.whatsapp.agreed } : current);
         }} />

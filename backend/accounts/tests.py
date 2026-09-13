@@ -28,6 +28,11 @@ class ResetProductionDataTests(TestCase):
         FollowUp.objects.create(lead=self.lead, so=self.worker, scheduled_for="2026-09-04T10:00:00Z")
         LeadAudit.objects.create(lead=self.lead, actor=self.worker, event="created")
         Notification.objects.create(user=self.worker, lead=self.lead, kind=Notification.Kind.ASSIGNMENT, message="Assigned")
+        from servicing.models import ServiceEvent, ServiceRequest, Vehicle, VehicleEvent
+        vehicle = Vehicle.objects.create(chassis_number="RESET123", model="Indie", related_lead=self.lead, created_by=self.worker, customer_name="Demo", customer_phone="7000000000")
+        service = ServiceRequest.objects.create(vehicle=vehicle, issue="Demo", branch="Kochi", created_by=self.worker)
+        ServiceEvent.objects.create(request=service, actor=self.worker, action="created")
+        VehicleEvent.objects.create(vehicle=vehicle, actor=self.worker, reason="registered")
         complaint = Complaint.objects.create(customer_name="Demo", customer_phone="7000000000", category=Complaint.Category.OTHER, subject="Demo", description="Demo", logged_by=self.worker, related_lead=self.lead)
         ComplaintNote.objects.create(complaint=complaint, author=self.worker, content="Demo")
         batch = UploadBatch.objects.create(filename="demo.xlsx", storage_path="imports/demo.xlsx", uploaded_by=self.admin)

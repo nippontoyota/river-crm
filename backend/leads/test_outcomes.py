@@ -24,11 +24,15 @@ class OutcomePolicyTests(TestCase):
         self.client.force_authenticate(self.so)
 
     def lead(self, state="QUALIFIED", completed=False):
-        return Lead.objects.create(
+        lead = Lead.objects.create(
             name="Outcome customer", phone="9876543210", assigned_ps=self.so, assigned_so=self.cre,
             status=state, sales_outcome={"WALKIN": "BOOKED", "WON": "RETAILED", "LOST": "LOST"}.get(state, "PENDING"),
             test_drive_completed_at=timezone.now() if completed else None,
         )
+
+        from servicing.models import Vehicle
+        Vehicle.objects.create(chassis_number=f"OUTCOME-{lead.pk}", model="Indie", related_lead=lead, created_by=self.so, customer_name=lead.name, customer_phone=lead.phone)
+        return lead
 
     def payload(self, call_status="Connected", outcome="Call Me Back", follow_up=True):
         return {"call_status": call_status, "call_outcome": outcome, "remarks": "Customer follow-up recorded.",

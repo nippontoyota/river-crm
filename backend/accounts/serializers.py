@@ -50,12 +50,19 @@ class TeamMemberSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"password": "A password is required for a new account."})
         if self.instance and "role" in attrs and attrs["role"] != self.instance.role:
             raise serializers.ValidationError({"role": "Create a new account instead of changing an employee's role."})
-        if role in {User.Role.SALES_MANAGER, User.Role.FEEDBACK} and not attrs.get("location", getattr(self.instance, "location", "")).strip():
+        if role in {User.Role.SALES_MANAGER, User.Role.FEEDBACK, User.Role.SERVICE} and not attrs.get("location", getattr(self.instance, "location", "")).strip():
             raise serializers.ValidationError({"location": "Choose the employee branch."})
+        if role == User.Role.SERVICE:
+            from servicing.serializers import configured_branch
+            attrs["location"] = configured_branch(attrs.get("location", getattr(self.instance, "location", "")))
         return attrs
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        if instance.role == User.Role.SERVICE:
+            instance = User.objects.select_for_update().get(pk=instance.pk)
+            if instance.deleted_at:
+                raise serializers.ValidationError("This account has been deleted.")
         if instance.role == User.Role.FEEDBACK:
             from feedback.services import lock_feedback, reconcile_assignments
             lock_feedback()

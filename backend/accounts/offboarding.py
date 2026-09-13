@@ -74,6 +74,9 @@ def _work_for(user, lock=False):
 
 
 def offboarding_impact(user):
+    if user.role == User.Role.SERVICE:
+        from servicing.offboarding import impact
+        return impact(user)
     if user.role == User.Role.FEEDBACK:
         from feedback.offboarding import impact
         return impact(user)
@@ -126,6 +129,9 @@ def _invalidate_user(user):
 
 @transaction.atomic
 def offboard_user(user_id, actor, action, impact_version, routes, reason=""):
+    if User.objects.filter(pk=user_id, role=User.Role.SERVICE).exists():
+        from servicing.offboarding import offboard
+        return offboard(user_id, actor, action, impact_version, reason)
     if User.objects.filter(pk=user_id, role=User.Role.FEEDBACK).exists():
         from feedback.offboarding import offboard
         return offboard(user_id, actor, action, impact_version, reason)
@@ -279,6 +285,9 @@ def offboard_user(user_id, actor, action, impact_version, routes, reason=""):
 
 @transaction.atomic
 def enable_user(user_id, actor):
+    if User.objects.filter(pk=user_id, role=User.Role.SERVICE).exists():
+        from servicing.offboarding import enable
+        return enable(user_id, actor)
     if User.objects.filter(pk=user_id, role=User.Role.FEEDBACK).exists():
         from feedback.offboarding import enable
         return enable(user_id, actor)

@@ -13,7 +13,7 @@ ALLOWED_HOSTS = [host for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localh
 INSTALLED_APPS = [
     "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes", "django.contrib.sessions",
     "django.contrib.messages", "django.contrib.staticfiles", "corsheaders", "rest_framework",
-    "drf_spectacular", "rest_framework_simplejwt.token_blacklist", "accounts", "leads", "analytics", "uploads", "notifications", "complaints", "ceo", "intake", "feedback",
+    "drf_spectacular", "rest_framework_simplejwt.token_blacklist", "accounts", "leads", "analytics", "uploads", "notifications", "complaints", "ceo", "intake", "feedback", "servicing",
 ]
 MIDDLEWARE = [
     "config.middleware.PerformanceMiddleware", "django.middleware.security.SecurityMiddleware", "whitenoise.middleware.WhiteNoiseMiddleware", "django.contrib.sessions.middleware.SessionMiddleware",

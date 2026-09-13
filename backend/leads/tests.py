@@ -24,6 +24,10 @@ class LeadAccessTests(TestCase):
         SystemConfig.objects.create(id=1, lists={"sources": [Lead.Source.WEBSITE]})
         self.client = APIClient()
 
+    def register_vehicle(self, lead_id):
+        from servicing.models import Vehicle
+        Vehicle.objects.create(chassis_number=f"TEST-{lead_id}", model="Indie", related_lead_id=lead_id, created_by=self.admin, customer_name="Rider", customer_phone="9876543210")
+
     def test_sales_officer_only_sees_assigned_leads(self):
         self.client.force_authenticate(self.first_so)
         response = self.client.get("/api/leads/")
@@ -674,6 +678,7 @@ class LeadAccessTests(TestCase):
             }, format="json")
             self.assertEqual(response.status_code, 200, response.data)
 
+        self.register_vehicle(lead_id)
         close = self.client.patch(f"/api/leads/{lead_id}/so-update/", {
             "call_status": "Connected",
             "call_outcome": "Retail Done",
@@ -744,6 +749,7 @@ class LeadAccessTests(TestCase):
             }, format="json")
             self.assertEqual(response.status_code, 200, response.data)
 
+        self.register_vehicle(lead_id)
         close = self.client.patch(f"/api/leads/{lead_id}/so-update/", {
             "call_status": "Connected",
             "call_outcome": "Retail Done",
@@ -818,6 +824,7 @@ class LeadAccessTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_admin_can_update_any_lead_outcome(self):
+        self.register_vehicle(self.first_lead.id)
         self.client.force_authenticate(self.admin)
         response = self.client.patch(f"/api/leads/{self.first_lead.id}/so-update/", {"status": Lead.Status.WON, "sales_outcome": Lead.SalesOutcome.RETAILED, "remarks": "Sale confirmed."}, format="json")
         self.assertEqual(response.status_code, 200)
@@ -901,6 +908,7 @@ class LeadAccessTests(TestCase):
         self.assertEqual(detail.data["qualification"]["variant"], "R8 Pro")
 
     def test_ps_so_can_retail_but_not_edit_cre_qualification(self):
+        self.register_vehicle(self.first_lead.id)
         self.first_lead.status = Lead.Status.QUALIFIED
         self.first_lead.assigned_ps = self.ps_so
         self.first_lead.save(update_fields=["status", "assigned_ps"])

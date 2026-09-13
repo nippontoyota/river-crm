@@ -15,6 +15,10 @@ class NotificationViewSet(mixins.ListModelMixin, GenericViewSet):
         from feedback.permissions import visible_tasks
         queryset = Notification.objects.filter(user=self.request.user).filter(
             Q(feedback_task__isnull=True) | Q(feedback_task__in=visible_tasks(self.request.user)))
+        from servicing.permissions import visible_requests
+        queryset = queryset.filter(Q(service_request__isnull=True) | Q(service_request__in=visible_requests(self.request.user)))
+        if self.request.user.role == "SERVICE" or self.request.query_params.get("service") == "true":
+            queryset = queryset.filter(service_request__isnull=False)
         if self.request.query_params.get("feedback") == "true":
             queryset = queryset.filter(feedback_task__isnull=False)
         if kind := self.request.query_params.get("feedback_kind"):

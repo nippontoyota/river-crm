@@ -38,10 +38,10 @@ export type Metrics = { total_assigned: number; total_called: number; calls_toda
 export type LifecycleEvent = { action: "DISABLED" | "ENABLED" | "DELETED"; reason: string; actor: string; summary: Record<string, unknown>; created_at: string };
 export type AnalyticsOfficer = Metrics & { id: number; name: string; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; account_history?: LifecycleEvent[] };
 export type Analytics = { summary: Metrics & EtbrMetrics; source: { source: string; total: number; qualified: number; won: number }[]; cre: AnalyticsOfficer[]; officers: AnalyticsOfficer[] };
-export type CurrentUser = { id: number; first_name: string; last_name: string; email: string; role: "ADMIN" | "CEO" | "CRE" | "SO" | "SALES_MANAGER" | "RECEPTIONIST" | "COMPLAINTS" | "FEEDBACK"; is_active?: boolean; deleted_at?: string | null; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; location?: string };
+export type CurrentUser = { id: number; first_name: string; last_name: string; email: string; role: "ADMIN" | "CEO" | "CRE" | "SO" | "SALES_MANAGER" | "RECEPTIONIST" | "COMPLAINTS" | "FEEDBACK" | "SERVICE"; is_active?: boolean; deleted_at?: string | null; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; location?: string };
 export type OffboardingRoute = { status: string; destination: "POOL" | "DISTRIBUTE"; recipient_ids: number[] };
 export type OffboardingImpact = {
-  version: string; assignment_role: "CRE" | "SO" | "FEEDBACK"; actionable_count: number; closed_count: number; followup_count: number; complaint_count: number;
+  version: string; assignment_role: "CRE" | "SO" | "FEEDBACK" | "SERVICE"; actionable_count: number; closed_count: number; followup_count: number; complaint_count: number;
   lead_groups: { status: string; label: string; count: number; branches: string[] }[];
   eligible_users: { id: number; name: string; location: string; load: number }[];
 };

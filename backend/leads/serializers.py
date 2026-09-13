@@ -111,6 +111,8 @@ class LeadSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if self.instance and any(field in attrs and attrs[field] != getattr(self.instance, field) for field in ("status", "sales_outcome")):
             raise serializers.ValidationError({"status": "Use the lead outcome update action to change sales progress."})
+        if not self.instance and (attrs.get("status") == "WON" or attrs.get("sales_outcome") == "RETAILED"):
+            raise serializers.ValidationError({"status": "Create the lead, register its chassis, then use the sales outcome action to mark it Retailed."})
         return validate_activity_pair(attrs, self.instance)
 
     def get_next_follow_up(self, obj):
@@ -211,6 +213,11 @@ class SOLeadListSerializer(serializers.ModelSerializer):
 
 
 class LeadDetailSerializer(LeadSerializer):
+    vehicles = serializers.SerializerMethodField()
+
+    def get_vehicles(self, obj):
+        return list(obj.vehicles.values("id", "chassis_number", "model", "registration_number"))
+
     outcome_policy = serializers.SerializerMethodField()
     whatsapp = serializers.SerializerMethodField()
 
@@ -249,7 +256,7 @@ class LeadDetailSerializer(LeadSerializer):
         return [{"event": event.event, "before": event.before, "after": event.after, "actor": event.actor.history_display_name if event.actor else "System", "created_at": event.created_at} for event in obj.audit_events.select_related("actor").order_by("-created_at")[:30]]
 
     class Meta(LeadSerializer.Meta):
-        fields = LeadSerializer.Meta.fields + ["call_history", "follow_up_history", "audit_history", "outcome_policy", "whatsapp"]
+        fields = LeadSerializer.Meta.fields + ["vehicles", "call_history", "follow_up_history", "audit_history", "outcome_policy", "whatsapp"]
 
 
 class CallLogSerializer(serializers.ModelSerializer):

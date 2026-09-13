@@ -31,6 +31,7 @@ class User(AbstractUser):
         RECEPTIONIST = "RECEPTIONIST", "Receptionist"
         COMPLAINTS = "COMPLAINTS", "Complaints department"
         FEEDBACK = "FEEDBACK", "Feedback Caller"
+        SERVICE = "SERVICE", "Service Department"
 
     username = None
     email = models.EmailField(unique=True)

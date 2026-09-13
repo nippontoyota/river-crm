@@ -22,4 +22,10 @@ class CookieJWTAuthentication(JWTAuthentication):
         user = self.get_user(validated_token)
         if user.role == "CEO" and request.method not in {"GET", "HEAD", "OPTIONS"} and request.path != "/api/auth/logout/":
             raise exceptions.PermissionDenied("CEO access is read-only.")
+        if user.role == "SERVICE" and not service_path_allowed(request):
+            raise exceptions.PermissionDenied("Service accounts can only access their service workspace.")
         return user, validated_token
+
+
+def service_path_allowed(request):
+    return request.path.startswith(("/api/vehicles/", "/api/service-requests/", "/api/notifications/")) or request.path in {"/api/auth/me/", "/api/auth/logout/", "/api/auth/csrf/"} or (request.path == "/api/system-config/" and request.method in {"GET", "HEAD", "OPTIONS"})

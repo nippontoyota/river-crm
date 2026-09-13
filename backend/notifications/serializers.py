@@ -7,7 +7,7 @@ class NotificationSerializer(serializers.ModelSerializer):
     feedback_kind = serializers.CharField(source="feedback_task.kind", default=None)
     class Meta:
         model = Notification
-        fields = ["id", "lead", "kind", "message", "read_at", "created_at", "feedback_task", "feedback_kind"]
+        fields = ["id", "lead", "kind", "message", "read_at", "created_at", "feedback_task", "feedback_kind", "service_request"]
 
 
 class WhatsAppAgreementSerializer(serializers.Serializer):

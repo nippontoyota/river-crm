@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, FormEvent } from "react";
 import { createUser, disableUser, enableUser, getOffboardingImpact, getSystemConfig, getUsers, permanentlyDeleteUser, updateUserBranch, type CurrentUser, type OffboardingImpact, type OffboardingRoute } from "@/lib/crm";
 
 const roleOptions = [
+  { value: "SERVICE", label: "Service Department" },
   { value: "FEEDBACK", label: "Feedback Caller" },
   { value: "CEO", label: "CEO" },
   { value: "ADMIN", label: "Administrator" },
@@ -66,6 +67,7 @@ export function TeamPage() {
     if (uiRole === "CEO") backendRole = "CEO";
     if (uiRole === "Sales Manager") backendRole = "SALES_MANAGER";
     if (uiRole === "Complaints department") backendRole = "COMPLAINTS";
+    if (uiRole === "Service Department") backendRole = "SERVICE";
     if (uiRole === "Receptionist") backendRole = "RECEPTIONIST";
 
     const payload: Record<string, string | boolean> = {
@@ -77,7 +79,7 @@ export function TeamPage() {
       is_active: true
     };
     
-    if (["SO", "SALES_MANAGER", "FEEDBACK"].includes(backendRole)) {
+    if (["SO", "SALES_MANAGER", "FEEDBACK", "SERVICE"].includes(backendRole)) {
       payload.location = formData.get("branch") as string;
     }
 
@@ -205,7 +207,7 @@ export function TeamPage() {
                 <select name="role" required value={selectedRole} onChange={e => setSelectedRole(e.target.value)}>
                   <option value="">Select...</option>
                   <option value="Admin">Admin</option>
-                  <option value="CEO">CEO</option><option value="Feedback Caller">Feedback Caller</option>
+                  <option value="Service Department">Service Department</option><option value="CEO">CEO</option><option value="Feedback Caller">Feedback Caller</option>
                   <option value="CE">CE</option>
                   <option value="PS/SO">PS/SO</option>
                   <option value="Sales Manager">Sales Manager</option>
@@ -214,7 +216,7 @@ export function TeamPage() {
                 </select>
               </label>
             </div>
-            {["PS/SO", "Sales Manager", "Feedback Caller"].includes(selectedRole) && (
+            {["PS/SO", "Sales Manager", "Feedback Caller", "Service Department"].includes(selectedRole) && (
               <label>Branch *
                 <select name="branch" required>
                   <option value="">Select branch...</option>
@@ -278,7 +280,7 @@ export function TeamPage() {
             <div className="team-users-scroll">
               {filteredUsers.length ? filteredUsers.map(user => {
                 const isActive = user.is_active !== false;
-                const managed = ["CRE", "SO", "FEEDBACK"].includes(user.role);
+                const managed = ["CRE", "SO", "FEEDBACK", "SERVICE"].includes(user.role);
                 return (
                   <div className="team-user-row" key={user.id}>
                     <div className="team-user-main">
@@ -286,7 +288,7 @@ export function TeamPage() {
                       <small>@{user.email.split("@")[0]} · {user.email}</small>
                     </div>
                     <span>{displayRole(user.role)}</span>
-                    {user.role === "FEEDBACK" ? <select aria-label={`Branch for ${user.first_name || user.email}`} title="Changing branch automatically redistributes open feedback calls." value={user.location || ""} disabled={Boolean(lifecycleBusy)} onChange={event => void changeFeedbackBranch(user, event.target.value)}>{[...new Set([user.location || "", ...branches])].filter(Boolean).map(branch => <option key={branch} value={branch}>{branch}</option>)}</select> : <span>{branchLabel(user)}</span>}
+                    {["FEEDBACK", "SERVICE"].includes(user.role) ? <select aria-label={`Branch for ${user.first_name || user.email}`} title={user.role === "SERVICE" ? "Access follows this branch. Existing requests stay in their branch queues." : "Changing branch automatically redistributes open feedback calls."} value={user.location || ""} disabled={Boolean(lifecycleBusy)} onChange={event => void changeFeedbackBranch(user, event.target.value)}>{[...new Set([user.location || "", ...branches])].filter(Boolean).map(branch => <option key={branch} value={branch}>{branch}</option>)}</select> : <span>{branchLabel(user)}</span>}
                     <span className={`team-status ${isActive ? "active" : "disabled"}`}>{isActive ? "Active" : "Disabled"}</span>
                     {managed ? <div className="team-row-actions">
                       {isActive ? <button className="filter" disabled={Boolean(lifecycleBusy)} onClick={() => void openOffboarding(user, "DISABLE")}>Disable</button> : <button className="filter team-enable" disabled={Boolean(lifecycleBusy)} onClick={() => void handleEnable(user)}>Enable</button>}
@@ -304,13 +306,13 @@ export function TeamPage() {
         <button className="modal-close" onClick={() => setOffboarding(null)} aria-label="Close">×</button>
         <p className="eyebrow">{offboarding.action === "DELETE" ? "PERMANENT ACCOUNT REMOVAL" : "TEMPORARY ACCESS PAUSE"}</p>
         <h2 id="offboarding-title">{offboarding.action === "DELETE" ? "Delete" : "Disable"} {`${offboarding.user.first_name} ${offboarding.user.last_name}`.trim() || offboarding.user.email}</h2>
-        <p className="team-offboarding-copy">{offboarding.user.role === "FEEDBACK" ? "Open feedback calls will be automatically reassigned within their branches. Completed feedback stays with this caller." : "Lead stages and history stay unchanged. Decide where each active status group goes before access is removed."}</p>
-        <div className="team-impact-strip">
+        <p className="team-offboarding-copy">{offboarding.user.role === "SERVICE" ? "Service requests remain in the shared branch queue. This account loses access; its history is retained." : offboarding.user.role === "FEEDBACK" ? "Open feedback calls will be automatically reassigned within their branches. Completed feedback stays with this caller." : "Lead stages and history stay unchanged. Decide where each active status group goes before access is removed."}</p>
+        {offboarding.user.role !== "SERVICE" && <div className="team-impact-strip">
           <span><b>{offboarding.impact.actionable_count}</b> {offboarding.user.role === "FEEDBACK" ? "open feedback calls" : "active leads"}</span>
           <span><b>{offboarding.impact.closed_count}</b> closed retained</span>
           <span><b>{offboarding.impact.followup_count}</b> follow-ups held</span>
           <span><b>{offboarding.impact.complaint_count}</b> complaints pooled</span>
-        </div>
+        </div>}
         <div className="team-route-list">
           {offboarding.impact.lead_groups.map(group => {
             const route = routes[group.status];
@@ -330,7 +332,7 @@ export function TeamPage() {
               {route?.destination === "DISTRIBUTE" && offboarding.impact.assignment_role === "SO" && <p className="team-route-note">Only branch-matched PS/SO employees receive leads; unmatched branches stay in the pool.</p>}
             </article>;
           })}
-          {!offboarding.impact.lead_groups.length && <div className="team-no-work">{offboarding.user.role === "FEEDBACK" ? "Branch assignment is automatic. Calls without an available caller remain in the unassigned queue." : "No active leads need routing. Closed history remains attached to this employee."}</div>}
+          {!offboarding.impact.lead_groups.length && <div className="team-no-work">{offboarding.user.role === "SERVICE" ? "No individual requests need reassignment. The branch queue remains available to other service staff." : offboarding.user.role === "FEEDBACK" ? "Branch assignment is automatic. Calls without an available caller remain in the unassigned queue." : "No active leads need routing. Closed history remains attached to this employee."}</div>}
         </div>
         {offboarding.action === "DELETE" && <label className="team-delete-reason">Reason for permanent deletion *<textarea maxLength={500} value={reason} onChange={event => setReason(event.target.value)} placeholder="Record why this account is being permanently removed" /></label>}
         {error && <p className="form-error" role="alert">{error}</p>}

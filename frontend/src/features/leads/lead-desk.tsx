@@ -4,6 +4,7 @@ import { getMappings, type Mapping } from "@/lib/intake";
 import { UploadReview } from "@/features/intake/upload-review";
 import { TestDriveCompletion } from "@/components/test-drive-completion";
 
+import { VehiclePanel } from "@/features/servicing/vehicle-panel";
 import { WhatsAppHistory } from "@/components/whatsapp-history";
 
 import { ActivityFields } from "@/components/activity-fields";
@@ -626,6 +627,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
           )}
 
         </section>
+        {leadDetail && <VehiclePanel key={`vehicle-${leadDetail.id}`} lead={leadDetail} />}
         {leadDetail && <WhatsAppHistory key={`whatsapp-${leadDetail.id}-${leadDetail.phone}`} lead={leadDetail} onUpdated={setLeadDetail} />}
         {leadDetail?.followUpHistory.some(item => item.reminder_held && !item.resolved_at) && <section className="sales-form-card held-followup-review">
           <header><div><p className="eyebrow">ADMIN REVIEW REQUIRED</p><h3>Held follow-up reminders</h3></div><span>{leadDetail.followUpHistory.filter(item => item.reminder_held && !item.resolved_at).length}</span></header>
