@@ -1256,6 +1256,62 @@ input[type="radio"] {
   }
 }
 
+.sales-workspace .sales-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.sales-shell .sales-overview-grid .sales-metric {
+  min-width: 0;
+  min-height: 0;
+  height: 104px;
+  margin: 0;
+  padding: 14px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  border: 1px solid var(--tile-border, #dfe5e3);
+  border-radius: 8px;
+  background: var(--tile-background, #fff) !important;
+  color: #253b36 !important;
+  box-shadow: 0 5px 14px #2022260d;
+  text-align: left;
+}
+
+.sales-overview-grid .blue { --tile-background: #e7f0ff; --tile-border: #cfe1ff; }
+.sales-overview-grid .violet { --tile-background: #f1efff; --tile-border: #ded9f5; }
+.sales-overview-grid .yellow { --tile-background: #fff8d8; --tile-border: #f5e8a3; }
+.sales-overview-grid .orange { --tile-background: #fff0e2; --tile-border: #ffd6b4; }
+.sales-overview-grid .green { --tile-background: #e5f8ee; --tile-border: #c7efd9; }
+.sales-overview-grid .mint { --tile-background: #dff7ed; --tile-border: #bcebd9; }
+.sales-overview-grid .red { --tile-background: #ffebeb; --tile-border: #ffd0d0; }
+
+.sales-shell .sales-overview-grid .sales-metric span {
+  color: #475650 !important;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: .02em;
+}
+
+.sales-shell .sales-overview-grid .sales-metric strong {
+  margin-top: 6px;
+  color: #253b36 !important;
+  font-size: 28px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.sales-overview-grid button.sales-metric { cursor: pointer; }
+.sales-overview-grid button.sales-metric:hover { border-color: #77978d; }
+.sales-overview-grid button.sales-metric.active { border-color: #0b8c6b; box-shadow: inset 0 0 0 1px #0b8c6b; }
+.sales-overview-grid button.sales-metric:focus-visible { outline: 2px solid #0b8c6b; outline-offset: 3px; }
+
+@media (max-width: 1100px) {
+  .sales-workspace .sales-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

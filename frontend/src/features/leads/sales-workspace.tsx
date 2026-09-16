@@ -373,7 +373,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
 
   return <section className="page sales-workspace">
     <div className="sales-hero"><div>{!isPs && <p className="eyebrow">CE WORKSPACE</p>}<h1>{isPs ? followUpsOnly ? "Today's follow-ups" : allLeadsOnly ? "All leads" : "Fresh leads" : "My queue"}</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions"><button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{isPs ? <button className="button primary" onClick={() => setAddingSoLead(true)}>＋ Add my lead</button> : <button className="button primary" onClick={() => { setAddLeadError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
-    {!followUpsOnly && <EtbrTiles data={summary} />}{isPs && followUpsOnly ? <div className="followup-overview"><section className="sales-metrics compact">{metricCards}</section><div className="followup-search-pane">{leadSearch}</div></div> : <section className="sales-metrics">{metricCards}</section>}
+    {!isPs ? <section className="sales-overview-grid" aria-label="Lead overview">{!followUpsOnly && <EtbrTiles data={summary} embedded />}{metricCards}</section> : <>{!followUpsOnly && <EtbrTiles data={summary} />}{followUpsOnly ? <div className="followup-overview"><section className="sales-metrics compact">{metricCards}</section><div className="followup-search-pane">{leadSearch}</div></div> : <section className="sales-metrics">{metricCards}</section>}</>}
     
     {isPs ? (
       <section className="panel sales-table-panel" style={{ background: "transparent", border: "none", boxShadow: "none", padding: 0 }}>
