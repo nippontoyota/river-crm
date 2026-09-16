@@ -122,9 +122,9 @@ Mapping rules use this schema:
 }
 ```
 
-`fields` maps an entry ID or exact label to an approved field, a name component or `ignore`. JSON uses original labels as IDs; repeated labels have distinct identities. Excel uses `column:1`, `column:2`, etc. Meta uses original labels and occurrence suffixes when needed. `primary` selects an entry ID, including a blank primary that must be corrected. Full name takes precedence over explicitly mapped first/last names. Equivalent normalized values can share a field; conflicting values need a primary selection or correction.
+`fields` maps an entry ID or exact label to an approved field, a name component or `ignore`. JSON uses original labels as IDs; repeated labels have distinct identities. Meta uses original labels and occurrence suffixes when needed. `primary` selects an entry ID, including a blank primary that must be corrected. Full name takes precedence over explicitly mapped first/last names. Equivalent normalized values can share a field; conflicting values need a primary selection or correction.
 
-After saved rules, aliases normalize capitalization, whitespace, punctuation and underscores. Supported phone aliases include Phone, Ph No:, Phone Number, phone_number, Mobile, Mobile No, Contact Number and Phone Nnumber. Name aliases include Full Name and Customer Name. Email, model, city, profession and enquiry-date aliases follow the shared mapping service. Column labels are not fuzzy matched; RTO values support conservative spelling correction. Integrations require explicit mappings for Location, Contact and Date. Excel preserves `location → city` and `date → enquiry_date` compatibility.
+After saved rules, aliases normalize capitalization, whitespace, punctuation and underscores. Supported phone aliases include Phone, Ph No:, Phone Number, phone_number, Mobile, Mobile No, Contact Number and Phone Nnumber. Name aliases include Full Name and Customer Name. Email, model, city, profession and enquiry-date aliases follow the shared mapping service. Column labels are not fuzzy matched; RTO values support conservative spelling correction. Integrations require explicit mappings for Location, Contact and Date. Bulk uploads use the fixed sample headings below instead of integration mappings.
 
 Validation accepts ten-digit Indian phone numbers with separators, 12 digits beginning 91, or 11 digits beginning 0. It rejects arbitrary leading digits or letters. Name and phone are required. Optional supplied values must pass email, length, RTO, configured model/branch/activity/sub-activity and enquiry-date validation. Empty configured lists produce configuration errors for populated choice fields. Missing enquiry dates remain null; dates accept ISO and day-first formats and cannot be invalid or future. XLSX native date cells work.
 
@@ -148,12 +148,13 @@ older files remain supported, and blank RTOs do not erase an existing RTO during
 an explicit overwrite. No new database migration is needed: upload rows store
 `data.rto` in their existing JSON field, and committed leads use the indexed
 `Lead.rto` column added in migration `0014_lead_rto`. Admin, CE/SO, manager and CEO
-lead details expose that value. Correcting a row refreshes duplicate matches;
-changing its phone clears the previous duplicate decision.
+lead details expose that value. Bulk upload values are corrected offline and uploaded again.
 
-Uploads keep the existing batch/row review and commit endpoints. Choose a saved Excel template when uploading, or select one and reparse a ready batch. The mapping editor preserves column identities and duplicate headers. Nonempty rows with missing or unfamiliar required fields remain visible with errors. Correct rows in the upload review panel, then commit the valid rows. Default behavior skips CRM, within-file and pending-intake duplicates; admins can save explicit import/overwrite/skip decisions. Commit revalidates current choices and phone matches under a batch lock. Repeated commits create nothing further. Committed batches cannot be reparsed.
+Bulk uploads use the fixed sample headings: `name, phone, email, source, campaign, model, city, enquiry date, RTO`. All headings must be present once; optional values may be blank. Unknown, missing, repeated and blank headings are rejected with specific reasons. There are no mapping templates, heading aliases, reparse actions or in-app spreadsheet edits. Download the sample, correct invalid headings or row values offline, then upload again. Invalid rows block the whole import.
 
-The parser removes ignored and prohibited answer values, then deletes original spreadsheets through the local/Supabase deletion helper. It keeps sanitized row entries for reparse. If deletion fails, the retention job retries it. This is stricter than the 30-day original-file maximum. Resolved intake receipts and committed batches drop temporary answers; unresolved answers and sanitized row input expire after 30 days. Expired receipts retain IDs and errors but require corrected input. The worker does not refetch expired Meta answers. Retention runs hourly, independently of the intake enable flag.
+Phone number is the bulk import identity. Country-code and local-prefix formatting is normalized before checking duplicates within the file, existing CRM leads and pending intake. Only Admin can upload, approve/reject duplicates, and commit. Approving a CRM match updates that same lead's supplied customer details, preserving sales status, assignments, fields outside the sample and blank optional fields. Approving one repeated phone selects that row and skips its siblings. Reject skips a row. Separate leads with the same phone cannot be created through bulk upload. The importer checks matches again under the shared phone lock; changed matches return to review without a partial import. Repeated commits create nothing further. Existing database IDs and integration receipt workflows are unchanged.
+
+Original spreadsheets are deleted after parsing (including failed parsing); failed deletions are retried by retention. Bulk uploads retain validated customer fields for review, without raw mapping answers. Resolved intake receipts and committed batches drop temporary answers; unresolved answers and bulk row input expire after 30 days. Expired input must be uploaded or supplied again. The worker does not refetch expired Meta answers. Retention runs hourly, independently of the intake enable flag.
 
 A receipt has states `RECEIVED`, `PROCESSING`, `NEEDS_REVIEW`, `IMPORTED`, `LINKED`, `FAILED`, and `DISMISSED`. Workers use a five-minute lease and receipt ID messages. Temporary failures back off with jitter to one hour, then enter FAILED after ten attempts. Permission/token failures pause their connection. Waiting behind another enquiry does not consume retries. Broker publication after commit follows [Celery's Django transaction guidance](https://docs.celeryq.dev/en/stable/django/first-steps-with-django.html); failed publication leaves the durable receipt for the next minute sweep. Operational messages contain fixed error codes, IDs and timestamps, not customer answers or tokens.
 
@@ -175,9 +176,10 @@ The generated OpenAPI document is available at `/api/schema/`, with Swagger UI a
 | `GET/POST /api/intake/mappings/` | Create: form OR template_name, rules | Immutable `MappingSerializer` version; GET supports form/template_name/excel filters |
 | `POST .../mappings/preview/` | entries: list of id/label/value, rules, excel boolean | values, errors, entries with id/label/sample/destination |
 | `POST .../mappings/{id}/reprocess/` | receipt_ids, maximum 500 | queued count |
-| `POST /api/uploads/` | Multipart file and optional mapping_version | UploadBatchSerializer, 202 |
-| `POST .../uploads/{id}/reparse/` | mapping_version ID or null | Updated batch, 202 |
-| `POST .../uploads/{id}/correct-row/` | row_id, corrections | Updated UploadRowSerializer |
+| `POST /api/uploads/` | Multipart file using sample headings | UploadBatchSerializer, 202 |
+| `GET .../uploads/{id}/?include_rows=true` | None | Batch, row errors and phone duplicates |
+| `POST .../uploads/{id}/resolve-duplicates/` | rows: id, resolution (`APPROVE` or `SKIP`) | Updated review counts |
+| `POST .../uploads/{id}/commit/` | Empty object | created, overwritten, skipped; 409 when duplicate review is needed |
 
 All `/api/intake/` and upload endpoints enforce admin authorization on the server. Frontend intake and assignment views refresh every 30 seconds in visible tabs; receipt edits and mapping drafts remain intact while polling.
 

@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 from accounts.models import User
 from leads.models import Lead, LeadAudit, SystemConfig
 from uploads.models import UploadBatch
-from uploads.tasks import parse_upload_batch, read_rows
+from uploads.tasks import parse_upload_batch
 from .mapping import map_entries, normalize_phone, sanitize_entries, validate_rules
 from .meta import MetaFailure, graph
 from .models import Connection, IntakeForm, MappingVersion, Submission
@@ -312,29 +312,20 @@ class IntakeTests(TestCase):
                     graph(form.connection, '123', {})
             self.assertEqual(raised.exception.pause, pause); self.assertNotIn('private', str(raised.exception))
 
-    def test_excel_duplicate_headers_missing_required_dates_and_commit_revalidation(self):
-        content = b'Name,Phone,Phone,source,date\nCustomer,9876543210,9876543211,website,bad\nOnly name,,,website,\n,,,,\n'
+    def test_bulk_upload_rejects_duplicate_headings_without_mapping(self):
+        content = b'name,phone,phone,source,campaign,model,city,enquiry date,RTO\nCustomer,9876543210,9876543211,website,,,,,\n'
         batch = UploadBatch.objects.create(filename='test.csv', storage_path='imports/test.csv', uploaded_by=self.admin)
         with patch('uploads.tasks.download_bytes', return_value=content):
             parse_upload_batch.run(batch.pk)
-        self.assertEqual(batch.rows.count(), 2); self.assertEqual(len(batch.rows.first().answers), 5)
-        self.assertIn('phone', batch.rows.first().validation_errors); self.assertIn('enquiry_date', batch.rows.first().validation_errors)
-        from openpyxl import Workbook
-        workbook = Workbook(); workbook.active.append(['Name', 'Phone', 'source', 'date'])
-        workbook.active.append(['Customer', '9876543210', 'website', timezone.localdate()])
-        output = io.BytesIO(); workbook.save(output)
-        self.assertEqual(map_entries(next(read_rows('test.xlsx', output.getvalue())), excel=True)['errors'], {})
-        self.client.force_authenticate(self.admin); row = batch.rows.first()
-        response = self.client.post(f'/api/uploads/{batch.pk}/correct-row/', {'row_id': row.pk, 'corrections': {'phone': '9876543210', 'enquiry_date': None}}, format='json')
-        self.assertEqual(response.status_code, 200)
-        Lead.objects.create(name='Created meanwhile', phone='9876543210')
-        self.assertEqual(self.client.post(f'/api/uploads/{batch.pk}/commit/').data['created'], 0)
-        self.assertEqual(self.client.post(f'/api/uploads/{batch.pk}/commit/').data['created'], 0)
-        self.assertEqual(self.client.post(f'/api/uploads/{batch.pk}/reparse/', {}, format='json').status_code, 400)
+        batch.refresh_from_db()
+        self.assertEqual(batch.status, 'FAILED')
+        self.assertIn('Repeated headings: phone', batch.error_message)
+        self.assertIn('Missing headings: email', batch.error_message)
+        self.assertEqual(batch.rows.count(), 0)
 
     def test_excel_retention_after_file_removed_and_manual_pending_guard(self):
         batch = UploadBatch.objects.create(filename='test.csv', storage_path='imports/test.csv', uploaded_by=self.admin)
-        with patch('uploads.tasks.download_bytes', return_value=b'Name,Phone,source\nCustomer,bad,website\n'):
+        with patch('uploads.tasks.download_bytes', return_value=b'name,phone,email,source,campaign,model,city,enquiry date,RTO\nCustomer,bad,,website,,,,,\n'):
             parse_upload_batch.run(batch.pk)
         UploadBatch.objects.filter(pk=batch.pk).update(created_at=timezone.now() - timedelta(days=31), original_deleted_at=timezone.now())
         purge_expired_answers.run(); self.assertTrue(batch.rows.get().answers_expired)

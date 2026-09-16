@@ -23,7 +23,7 @@ class UploadBatchSerializer(serializers.ModelSerializer):
         return batch.rows.filter(duplicate_of__isnull=False).count()
 
     def get_file_duplicates_found(self, batch):
-        return sum(1 for row in batch.rows.all() if row.data.get("_duplicate_type") == "FILE")
+        return sum(1 for row in batch.rows.all() if row.data.get("_file_rows"))
 
     def get_intake_duplicates_found(self, batch):
         return sum(1 for row in batch.rows.all() if row.data.get("_duplicate_type") == "INTAKE")
@@ -39,10 +39,14 @@ class UploadRowSerializer(serializers.ModelSerializer):
     existing_name = serializers.SerializerMethodField()
     existing_status = serializers.SerializerMethodField()
     duplicate_type = serializers.SerializerMethodField()
+    file_rows = serializers.SerializerMethodField()
 
     class Meta:
         model = UploadRow
-        fields = ["id", "row_number", "data", "normalized_phone", "validation_error", "duplicate_of", "existing_name", "existing_status", "duplicate_type", "resolution", "answers", "ignored_labels", "answers_expired", "validation_errors"]
+        fields = ["id", "row_number", "data", "normalized_phone", "validation_error", "duplicate_of", "existing_name", "existing_status", "duplicate_type", "file_rows", "resolution", "validation_errors"]
+
+    def get_file_rows(self, row):
+        return row.data.get("_file_rows", [])
 
     def get_existing_name(self, row):
         if row.duplicate_of:
@@ -62,7 +66,7 @@ class UploadRowSerializer(serializers.ModelSerializer):
 
 class RowResolutionSerializer(serializers.Serializer):
     id = serializers.IntegerField(min_value=1)
-    resolution = serializers.ChoiceField(choices=UploadRow.Resolution.choices)
+    resolution = serializers.ChoiceField(choices=["APPROVE", "SKIP"])
 
 
 class ResolveRowsSerializer(serializers.Serializer):

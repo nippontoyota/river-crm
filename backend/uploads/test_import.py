@@ -13,11 +13,11 @@ from rest_framework.test import APIClient
 
 from accounts.models import User
 from ceo.models import Milestone, OperationEvent
-from intake.models import Connection, IntakeForm, MappingVersion, Submission
-from intake.mapping import map_entries
+from intake.models import Connection, IntakeForm, Submission
 from leads.models import Lead, LeadAudit, SystemConfig
 from leads.rtos import KERALA_RTO_CHOICES, normalize_rto
 from .models import UploadBatch
+from .tasks import HEADINGS, COLUMNS
 
 
 class RtoNormalizationTests(SimpleTestCase):
@@ -58,19 +58,20 @@ class BulkImportTests(TestCase):
         self.admin = User.objects.create_user(email='bulk-admin@example.com', role='ADMIN')
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
-        SystemConfig.objects.update_or_create(pk=1, defaults={'lists': {
-            'sources': ['WEBSITE', 'META'], 'models': ['River Indie'], 'branches': ['Kochi'],
-            'activities': ['Campaign'], 'subActivities': {'Campaign': ['Launch']},
-        }})
+        SystemConfig.objects.update_or_create(pk=1, defaults={'lists': {'sources': ['WEBSITE', 'META'], 'models': ['River Indie'], 'branches': ['Kochi']}})
         publisher = patch('uploads.views.publish', side_effect=lambda task, *args: task.run(*args))
         publisher.start()
         self.addCleanup(publisher.stop)
 
-    def upload(self, rows, headers=('name', 'phone', 'source', 'rto'), extension='csv', mapping=None):
+    def customer(self, **values):
+        return {'name': 'Customer', 'phone': '9876543210', 'source': 'website', 'model_interest': 'River Indie', 'rto': 'kl07', **values}
+
+    def upload(self, rows, headers=HEADINGS, extension='csv', expected='READY'):
+        values = [[row.get(field, '') for field in COLUMNS] if isinstance(row, dict) else row for row in rows]
         if extension == 'xlsx':
             workbook = Workbook()
             workbook.active.append(list(headers))
-            for row in rows:
+            for row in values:
                 workbook.active.append(list(row))
             output = io.BytesIO()
             workbook.save(output)
@@ -79,240 +80,170 @@ class BulkImportTests(TestCase):
             output = io.StringIO()
             writer = csv.writer(output)
             writer.writerow(headers)
-            writer.writerows(rows)
+            writer.writerows(values)
             content = output.getvalue().encode('utf-8-sig')
-        payload = {'file': SimpleUploadedFile(f'leads.{extension}', content)}
-        if mapping:
-            payload['mapping_version'] = mapping.pk
         with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post('/api/uploads/', payload, format='multipart')
+            response = self.client.post('/api/uploads/', {'file': SimpleUploadedFile(f'leads.{extension}', content)}, format='multipart')
         self.assertEqual(response.status_code, 202, response.data)
         batch = UploadBatch.objects.get(pk=response.data['id'])
-        self.assertEqual(batch.status, 'READY', batch.error_message)
+        self.assertEqual(batch.status, expected, batch.error_message)
         return batch
 
     def commit(self, batch):
         with self.captureOnCommitCallbacks(execute=True):
             return self.client.post(f'/api/uploads/{batch.pk}/commit/', {}, format='json')
 
-    def choose(self, row, resolution):
-        response = self.client.post(f'/api/uploads/{row.batch_id}/resolve-duplicates/', {'rows': [{'id': row.pk, 'resolution': resolution}]}, format='json')
-        self.assertEqual(response.status_code, 200, response.data)
-
-    def correct(self, row, **corrections):
-        response = self.client.post(f'/api/uploads/{row.batch_id}/correct-row/', {'row_id': row.pk, 'corrections': corrections}, format='json')
+    def choose(self, row, decision):
+        response = self.client.post(f'/api/uploads/{row.batch_id}/resolve-duplicates/', {'rows': [{'id': row.pk, 'resolution': decision}]}, format='json')
         self.assertEqual(response.status_code, 200, response.data)
         row.refresh_from_db()
-        return response.data
 
-    def pending(self, phone='9876543210'):
+    def pending(self, phone):
         connection = Connection.objects.create(name='Website', origin='WEBSITE', source='WEBSITE', secret_ref='test')
-        form = IntakeForm.objects.create(connection=connection, name='Enquiry', external_id='test')
-        return Submission.objects.create(connection=connection, form=form, identity='test', external_id='test', source='WEBSITE', normalized_phone=phone, state='NEEDS_REVIEW')
+        form = IntakeForm.objects.create(connection=connection, name='Enquiry', external_id=phone)
+        return Submission.objects.create(connection=connection, form=form, identity=phone, external_id=phone, source='WEBSITE', normalized_phone=phone, state='NEEDS_REVIEW')
 
-    def test_csv_and_xlsx_ingest_every_customer_field_and_rto(self):
-        headers = ['name', 'phone', 'email', 'model_interest', 'city', 'RTO Code', 'profession', 'branch', 'enquiry_date', 'campaign', 'source_label', 'activity', 'sub_activity', 'source']
-        for number, extension in enumerate(['csv', 'xlsx']):
+    def test_sample_csv_and_xlsx_import_customer_fields(self):
+        for index, extension in enumerate(['csv', 'xlsx']):
             with self.subTest(extension=extension):
-                phone = f'987654321{number}'
-                batch = self.upload([['Customer', int(phone), 'customer@example.com', 'River Indie', 'Kochi', 'kl 7' if extension == 'csv' else 'Ernakulamm', 'Engineer', 'Kochi', timezone.localdate(), 'Launch campaign', 'Website form', 'Campaign', 'Launch', 'website']], headers, extension)
+                batch = self.upload([self.customer(phone=f'987654321{index}', email='rider@example.com', campaign='Launch', city='Kochi', enquiry_date=timezone.localdate())], extension=extension)
                 row = batch.rows.get()
-                self.assertEqual(row.data['rto'], 'KL-07')
                 self.assertEqual(row.validation_errors, {})
+                self.assertEqual(row.data['rto'], 'KL-07')
                 self.assertIsNotNone(batch.original_deleted_at)
-                review = self.client.get(f'/api/uploads/{batch.pk}/?include_rows=true')
-                self.assertEqual(review.data['rows'][0]['data']['rto'], 'KL-07')
-                result = self.commit(batch)
-                self.assertEqual(result.data, {'created': 1, 'overwritten': 0, 'skipped': 0})
-                lead = Lead.objects.get(phone=phone)
-                expected = {**row.data, 'phone': phone}
-                expected['enquiry_date'] = timezone.localdate()
-                for field, value in expected.items():
-                    self.assertEqual(getattr(lead, field), value, field)
-                self.assertEqual((lead.status, lead.assigned_so_id, lead.assigned_ps_id, lead.generated_by_id), ('FRESH', None, None, None))
+                self.assertEqual(row.answers, [])
+                self.assertEqual(self.commit(batch).data, {'created': 1, 'overwritten': 0, 'skipped': 0})
+                lead = Lead.objects.get(phone=row.normalized_phone)
+                self.assertEqual((lead.status, lead.assigned_so_id, lead.assigned_ps_id), ('FRESH', None, None))
+                self.assertEqual(lead.enquiry_date, timezone.localdate())
+                self.assertEqual(lead.rto, 'KL-07')
                 self.assertTrue(LeadAudit.objects.filter(lead=lead, event='imported').exists())
                 self.assertTrue(Milestone.objects.filter(lead=lead, kind='E', rto='KL-07').exists())
                 self.assertTrue(OperationEvent.objects.filter(lead=lead, snapshot__rto='KL-07').exists())
-                self.assertEqual(batch.rows.get().answers, [])
                 self.assertTrue(self.commit(batch).data['already_committed'])
 
-    def test_legacy_file_without_rto_still_imports(self):
-        batch = self.upload([['Legacy', '9876543210', 'website']], ('name', 'phone', 'source'))
-        self.assertEqual(self.commit(batch).data['created'], 1)
-        self.assertEqual(Lead.objects.get().rto, '')
+    def test_bad_headings_report_missing_unknown_repeated_and_blank_columns(self):
+        cases = [
+            (HEADINGS[:-1], 'Missing headings: RTO'),
+            (('Customer Name', *HEADINGS[1:]), 'Unrecognized headings: Customer Name'),
+            (('phone', *HEADINGS[1:]), 'Repeated headings: phone'),
+            (('', *HEADINGS[1:]), 'Blank headings in columns: 1'),
+            ((*HEADINGS, 'assigned_so'), 'Unrecognized headings: assigned_so'),
+        ]
+        for extension in ['csv', 'xlsx']:
+            for headings, message in cases:
+                with self.subTest(extension=extension, headings=headings):
+                    batch = self.upload([self.customer()], headers=headings, extension=extension, expected='FAILED')
+                    self.assertIn(message, batch.error_message)
+                    self.assertEqual(batch.rows.count(), 0)
+                    self.assertEqual(self.commit(batch).status_code, 400)
 
-    def test_equivalent_rto_columns_agree_and_conflicting_columns_need_review(self):
-        entries = [{'id': f'column:{index}', 'label': label, 'value': value} for index, (label, value) in enumerate([
-            ('name', 'Customer'), ('phone', '9876543210'), ('source', 'website'), ('RTO', 'kl05'), ('RTO Code', 'Kottayam'),
-        ])]
-        result = map_entries(entries, excel=True)
-        self.assertEqual(result['errors'], {})
-        self.assertEqual(result['values']['rto'], 'KL-05')
-        entries[-1]['value'] = 'Kollam'
-        self.assertIn('rto', map_entries(entries, excel=True)['errors'])
+    def test_empty_file_and_wrong_cell_count_report_reasons(self):
+        batch = self.upload([], expected='FAILED')
+        self.assertIn('no leads', batch.error_message)
+        batch = self.upload([['Name', '9876543210']], expected='FAILED')
+        self.assertIn('Row 2 has 2 cells; expected 9', batch.error_message)
 
-    def test_invalid_rto_corrected_with_approved_code(self):
-        batch = self.upload([['Customer', '9876543210', 'website', 'TN-01']])
+    def test_invalid_rows_block_import_until_fixed_offline(self):
+        batch = self.upload([self.customer(phone='123', rto='KL-99'), self.customer(phone='9876543211')])
+        self.assertIn('phone', batch.rows.get(row_number=2).validation_errors)
+        self.assertEqual(self.commit(batch).status_code, 400)
+        self.assertFalse(Lead.objects.exists())
+        fixed = self.upload([self.customer(), self.customer(phone='9876543211')])
+        self.assertEqual(self.commit(fixed).data['created'], 2)
+
+    def test_crm_duplicate_requires_admin_approval_and_updates_same_lead(self):
+        lead = Lead.objects.create(name='Existing', phone='9876543210', rto='KL-08', assigned_so=self.admin, status='QUALIFIED', profession='Engineer', branch='Kochi', email='old@example.com')
+        batch = self.upload([self.customer(name='Updated', phone='+91 98765-43210', rto='')])
         row = batch.rows.get()
-        self.assertIn('rto', row.validation_errors)
-        data = self.correct(row, rto='kl07')
-        self.assertEqual(data['data']['rto'], 'KL-07')
-        self.assertEqual(data['validation_errors'], {})
-        self.assertEqual(self.commit(batch).data['created'], 1)
-        self.assertEqual(Lead.objects.get().rto, 'KL-07')
-
-    def test_invalid_rows_skipped_and_empty_rows_ignored(self):
-        batch = self.upload([['Bad RTO', '9876543210', 'website', 'KL-99'], ['Bad phone', '123', 'website', 'KL-07'], ['', '', '', ''], ['Valid', '9876543211', 'website', 'KL-08']])
-        self.assertEqual(batch.total_rows, 3)
-        self.assertEqual(batch.parsed_ok, 1)
-        self.assertEqual(self.commit(batch).data, {'created': 1, 'overwritten': 0, 'skipped': 2})
-        self.assertEqual(Lead.objects.get().rto, 'KL-08')
-
-    def test_normalized_crm_and_file_duplicates_are_skipped(self):
-        existing = Lead.objects.create(name='Existing', phone='9876543210', rto='KL-08')
-        batch = self.upload([['CRM duplicate', '+91 98765-43210', 'website', 'KL-07'], ['First', '9876543211', 'website', 'KL-07'], ['File duplicate', '09876543211', 'meta', 'KL-08']])
-        self.assertEqual(list(batch.rows.order_by('row_number').values_list('resolution', flat=True)), ['SKIP', 'IMPORT', 'SKIP'])
-        self.assertEqual(self.commit(batch).data, {'created': 1, 'overwritten': 0, 'skipped': 2})
-        existing.refresh_from_db()
-        self.assertEqual((existing.name, existing.rto), ('Existing', 'KL-08'))
-
-    def test_pending_intake_duplicate_is_visible_and_skipped(self):
-        self.pending()
-        batch = self.upload([['Pending duplicate', '9876543210', 'website', 'KL-07']])
-        review = self.client.get(f'/api/uploads/{batch.pk}/?include_rows=true').data
-        self.assertEqual(review['intake_duplicates_found'], 1)
-        self.assertEqual(review['rows'][0]['duplicate_type'], 'INTAKE')
-        self.assertEqual(self.commit(batch).data, {'created': 0, 'overwritten': 0, 'skipped': 1})
-
-    def test_explicit_separate_import_flags_crm_file_and_intake_duplicates(self):
-        Lead.objects.create(name='Existing', phone='9876543210', rto='KL-08')
-        self.pending('9876543211')
-        batch = self.upload([['CRM', '9876543210', 'website', 'KL-07'], ['Intake', '9876543211', 'website', 'KL-07'], ['First', '9876543212', 'website', 'KL-07'], ['File', '9876543212', 'website', 'KL-08']])
-        for row in batch.rows.filter(resolution='SKIP'):
-            self.choose(row, 'IMPORT')
-        self.assertEqual(self.commit(batch).data, {'created': 4, 'overwritten': 0, 'skipped': 0})
-        self.assertEqual(Lead.objects.filter(duplicate_flag=True).count(), 3)
-
-    def test_overwrite_updates_rto_preserves_ownership_and_legacy_blank_rto(self):
-        lead = Lead.objects.create(name='Existing', phone='9876543210', rto='KL-08', assigned_so=self.admin, status='QUALIFIED')
-        for rto, expected in [('KL-07', 'KL-07'), ('', 'KL-07')]:
-            batch = self.upload([['Updated', lead.phone, 'website', rto]])
-            self.choose(batch.rows.get(), 'OVERWRITE')
-            self.assertEqual(self.commit(batch).data['overwritten'], 1)
-            lead.refresh_from_db()
-            self.assertEqual((lead.name, lead.rto, lead.status, lead.assigned_so_id), ('Updated', expected, 'QUALIFIED', self.admin.pk))
+        self.assertEqual(row.resolution, 'PENDING')
+        self.assertEqual(self.commit(batch).status_code, 409)
+        self.choose(row, 'APPROVE')
+        self.assertEqual(row.resolution, 'OVERWRITE')
+        self.assertEqual(self.commit(batch).data, {'created': 0, 'overwritten': 1, 'skipped': 0})
+        lead.refresh_from_db()
+        self.assertEqual((lead.name, lead.status, lead.assigned_so_id, lead.rto, lead.profession, lead.email, lead.branch), ('Updated', 'QUALIFIED', self.admin.pk, 'KL-08', 'Engineer', 'old@example.com', 'Kochi'))
         self.assertEqual(Lead.objects.count(), 1)
 
-    def test_correction_reclassifies_new_and_old_file_duplicate_phones(self):
-        lead = Lead.objects.create(name='CRM target', phone='9876543210', rto='KL-08')
-        batch = self.upload([['First', '9876543211', 'website', 'KL-07'], ['Second', '9876543211', 'website', 'KL-08']])
-        first, second = batch.rows.order_by('row_number')
-        self.choose(first, 'IMPORT')
-        self.correct(first, phone=lead.phone)
-        second.refresh_from_db()
-        self.assertEqual(first.duplicate_of_id, lead.pk)
-        self.assertEqual(first.resolution, 'SKIP')
-        self.assertFalse(first.resolution_explicit)
-        self.assertEqual(second.resolution, 'IMPORT')
+    def test_file_duplicates_choose_exactly_one_row_per_normalized_phone(self):
+        batch = self.upload([self.customer(name='First'), self.customer(name='Chosen', phone='09876543210'), self.customer(name='Other', phone='9876543211')])
+        rows = list(batch.rows.order_by('row_number'))
+        self.assertEqual([r.resolution for r in rows], ['PENDING', 'PENDING', 'IMPORT'])
+        review = self.client.get(f'/api/uploads/{batch.pk}/?include_rows=true').data
+        self.assertEqual(review['file_duplicates_found'], 2)
+        self.assertEqual(review['rows'][0]['file_rows'], [2, 3])
+        self.choose(rows[1], 'APPROVE')
+        rows[0].refresh_from_db()
+        self.assertEqual(rows[0].resolution, 'SKIP')
+        self.assertEqual(self.commit(batch).data, {'created': 2, 'overwritten': 0, 'skipped': 1})
+        self.assertEqual(Lead.objects.get(phone='9876543210').name, 'Chosen')
+
+    def test_repeated_crm_duplicates_and_rejection_keep_phone_unique(self):
+        lead = Lead.objects.create(name='Existing', phone='9876543210')
+        batch = self.upload([self.customer(name='First'), self.customer(name='Chosen')])
+        self.choose(batch.rows.get(row_number=3), 'APPROVE')
+        self.assertEqual(self.commit(batch).data, {'created': 0, 'overwritten': 1, 'skipped': 1})
+        lead.refresh_from_db()
+        self.assertEqual(lead.name, 'Chosen')
+        rejected = self.upload([self.customer(name='Rejected')])
+        self.choose(rejected.rows.get(), 'SKIP')
+        self.assertEqual(self.commit(rejected).data['skipped'], 1)
+        lead.refresh_from_db()
+        self.assertEqual(lead.name, 'Chosen')
+        self.assertEqual(Lead.objects.count(), 1)
+
+    def test_pending_intake_requires_review(self):
+        self.pending('9876543210')
+        batch = self.upload([self.customer()])
+        self.assertEqual(batch.rows.get().data['_duplicate_type'], 'INTAKE')
+        self.assertEqual(self.commit(batch).status_code, 409)
+        self.choose(batch.rows.get(), 'APPROVE')
+        self.assertEqual(self.commit(batch).data['created'], 1)
+
+    def test_new_match_at_commit_returns_to_review_without_partial_import(self):
+        batch = self.upload([self.customer(), self.customer(phone='9876543211')])
+        Lead.objects.create(name='Added meanwhile', phone='9876543211')
+        self.assertEqual(self.commit(batch).status_code, 409)
+        self.assertEqual(Lead.objects.count(), 1)
+        row = batch.rows.get(normalized_phone='9876543211')
+        self.assertEqual(row.resolution, 'PENDING')
+        self.choose(row, 'SKIP')
         self.assertEqual(self.commit(batch).data, {'created': 1, 'overwritten': 0, 'skipped': 1})
 
-    def test_rto_correction_keeps_reviewed_overwrite_target(self):
-        lead = Lead.objects.create(name='Existing', phone='9876543210', rto='KL-08')
-        batch = self.upload([['Updated', lead.phone, 'website', 'KL-07']])
-        row = batch.rows.get()
-        self.choose(row, 'OVERWRITE')
-        self.correct(row, rto='KL-09')
-        self.assertEqual((row.resolution, row.duplicate_of_id), ('OVERWRITE', lead.pk))
-        self.assertEqual(self.commit(batch).data['overwritten'], 1)
-        lead.refresh_from_db()
-        self.assertEqual(lead.rto, 'KL-09')
-
-    def test_new_crm_or_intake_match_at_commit_is_skipped(self):
-        first = self.upload([['CRM race', '9876543210', 'website', 'KL-07']])
-        second = self.upload([['Intake race', '9876543211', 'website', 'KL-07']])
-        Lead.objects.create(name='Created meanwhile', phone='9876543210')
-        self.pending('9876543211')
-        for batch in [first, second]:
-            self.assertEqual(self.commit(batch).data['skipped'], 1)
+    def test_changed_overwrite_target_requires_review(self):
+        lead = Lead.objects.create(name='Existing', phone='9876543210')
+        batch = self.upload([self.customer()])
+        self.choose(batch.rows.get(), 'APPROVE')
+        lead.phone = '9876543211'
+        lead.save()
+        self.assertEqual(self.commit(batch).status_code, 409)
         self.assertEqual(Lead.objects.count(), 1)
 
-    def test_deleted_lead_does_not_block_import(self):
-        Lead.objects.create(name='Deleted', phone='9876543210', deleted_at=timezone.now())
-        batch = self.upload([['New', '9876543210', 'website', 'KL-07']])
-        self.assertEqual(self.commit(batch).data['created'], 1)
-        self.assertFalse(Lead.objects.get(deleted_at__isnull=True).duplicate_flag)
+    def test_invalid_or_multiple_approvals_are_rejected(self):
+        batch = self.upload([self.customer(), self.customer(name='Repeat')])
+        ids = list(batch.rows.values_list('pk', flat=True))
+        for decisions in [[], [{'id': ids[0], 'resolution': 'IMPORT'}], [{'id': ids[0], 'resolution': 'OVERWRITE'}], [{'id': 999999, 'resolution': 'APPROVE'}], [{'id': pk, 'resolution': 'APPROVE'} for pk in ids]]:
+            self.assertEqual(self.client.post(f'/api/uploads/{batch.pk}/resolve-duplicates/', {'rows': decisions}, format='json').status_code, 400)
+        self.assertTrue(all(row.resolution == 'PENDING' for row in batch.rows.all()))
 
-    def test_changed_overwrite_target_rolls_back_entire_commit(self):
-        lead = Lead.objects.create(name='Existing', phone='9876543210', rto='KL-08')
-        batch = self.upload([['New', '9876543211', 'website', 'KL-07'], ['Overwrite', lead.phone, 'website', 'KL-07']])
-        self.choose(batch.rows.get(duplicate_of=lead), 'OVERWRITE')
-        Lead.objects.filter(pk=lead.pk).update(phone='9876543212')
-        self.assertEqual(self.commit(batch).status_code, 400)
-        self.assertEqual(Lead.objects.count(), 1)
-        batch.refresh_from_db()
-        self.assertEqual(batch.status, 'READY')
-
-    def test_pending_resolution_blocks_commit_and_invalid_overwrite_rejected(self):
-        batch = self.upload([['New', '9876543210', 'website', 'KL-07']])
-        row = batch.rows.get()
-        self.choose(row, 'PENDING')
-        self.assertEqual(self.commit(batch).status_code, 400)
-        response = self.client.post(f'/api/uploads/{batch.pk}/resolve-duplicates/', {'rows': [{'id': row.pk, 'resolution': 'OVERWRITE'}]}, format='json')
+    def test_removed_mapping_and_row_edit_endpoints(self):
+        batch = self.upload([self.customer()])
+        for action in ['reparse', 'correct-row']:
+            self.assertEqual(self.client.post(f'/api/uploads/{batch.pk}/{action}/', {}, format='json').status_code, 404)
+        response = self.client.post('/api/uploads/', {'file': SimpleUploadedFile('test.csv', b'test'), 'mapping_version': '1'}, format='multipart')
         self.assertEqual(response.status_code, 400)
-        self.choose(row, 'SKIP')
-        self.assertEqual(self.commit(batch).data['skipped'], 1)
 
-    def test_invalid_duplicate_decisions_return_validation_errors(self):
-        batch = self.upload([['New', '9876543210', 'website', 'KL-07']])
-        for rows in [[], [{'id': 'bad', 'resolution': 'SKIP'}], [{'id': batch.rows.get().pk, 'resolution': 'WRONG'}], [{'id': 999999, 'resolution': 'SKIP'}]]:
-            with self.subTest(rows=rows):
-                response = self.client.post(f'/api/uploads/{batch.pk}/resolve-duplicates/', {'rows': rows}, format='json')
-                self.assertEqual(response.status_code, 400)
+    def test_non_admin_cannot_upload_review_or_import(self):
+        batch = self.upload([self.customer()])
+        for role in ['CEO', 'CRE', 'SO', 'SALES_MANAGER', 'RECEPTIONIST', 'SERVICE']:
+            self.client.force_authenticate(User.objects.create_user(email=f'{role}@example.com', role=role))
+            for path, method in [('', 'post'), (f'{batch.pk}/', 'get'), (f'{batch.pk}/commit/', 'post'), (f'{batch.pk}/resolve-duplicates/', 'post')]:
+                self.assertEqual(getattr(self.client, method)(f'/api/uploads/{path}').status_code, 403)
 
-    def test_custom_mapping_and_reparse_retain_rto_after_file_deletion(self):
-        headers = ('name', 'phone', 'source', 'Registration Office')
-        batch = self.upload([['Mapped', '9876543210', 'website', 'Ernakulam']], headers)
-        self.assertEqual(batch.rows.get().data['rto'], '')
-        mapping = MappingVersion.objects.create(template_name='RTO import', version=1, created_by=self.admin, rules={'fields': {'column:4': 'rto'}, 'value_aliases': {'rto': {'Ernakulam': 'KL-07'}}})
-        with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(f'/api/uploads/{batch.pk}/reparse/', {'mapping_version': mapping.pk}, format='json')
-        self.assertEqual(response.status_code, 202)
-        self.assertEqual(batch.rows.get().data['rto'], 'KL-07')
-        self.assertEqual(self.commit(batch).data['created'], 1)
-        self.assertEqual(Lead.objects.get().rto, 'KL-07')
-
-    def test_ownership_columns_ignored_and_source_revalidated_at_commit(self):
-        batch = self.upload([['New', '9876543210', 'website', 'KL-07', self.admin.pk, 'WON']], ('name', 'phone', 'source', 'rto', 'assigned_so', 'status'))
-        row = batch.rows.get()
-        self.assertEqual(set(row.ignored_labels), {'assigned_so', 'status'})
-        SystemConfig.objects.filter(pk=1).update(lists={'sources': ['META']})
-        self.assertEqual(self.commit(batch).data['skipped'], 1)
-        self.assertFalse(Lead.objects.exists())
-
-    def test_non_admin_cannot_use_bulk_actions(self):
-        batch = self.upload([['New', '9876543210', 'website', 'KL-07']])
-        for role in ['CEO', 'CRE', 'SO', 'SALES_MANAGER', 'RECEPTIONIST']:
-            user = User.objects.create_user(email=f'{role}@example.com', role=role)
-            self.client.force_authenticate(user)
-            for path, method in [('', 'post'), (f'{batch.pk}/', 'get'), (f'{batch.pk}/commit/', 'post'), (f'{batch.pk}/correct-row/', 'post'), (f'{batch.pk}/resolve-duplicates/', 'post'), (f'{batch.pk}/reparse/', 'post')]:
-                with self.subTest(role=role, path=path):
-                    self.assertEqual(getattr(self.client, method)(f'/api/uploads/{path}').status_code, 403)
-
-    def test_imported_rto_visible_to_admin_assigned_staff_manager_and_ceo(self):
-        batch = self.upload([['Visible', '9876543210', 'website', 'KL-07']])
-        self.commit(batch)
-        lead = Lead.objects.get()
-        cre = User.objects.create_user(email='ce@example.com', role='CRE', location='Kochi')
-        so = User.objects.create_user(email='so@example.com', role='SO', location='Kochi')
-        manager = User.objects.create_user(email='manager@example.com', role='SALES_MANAGER', location='Kochi')
-        ceo = User.objects.create_user(email='ceo@example.com', role='CEO')
-        Lead.objects.filter(pk=lead.pk).update(assigned_so=cre, assigned_ps=so, branch='Kochi')
-        for user in [self.admin, cre, so, manager]:
-            self.client.force_authenticate(user)
-            response = self.client.get(f'/api/leads/{lead.pk}/')
-            self.assertEqual(response.status_code, 200, response.data)
-            self.assertEqual(response.data['rto'], 'KL-07')
-        self.client.force_authenticate(ceo)
-        response = self.client.get(f'/api/ceo/leads/{lead.pk}/')
-        self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data['rto'], 'KL-07')
+    def test_source_is_revalidated_before_import_and_deleted_leads_do_not_block(self):
+        Lead.objects.create(name='Deleted', phone='9876543210', deleted_at=timezone.now())
+        batch = self.upload([self.customer()])
+        self.assertEqual(batch.rows.get().resolution, 'IMPORT')
+        SystemConfig.objects.filter(pk=1).update(lists={'sources': ['META'], 'models': ['River Indie']})
+        self.assertEqual(self.commit(batch).status_code, 400)
+        self.assertEqual(Lead.objects.filter(deleted_at__isnull=True).count(), 0)

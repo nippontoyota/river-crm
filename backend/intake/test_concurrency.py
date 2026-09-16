@@ -56,11 +56,11 @@ class IntakeConcurrencyTests(TransactionTestCase):
         UploadRow.objects.create(batch=batch, row_number=2, normalized_phone=phone, data={'name': 'Excel Customer', 'source': 'WEBSITE', 'rto': 'Kottayam'})
         return batch
 
-    def commit(self, batch):
+    def commit(self, batch, statuses=(200,)):
         client = APIClient(); client.force_authenticate(self.admin)
         response = client.post(f'/api/uploads/{batch.pk}/commit/')
-        self.assertEqual(response.status_code, 200)
-        return response.data
+        self.assertIn(response.status_code, statuses)
+        return {**response.data, "http_status": response.status_code}
 
     def test_concurrent_same_delivery_and_workers_create_one_lead(self):
         ids = self.race(lambda: self.accept(), lambda: self.accept())
@@ -93,11 +93,12 @@ class IntakeConcurrencyTests(TransactionTestCase):
         self.assertEqual(Lead.objects.count(), 1)
         self.assertEqual(Lead.objects.get().rto, 'KL-05')
 
-    def test_different_batches_committed_simultaneously_skip_same_phone(self):
+    def test_different_batches_committed_simultaneously_review_same_phone(self):
         first, second = self.batch(), self.batch()
-        results = self.race(lambda: self.commit(first), lambda: self.commit(second))
-        self.assertEqual(sum(result['created'] for result in results), 1)
-        self.assertEqual(sum(result['skipped'] for result in results), 1)
+        results = self.race(lambda: self.commit(first, (200, 409)), lambda: self.commit(second, (200, 409)))
+        self.assertEqual(sum(result.get("created", 0) for result in results), 1)
+        self.assertEqual(sorted(result["http_status"] for result in results), [200, 409])
+        self.assertEqual(UploadRow.objects.filter(resolution="PENDING").count(), 1)
         self.assertEqual(Lead.objects.get().rto, 'KL-05')
 
     def test_manual_and_intake_race(self):
@@ -129,7 +130,7 @@ class IntakeConcurrencyTests(TransactionTestCase):
 
     def test_excel_and_intake_race(self):
         receipt_id = self.accept(); batch = self.batch()
-        self.race(lambda: self.commit(batch), lambda: process_submission.run(str(receipt_id)))
+        self.race(lambda: self.commit(batch, (409,)), lambda: process_submission.run(str(receipt_id)))
         self.assertEqual(Lead.objects.count(), 1)
         self.assertEqual(Submission.objects.get(pk=receipt_id).state, 'IMPORTED')
 

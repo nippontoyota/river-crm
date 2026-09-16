@@ -2,7 +2,6 @@
    BulkBrowser123!, WEBSITE + River Indie in Lists, and an existing lead with
    phone 9876543299. API_BASE / WEB_BASE default to localhost:8048 / 3048. */
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const puppeteer = require(process.env.PUPPETEER_MODULE || 'puppeteer-core');
 const apiBase = process.env.API_BASE || 'http://127.0.0.1:8048';
 const webBase = process.env.WEB_BASE || 'http://127.0.0.1:3048';
@@ -38,52 +37,63 @@ if (![apiBase, webBase].every(url => ['localhost', '127.0.0.1'].includes(new URL
     assert.match(sample, /"kl07"/);
     assert.match(sample, /"Thrissur"/);
     assert.match(sample, /"River Indie"/);
+    const selectCsv = async (csv) => {
+      await page.$eval('input[type=file]', (input, content) => {
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([content], 'bulk-leads.csv', { type: 'text/csv' }));
+        input.files = transfer.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }, csv);
+    };
+    const importDisabled = () => page.evaluate(() => [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Import leads')?.disabled);
+    await selectCsv(sample.replace('"name"', '"Customer Name"'));
+    await page.waitForFunction(() => document.querySelector('.bulk-import-review')?.textContent.includes('Unrecognized headings: Customer Name'));
+    assert.match(await page.$eval('.bulk-import-review', e => e.textContent), /Missing headings: name/);
+    assert.equal(await page.$('select[aria-label="Upload mapping template"]'), null);
+    assert.doesNotMatch(await page.$eval('.bulk-import-review', e => e.textContent), /Preview \/ edit mapping|Reparse|Excel template/);
+
     const rows = sample.split('\n');
     rows.push(rows[1].replace('Aarav Sharma', 'Repeated file customer'));
     rows.push(rows[1].replace('Aarav Sharma', 'Existing CRM duplicate').replace('9876543210', '9876543299'));
     rows.push(rows[1].replace('Aarav Sharma', 'Correct RTO Customer').replace('9876543210', '9876543298').replace('kl07', 'KL05 Kollam'));
-    const path = '/tmp/crm-bulk-rto-browser.csv';
-    fs.writeFileSync(path, rows.join('\n'));
-    // Snap Chromium has its own /tmp; construct the selected file in the browser.
-    await page.$eval('input[type=file]', (input, csv) => {
-      const transfer = new DataTransfer();
-      transfer.items.add(new File([csv], 'bulk-rto.csv', { type: 'text/csv' }));
-      input.files = transfer.files;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    }, rows.join('\n'));
-    await click('Check import');
-    await page.waitForSelector('.upload-review tbody tr');
-    await page.waitForFunction(() => document.querySelector('.upload-review')?.textContent.includes('1 rows need correction'));
+    await selectCsv(rows.join('\n'));
+    await page.waitForFunction(() => document.querySelector('.upload-review')?.textContent.includes('Fix 1 row'));
+    assert.equal(await importDisabled(), true);
+    assert.doesNotMatch(await page.$eval('.upload-review', e => e.textContent), /Edit row|Import separately/);
+    rows[5] = rows[5].replace('KL05 Kollam', 'KL-05');
+    await selectCsv(rows.join('\n'));
+    await page.waitForFunction(() => document.querySelector('.bulk-import-review')?.textContent.includes('5 rows · 2 ready · 3 duplicates need review'));
+    assert.equal(await importDisabled(), true);
     const review = await page.$eval('.upload-review', e => e.textContent);
-    assert.match(review, /KL-07 - Ernakulam/);
-    assert.match(review, /KL-08 - Thrissur/);
-    assert.match(review, /Same file/);
-    assert.match(review, /CRM/);
-    await click('Edit row 6');
-    const rtoSelect = await page.evaluateHandle(() => [...document.querySelectorAll('.upload-review label')].find(e => e.firstChild?.textContent === 'RTO').querySelector('select'));
-    await rtoSelect.asElement().select('KL-05');
-    await click('Save row correction');
-    await page.waitForFunction(() => !document.querySelector('.upload-review')?.textContent.includes('rows need correction'));
-    await page.$eval('.upload-review details', e => { e.open = true; });
-    assert.match(await page.$eval('.upload-review', e => e.textContent), /KL-05 - Kottayam/);
-    await page.screenshot({ path: '/tmp/crm-bulk-rto-desktop.png', fullPage: true });
+    assert.match(review, /Repeated in this file/);
+    assert.match(review, /Already in CRM/);
+    await page.click('[aria-label="Reject row 2"]');
+    await page.waitForFunction(() => document.querySelector('[aria-label="Reject row 2"]')?.disabled && !document.querySelector('[aria-label="Approve row 4"]')?.disabled);
+    await page.click('[aria-label="Approve row 4"]');
+    await page.waitForFunction(() => document.querySelector('[aria-label="Approve row 4"]')?.disabled && !document.querySelector('[aria-label="Approve row 5"]')?.disabled);
+    await page.click('[aria-label="Approve row 5"]');
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Import leads' && !button.disabled));
+    await page.screenshot({ path: '/tmp/crm-bulk-simple-desktop.png', fullPage: true });
     await page.setViewport({ width: 390, height: 844 });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2), 'mobile page overflows');
-    await page.screenshot({ path: '/tmp/crm-bulk-rto-mobile.png', fullPage: true });
+    assert.ok(await page.$eval('.upload-review .intake-table-wrap', element => element.getBoundingClientRect().right <= innerWidth && element.scrollWidth > element.clientWidth), 'Mobile table must scroll inside the page');
+    await page.screenshot({ path: '/tmp/crm-bulk-simple-mobile.png', fullPage: true });
     await page.setViewport({ width: 1440, height: 1000 });
     await click('Import leads');
-    await page.waitForFunction(() => document.body.textContent.includes('3 leads imported.'));
-    for (const [phone, rto] of [['9876543210', 'KL-07'], ['9876543211', 'KL-08'], ['9876543298', 'KL-05'], ['9876543299', 'KL-08']]) {
+    await page.waitForFunction(() => document.body.textContent.includes('3 leads imported. 1 existing leads updated. 1 rows skipped.'));
+    for (const [phone, rto] of [['9876543210', 'KL-07'], ['9876543211', 'KL-08'], ['9876543298', 'KL-05'], ['9876543299', 'KL-07']]) {
       const response = await admin('/api/leads/?q=' + phone);
-      assert.equal(response.data.results.length, 1);
+      assert.equal(response.data.results.length, 1, `One lead per phone: ${phone}`);
       assert.equal(response.data.results[0].rto, rto);
+      if (phone === '9876543210') assert.equal(response.data.results[0].name, 'Repeated file customer');
+      if (phone === '9876543299') {
+        assert.equal(response.data.results[0].name, 'Existing CRM duplicate');
+        assert.equal(response.data.results[0].status, 'QUALIFIED');
+        assert.ok(response.data.results[0].assigned_so);
+      }
     }
-    await page.goto(webBase + '/all-leads');
-    await page.waitForFunction(() => [...document.querySelectorAll('.lead-row')].some(row => row.textContent.includes('Correct RTO Customer')));
-    await page.evaluate(() => [...document.querySelectorAll('.lead-row')].find(row => row.textContent.includes('Correct RTO Customer')).querySelector('.row-action').click());
-    await page.waitForFunction(() => document.querySelector('.sales-detail-modal')?.textContent.includes('KL-05 - Kottayam'));
     assert.deepEqual(errors, []);
-    console.log('PASS: downloaded RTO sample, normalized names/codes, duplicate review, RTO correction, import, admin detail, desktop and mobile.');
+    console.log('PASS: fixed sample headings, precise format errors, offline correction, automatic checking, Admin duplicate approval/rejection, one record per phone, preserved ownership/status, desktop and mobile.');
   } finally {
     await browser.close();
   }

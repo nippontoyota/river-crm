@@ -188,11 +188,11 @@ export function getCurrentUser() {
   if (!currentUserRequest) currentUserRequest = api<{ user: CurrentUser }>("/api/auth/me/").finally(() => { currentUserRequest = null; });
   return currentUserRequest;
 }
-export const uploadLeads = (file: File, mappingVersion?: number) => { const body = new FormData(); body.append("file", file); if (mappingVersion) body.append("mapping_version", String(mappingVersion)); return api<UploadBatch>("/api/uploads/", { method: "POST", body }); };
+export const uploadLeads = (file: File) => { const body = new FormData(); body.append("file", file); return api<UploadBatch>("/api/uploads/", { method: "POST", body }); };
 export const getUpload = (id: number, includeRows = false) => api<UploadBatch>(`/api/uploads/${id}/${includeRows ? "?include_rows=true" : ""}`);
-export const resolveUploadDuplicates = (id: number, rows: { id: number; resolution: "SKIP" }[]) => api<{ detail: string; duplicates_found: number }>(`/api/uploads/${id}/resolve-duplicates/`, { method: "POST", body: JSON.stringify({ rows }) });
+export const resolveUploadDuplicates = (id: number, rows: { id: number; resolution: "APPROVE" | "SKIP" }[]) => api<{ detail: string; duplicates_found: number }>(`/api/uploads/${id}/resolve-duplicates/`, { method: "POST", body: JSON.stringify({ rows }) });
 export const commitUpload = (id: number) => api<{ created: number; overwritten: number; skipped: number }>(`/api/uploads/${id}/commit/`, { method: "POST", body: JSON.stringify({}) });
-export type UploadRow = { answers: import("./intake").Entry[]; ignored_labels: string[]; answers_expired: boolean; validation_errors: Record<string, string>; id: number; row_number: number; data: import("./intake").CustomerValues & { source?: string }; normalized_phone: string; validation_error: string; duplicate_of: number | null; existing_name: string; existing_status: string; duplicate_type: "CRM" | "FILE" | "INTAKE" | ""; resolution: "PENDING" | "SKIP" | "OVERWRITE" | "IMPORT" };
+export type UploadRow = { file_rows: number[]; validation_errors: Record<string, string>; id: number; row_number: number; data: import("./intake").CustomerValues & { source?: string }; normalized_phone: string; validation_error: string; duplicate_of: number | null; existing_name: string; existing_status: string; duplicate_type: "CRM" | "FILE" | "INTAKE" | ""; resolution: "PENDING" | "SKIP" | "OVERWRITE" | "IMPORT" };
 export type UploadBatch = { mapping_version: number | null; original_deleted_at: string | null; validation_errors_found: number; id: number; status: "PARSING" | "READY" | "COMMITTED" | "FAILED"; total_rows: number; parsed_ok: number; duplicates_found: number; crm_duplicates_found: number; file_duplicates_found: number; intake_duplicates_found: number; removed_duplicates: number; pending_duplicates: number; skipped: number; error_message: string; rows?: UploadRow[] };
 
 export type RtoOption = { value: string; label: string };

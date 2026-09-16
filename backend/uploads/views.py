@@ -9,24 +9,14 @@ from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from accounts.permissions import IsAdmin
-from intake.mapping import FIELDS, map_entries, validate_customer
-from intake.models import IntakeAudit, MappingVersion, Submission
-from intake.services import UNRESOLVED, publish
+from intake.mapping import validate_customer
+from intake.services import publish
 from leads.models import Lead, LeadAudit
 from leads.phone_lock import lock_phones
 from .models import UploadBatch, UploadRow
 from .serializers import ResolveRowsSerializer, UploadBatchSerializer, UploadRowSerializer
 from .storage import upload_bytes
-from .tasks import classify_rows, parse_upload_batch, refresh_counts, delete_original
-
-
-def template(value):
-    if value in (None, ''):
-        return None
-    try:
-        return MappingVersion.objects.get(pk=value, form__isnull=True)
-    except (MappingVersion.DoesNotExist, ValueError, TypeError):
-        raise ValidationError({'mapping_version': 'Choose an Excel template version.'})
+from .tasks import COLUMNS, classify_rows, parse_upload_batch, refresh_counts, delete_original
 
 
 class UploadBatchViewSet(viewsets.GenericViewSet):
@@ -43,11 +33,12 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
             raise ValidationError({'detail': 'A file is required.'})
         if uploaded.size > 10 * 1024 * 1024 or Path(uploaded.name).suffix.lower() not in {'.csv', '.xlsx'}:
             raise ValidationError({'detail': 'Upload a CSV or XLSX file below 10 MB.'})
-        mapping = template(request.data.get('mapping_version'))
+        if request.data.get('mapping_version'):
+            raise ValidationError({'detail': 'Bulk upload uses the fixed sample headings. Download the sample, correct your file offline, and upload it again.'})
         path = f'imports/{timezone.now():%Y/%m}/{timezone.now().timestamp()}-{uploaded.name}'
         upload_bytes(path, uploaded.read(), uploaded.content_type or 'application/octet-stream')
         with transaction.atomic():
-            batch = UploadBatch.objects.create(filename=uploaded.name, storage_path=path, uploaded_by=request.user, mapping_version=mapping)
+            batch = UploadBatch.objects.create(filename=uploaded.name, storage_path=path, uploaded_by=request.user)
             transaction.on_commit(lambda: publish(parse_upload_batch, batch.id))
         return Response(self.get_serializer(batch).data, status=status.HTTP_202_ACCEPTED)
 
@@ -55,7 +46,7 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
         batch = self.get_object()
         payload = self.get_serializer(batch).data
         if request.query_params.get('include_rows') == 'true':
-            payload['rows'] = UploadRowSerializer(batch.rows.all().order_by('row_number'), many=True).data
+            payload['rows'] = UploadRowSerializer(batch.rows.select_related('duplicate_of').order_by('row_number'), many=True).data
         return Response(payload)
 
     @action(detail=True, methods=['post'], url_path='resolve-duplicates')
@@ -66,66 +57,24 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
             raise ValidationError({'detail': 'This upload is not ready for review.'})
         serializer = ResolveRowsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        approved_phones = set()
         for item in serializer.validated_data['rows']:
             row = batch.rows.filter(pk=item['id']).first()
-            if not row:
-                raise ValidationError({'rows': 'Choose a row from this upload.'})
-            if item['resolution'] == UploadRow.Resolution.OVERWRITE and not Lead.objects.filter(pk=row.duplicate_of_id, phone=row.normalized_phone, deleted_at__isnull=True).exists():
-                raise ValidationError({'rows': 'Only a matched CRM lead can be overwritten.'})
-            row.resolution = item['resolution']
+            if not row or row.validation_error or not (row.duplicate_of_id or row.data.get('_duplicate_type')):
+                raise ValidationError({'rows': 'Choose a valid duplicate row from this upload.'})
+            if item['resolution'] == 'APPROVE':
+                if row.normalized_phone in approved_phones:
+                    raise ValidationError({'rows': 'Approve only one row for each phone number.'})
+                approved_phones.add(row.normalized_phone)
+                row.resolution = UploadRow.Resolution.OVERWRITE if row.duplicate_of_id else UploadRow.Resolution.IMPORT
+                # One chosen record per phone, including repeated CRM/Intake matches.
+                batch.rows.filter(normalized_phone=row.normalized_phone).exclude(pk=row.pk).update(resolution=UploadRow.Resolution.SKIP, resolution_explicit=True)
+            else:
+                row.resolution = UploadRow.Resolution.SKIP
             row.resolution_explicit = True
             row.save(update_fields=['resolution', 'resolution_explicit'])
         refresh_counts(batch)
         return Response({'detail': 'Duplicate choices saved.', 'duplicates_found': batch.duplicates_found})
-
-    @action(detail=True, methods=['post'])
-    @transaction.atomic
-    def reparse(self, request, pk=None):
-        batch = self.get_queryset().select_for_update().get(pk=self.get_object().pk)
-        if batch.status == UploadBatch.Status.COMMITTED:
-            raise ValidationError({'detail': 'Committed batches cannot be reparsed.'})
-        if batch.rows.filter(answers_expired=True).exists() or (batch.original_deleted_at and not batch.rows.exists()):
-            raise ValidationError({'detail': 'Input expired. Correct rows or upload a new file.'})
-        batch.mapping_version = template(request.data.get('mapping_version'))
-        batch.status = UploadBatch.Status.PARSING
-        batch.save(update_fields=['mapping_version', 'status'])
-        IntakeAudit.objects.create(actor=request.user, mapping_version=batch.mapping_version, action='excel_reparse')
-        transaction.on_commit(lambda: publish(parse_upload_batch, batch.id))
-        return Response(self.get_serializer(batch).data, status=202)
-
-    @action(detail=True, methods=['post'], url_path='correct-row')
-    @transaction.atomic
-    def correct_row(self, request, pk=None):
-        batch = self.get_queryset().select_for_update().get(pk=self.get_object().pk)
-        if batch.status != UploadBatch.Status.READY:
-            raise ValidationError({'detail': 'This upload is not ready for review.'})
-        row = batch.rows.filter(pk=request.data.get('row_id')).first()
-        corrections = request.data.get('corrections')
-        if not row or not isinstance(corrections, dict) or set(corrections) - set(FIELDS) - {'source'}:
-            raise ValidationError({'detail': 'Choose a row and supply approved customer fields only.'})
-        if any(v is not None and not isinstance(v, (str, int, float)) for v in corrections.values()):
-            raise ValidationError({'corrections': 'Use scalar customer values.'})
-        if row.answers_expired:
-            values, errors = validate_customer(corrections, excel=True)
-        else:
-            values, errors = validate_customer({**row.data, 'phone': row.normalized_phone, **corrections}, excel=True)
-            # Preserve unresolved mapping conflicts in fields the admin did not correct.
-            errors = {**{k: v for k, v in row.validation_errors.items() if k not in corrections}, **errors}
-        phone = values.pop('phone')
-        if phone != row.normalized_phone or row.validation_error:
-            row.resolution_explicit = False
-        row.normalized_phone = phone
-        row.data = {**{key: value for key, value in row.data.items() if key.startswith('_')}, **values}
-        row.validation_errors = errors
-        row.validation_error = ' '.join(errors.values())
-        row.answers_expired = False
-        row.save()
-        rows = classify_rows(batch, list(batch.rows.order_by('row_number')), preserve_choices=True)
-        UploadRow.objects.bulk_update(rows, ['data', 'duplicate_of', 'resolution', 'resolution_explicit'])
-        row.refresh_from_db()
-        refresh_counts(batch)
-        IntakeAudit.objects.create(actor=request.user, mapping_version=batch.mapping_version, action='excel_row_corrected')
-        return Response(UploadRowSerializer(row).data)
 
     @action(detail=True, methods=['post'])
     @transaction.atomic
@@ -134,56 +83,52 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
         if batch.status == UploadBatch.Status.COMMITTED:
             return Response({'created': 0, 'overwritten': 0, 'skipped': batch.skipped, 'already_committed': True})
         if batch.status != UploadBatch.Status.READY:
-            raise ValidationError({'detail': 'This upload is not ready to commit.'})
-        rows = list(batch.rows.select_related('duplicate_of').order_by('row_number'))
-        if any(row.resolution == UploadRow.Resolution.PENDING for row in rows):
-            raise ValidationError({'detail': 'Resolve every duplicate before committing.'})
+            raise ValidationError({'detail': 'This upload is not ready to import.'})
+        if batch.mapping_version_id:
+            raise ValidationError({'detail': 'This upload used an old mapping template. Upload a file using Download sample format.'})
+        rows = list(batch.rows.order_by('row_number'))
         lock_phones(*(row.normalized_phone for row in rows))
-        created = overwritten = skipped = 0
+        previous = [(row.duplicate_of_id, row.resolution, row.resolution_explicit) for row in rows]
         for row in rows:
-            if row.resolution == UploadRow.Resolution.SKIP:
-                skipped += 1
-                continue
-            data, errors = validate_customer({**row.data, 'phone': row.normalized_phone}, excel=True)
-            errors = {**row.validation_errors, **errors}
-            if row.validation_error or errors or row.answers_expired:
-                row.validation_errors = errors
-                row.validation_error = ' '.join(errors.values()) or row.validation_error
-                row.save(update_fields=['validation_errors', 'validation_error'])
-                skipped += 1
-                continue
-            matches = Lead.objects.filter(phone=data['phone'], deleted_at__isnull=True).order_by('id')
-            duplicate = matches.first()
-            pending = Submission.objects.filter(normalized_phone=data['phone'], state__in=UNRESOLVED).exists()
-            if (duplicate or pending) and not row.resolution_explicit:
-                row.resolution = UploadRow.Resolution.SKIP
-                row.duplicate_of = duplicate
-                row.data['_duplicate_type'] = 'CRM' if duplicate else 'INTAKE'
-                row.save(update_fields=['resolution', 'duplicate_of', 'data'])
-                skipped += 1
-                continue
-            if row.resolution == UploadRow.Resolution.OVERWRITE:
-                # Only overwrite the explicitly reviewed target, still matching this phone.
-                lead = matches.select_for_update().filter(pk=row.duplicate_of_id).first()
-                if not lead:
-                    raise ValidationError({'detail': 'An overwrite target changed. Review duplicates again.'})
-                if not data['rto']:
-                    data['rto'] = lead.rto
-                for field, value in data.items():
+            _, errors = validate_customer({**row.data, 'phone': row.normalized_phone}, excel=True)
+            if row.answers_expired:
+                errors['file'] = 'This upload has expired. Upload the file again.'
+            row.validation_errors = errors
+            row.validation_error = ' '.join(errors.values())
+        classify_rows(batch, rows, preserve_choices=True)
+        UploadRow.objects.bulk_update(rows, ['data', 'duplicate_of', 'resolution', 'resolution_explicit', 'validation_errors', 'validation_error'])
+        refresh_counts(batch)
+        if any(row.validation_error for row in rows):
+            return Response({'detail': 'Correct the listed row errors in your spreadsheet and upload it again. No leads were imported.'}, status=400)
+        changed = previous != [(row.duplicate_of_id, row.resolution, row.resolution_explicit) for row in rows]
+        if any(row.resolution == UploadRow.Resolution.PENDING for row in rows) or changed:
+            return Response({'detail': 'Review and approve or reject the duplicate rows before importing. Phone matches are checked again at import; no leads were imported.'}, status=409)
+        selected = [row for row in rows if row.resolution != UploadRow.Resolution.SKIP]
+        if len({row.normalized_phone for row in selected}) != len(selected):
+            raise ValidationError({'detail': 'Choose only one row for each phone number.'})
+        created = overwritten = 0
+        for row in selected:
+            data, _ = validate_customer({**row.data, 'phone': row.normalized_phone}, excel=True)
+            duplicate = Lead.objects.filter(phone=row.normalized_phone, deleted_at__isnull=True).order_by('id').first()
+            if duplicate:
+                if row.resolution != UploadRow.Resolution.OVERWRITE or not row.resolution_explicit or duplicate.pk != row.duplicate_of_id:
+                    raise ValidationError({'detail': 'This phone already exists. Review its duplicate match before importing.'})
+                lead = Lead.objects.select_for_update().get(pk=duplicate.pk)
+                updates = {field: value for field, value in data.items() if field in (*COLUMNS, 'source_label') and value not in ('', None)}
+                before = {field: str(getattr(lead, field) or '') for field in updates}
+                for field, value in updates.items():
                     setattr(lead, field, value)
-                lead.save(update_fields=[*data, 'updated_at'])
-                event = 'import_overwrite'
+                lead.save(update_fields=[*updates, 'updated_at'])
+                LeadAudit.objects.create(lead=lead, actor=request.user, event='import_overwrite', before=before, after=updates)
                 overwritten += 1
             else:
-                lead = Lead.objects.create(**data, duplicate_flag=bool(duplicate or pending), assigned_so=None, assigned_ps=None, generated_by=None, status=Lead.Status.FRESH)
-                event = 'imported'
+                lead = Lead.objects.create(**data, assigned_so=None, assigned_ps=None, generated_by=None, status=Lead.Status.FRESH)
+                LeadAudit.objects.create(lead=lead, actor=request.user, event='imported')
                 created += 1
-            LeadAudit.objects.create(lead=lead, actor=request.user, event=event)
         batch.status = UploadBatch.Status.COMMITTED
         batch.committed_at = timezone.now()
-        batch.skipped = skipped
+        batch.skipped = len(rows) - len(selected)
         batch.save(update_fields=['status', 'committed_at', 'skipped'])
         batch.rows.update(answers=[])
-        batch.rows.exclude(validation_error="").update(data={}, normalized_phone="")
         transaction.on_commit(lambda: delete_original(batch.id))
-        return Response({'created': created, 'overwritten': overwritten, 'skipped': skipped})
+        return Response({'created': created, 'overwritten': overwritten, 'skipped': batch.skipped})

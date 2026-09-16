@@ -88,16 +88,18 @@ if (![apiBase, webBase].every(url => ['127.0.0.1', 'localhost'].includes(new URL
     await page.screenshot({ path: '/tmp/crm-intake-desktop.png', fullPage: true });
     await page.goto(webBase + '/leads');
     await page.waitForFunction(name => document.body.textContent.includes(name), {}, 'Browser Valid ' + stamp);
-    const csv = `/tmp/crm-intake-browser-${stamp}.csv`;
-    fs.writeFileSync(csv, 'Name,Phone,Source\nSpreadsheet Customer,,WEBSITE\n');
+    const headers = 'name,phone,email,source,campaign,model,city,enquiry date,RTO\n';
     await page.waitForSelector('input[type=file]');
-    await (await page.$('input[type=file]')).uploadFile(csv);
-    await click('Check import');
-    await page.waitForFunction(() => document.body.textContent.includes('1 rows need correction'));
-    await click('Edit row 2');
-    await fillLabel('.upload-review', 'phone', phone4);
-    await click('Save row correction');
-    await page.waitForFunction(() => !document.body.textContent.includes('1 rows need correction'));
+    const uploadCsv = content => page.$eval('input[type=file]', (input, csv) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([csv], 'spreadsheet.csv', { type: 'text/csv' }));
+      input.files = transfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }, content);
+    await uploadCsv(headers + 'Spreadsheet Customer,,,WEBSITE,,,,,\n');
+    await page.waitForFunction(() => document.body.textContent.includes('Fix 1 row'));
+    await uploadCsv(headers + `Spreadsheet Customer,${phone4},,WEBSITE,,,,,\n`);
+    await page.waitForFunction(() => document.querySelector('.upload-review')?.textContent.includes('No duplicate phone numbers or invalid rows found.'));
     await click('Import leads');
     await page.waitForFunction(() => document.body.textContent.includes('1 leads imported.'));
     await page.goto(webBase + '/lead-intake');
