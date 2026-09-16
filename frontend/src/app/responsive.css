@@ -1308,8 +1308,27 @@ input[type="radio"] {
 .sales-overview-grid button.sales-metric.active { border-color: #0b8c6b; box-shadow: inset 0 0 0 1px #0b8c6b; }
 .sales-overview-grid button.sales-metric:focus-visible { outline: 2px solid #0b8c6b; outline-offset: 3px; }
 
+.ps-shell .sales-workspace .sales-overview-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.sales-shell.ps-shell .sales-overview-grid .sales-metric {
+  border: 1px solid #000;
+  border-top: 3px solid #8db355;
+  box-shadow: none;
+  align-items: center;
+  text-align: center;
+  text-decoration: none;
+}
+
+.sales-shell.ps-shell .sales-overview-grid .sales-metric.red { border-top-color: #d90000; }
+.ps-shell .sales-overview-grid a.sales-metric:hover { background: #f5f8ef !important; }
+.ps-shell .sales-overview-grid a.sales-metric.active { box-shadow: inset 0 0 0 1px #000; }
+.ps-shell .sales-overview-grid a.sales-metric:focus-visible { outline: 2px solid #000; outline-offset: 3px; }
+
 @media (max-width: 1100px) {
-  .sales-workspace .sales-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sales-workspace .sales-overview-grid,
+  .ps-shell .sales-workspace .sales-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -10,7 +10,8 @@ export default function ServicesPage() {
   const router = useRouter();
   const [user, setUser] = useState<CurrentUser | null>(null);
   useEffect(() => { getCurrentUser().then(({ user: actual }) => {
-    if (["SERVICE", "CRE", "ADMIN", "CEO", "SO"].includes(actual.role)) setUser(actual);
+    if (actual.role === "SO") router.replace("/my-leads");
+    else if (["SERVICE", "CRE", "ADMIN", "CEO"].includes(actual.role)) setUser(actual);
     else router.replace("/");
   }).catch(() => router.replace("/")); }, [router]);
   if (!user) return null;
