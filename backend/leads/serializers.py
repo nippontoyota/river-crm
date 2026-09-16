@@ -109,6 +109,8 @@ class LeadSerializer(serializers.ModelSerializer):
     qualification_input = QualificationSerializer(required=False, write_only=True)
 
     def validate(self, attrs):
+        if (not self.instance or "rto" in attrs) and not attrs.get("rto"):
+            raise serializers.ValidationError({"rto": "Choose an RTO."})
         if self.instance and any(field in attrs and attrs[field] != getattr(self.instance, field) for field in ("status", "sales_outcome")):
             raise serializers.ValidationError({"status": "Use the lead outcome update action to change sales progress."})
         if not self.instance and (attrs.get("status") == "WON" or attrs.get("sales_outcome") == "RETAILED"):

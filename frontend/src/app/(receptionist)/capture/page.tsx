@@ -1,6 +1,7 @@
 "use client";
 
 import { ActivityFields } from "@/components/activity-fields";
+import { RtoField } from "@/components/rto-field";
 
 import { useEffect, useState, FormEvent } from "react";
 import { createLead, getSystemConfig, getOfficers, toOfficer, type Officer, type SystemConfig } from "@/lib/crm";
@@ -118,13 +119,7 @@ export default function CaptureLeadPage() {
 
 
         <div className="capture-form-grid">
-            <label>
-              RTO (optional)
-              <select name="rto" value={formData.rto} onChange={handleChange} disabled={!rtoOptions.length}>
-                <option value="">{rtoOptions.length ? "Select Kerala RTO" : "RTO list unavailable"}</option>
-                {rtoOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </label>
+            <RtoField options={rtoOptions} value={formData.rto} onChange={value => setFormData(current => ({ ...current, rto: value }))} />
         </div>
 
         <fieldset className="capture-fieldset">

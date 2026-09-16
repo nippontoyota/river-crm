@@ -110,3 +110,12 @@
 .whatsapp-message-list summary span { margin-left: .75rem; font-size: .8rem; }
 .whatsapp-message-list small { display: block; margin-top: .5rem; }
 .whatsapp-message-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+
+/* Searchable RTO selection shared by manual lead forms. */
+.rto-field { position: relative; display: grid; gap: 6px; min-width: 0; }
+.rto-field > label { color: #666b71; font-size: 10px; font-weight: bold; }
+.rto-field > input { width: 100%; min-width: 0; }
+.rto-options { position: absolute; top: 100%; left: 0; right: 0; z-index: 10; max-height: 220px; overflow-y: auto; border: 1px solid #dededb; border-radius: 6px; background: #fff; box-shadow: 0 6px 16px #0002; }
+.rto-options > button { display: block; width: 100%; border: 0; padding: 10px; background: #fff; color: #25272b; text-align: left; font: inherit; font-size: 11px; cursor: pointer; }
+.rto-options > button[aria-selected="true"], .rto-options > button:hover { background: #e8f6ef; color: #166534; }
+.rto-options > p { padding: 10px; margin: 0; color: #666b71; font-size: 11px; }

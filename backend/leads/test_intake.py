@@ -20,14 +20,14 @@ class ActivityIntakeTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         for user, endpoint, source in [(self.admin, "/api/leads/", "WEBSITE"), (self.receptionist, "/api/leads/", "WALKIN"), (self.so, "/api/leads/so-create/", "Referral")]:
             self.client.force_authenticate(user)
-            response = self.client.post(endpoint, {"name": "Roadshow enquiry", "phone": "9876543210", "source": source, "activity": "Roadshow", "sub_activity": "Kochi", "model_interest": "River Indie", "enquiry_date": timezone.localdate().isoformat()}, format="json")
+            response = self.client.post(endpoint, {"rto": "KL-07", "name": "Roadshow enquiry", "phone": "9876543210", "source": source, "activity": "Roadshow", "sub_activity": "Kochi", "model_interest": "River Indie", "enquiry_date": timezone.localdate().isoformat()}, format="json")
             self.assertEqual(response.status_code, 201, response.data)
             self.assertEqual(response.data["sub_activity"], "Kochi")
             self.assertEqual(Lead.objects.get(pk=response.data["id"]).activity, "Roadshow")
         self.assertEqual(self.client.put("/api/system-config/", {"lists": {}}, format="json").status_code, 403)
 
     def test_invalid_pairs_and_retired_values(self):
-        payload = {"name": "Enquiry", "phone": "9876543210", "source": "WEBSITE"}
+        payload = {"rto": "KL-07", "name": "Enquiry", "phone": "9876543210", "source": "WEBSITE"}
         for fields in [{"activity": "Roadshow", "sub_activity": "Thrissur"}, {"sub_activity": "Kochi"}, {"activity": "Unknown"}]:
             self.assertEqual(self.client.post("/api/leads/", {**payload, **fields}, format="json").status_code, 400)
         lead = Lead.objects.create(**payload, activity="Retired", sub_activity="Old location")
@@ -40,7 +40,7 @@ class ActivityIntakeTests(TestCase):
 
     def test_receptionist_can_capture_without_color_or_timeline(self):
         self.client.force_authenticate(self.receptionist)
-        response = self.client.post("/api/leads/", {"name": "Walk-in enquiry", "phone": "9876543210", "source": "WALKIN", "model_interest": "River Indie", "ps_officer_id": self.so.pk}, format="json")
+        response = self.client.post("/api/leads/", {"rto": "KL-07", "name": "Walk-in enquiry", "phone": "9876543210", "source": "WALKIN", "model_interest": "River Indie", "ps_officer_id": self.so.pk}, format="json")
         self.assertEqual(response.status_code, 201, response.data)
         lead = Lead.objects.get(pk=response.data["id"])
         self.assertEqual(lead.source, Lead.Source.WALKIN)

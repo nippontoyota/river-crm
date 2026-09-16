@@ -1,5 +1,6 @@
 "use client";
 
+import { RtoField } from "@/components/rto-field";
 import { ActivityFields } from "@/components/activity-fields";
 
 import { useEffect, useState, type FormEvent } from "react";
@@ -50,7 +51,7 @@ export function SOLeadForm({ user, onClose, onCreated }: { user: CurrentUser; on
               <label>Email<input name="email" type="email" value={form.email} onChange={event => change("email", event.target.value)} placeholder="name@example.com" /></label>
               <label>Profession<input name="profession" maxLength={100} value={form.profession} onChange={event => change("profession", event.target.value)} placeholder="Customer profession (optional)" /></label>
               <label>City<input name="city" maxLength={100} value={form.city} onChange={event => change("city", event.target.value)} placeholder="Customer city" /></label>
-              <label>RTO (optional)<select name="rto" value={form.rto} onChange={event => change("rto", event.target.value)} disabled={!rtos.length}><option value="">Select Kerala RTO</option>{rtos.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              <RtoField options={rtos} value={form.rto} onChange={value => change("rto", value)} />
               <label>Lead source *<select name="source" required value={form.source} onChange={event => change("source", event.target.value)} disabled={!sources.length}><option value="">Select how you found this customer</option>{sources.map(source => <option key={source} value={source}>{source}</option>)}</select></label>
               <ActivityFields activity={form.activity} subActivity={form.sub_activity} onChange={fields => setForm(current => ({ ...current, ...fields }))} />
               <label>Enquiry date *<DateInput required value={form.enquiry_date} max={formatDate(new Date())} onChange={value => change("enquiry_date", value)} ariaLabel="Enquiry date, DD/MM/YYYY" /></label>

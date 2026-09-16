@@ -95,7 +95,7 @@ class IntakeConcurrencyTests(TransactionTestCase):
     def test_manual_and_intake_race(self):
         receipt_id = self.accept()
         def manual():
-            serializer = LeadSerializer(data={'name': 'Manual Customer', 'phone': '9876543210', 'source': 'WEBSITE'})
+            serializer = LeadSerializer(data={'name': 'Manual Customer', 'phone': '9876543210', 'source': 'WEBSITE', 'rto': 'KL-07'})
             serializer.is_valid(raise_exception=True)
             try:
                 serializer.save()
