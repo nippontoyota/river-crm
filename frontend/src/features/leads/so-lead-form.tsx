@@ -41,7 +41,7 @@ export function SOLeadForm({ user, onClose, onCreated }: { user: CurrentUser; on
 
   return <div className="modal-layer" role="presentation">
     <section className="modal sales-detail-modal so-lead-modal" role="dialog" aria-modal="true" aria-labelledby="so-add-lead-title">
-      <header className="sales-detail-header"><div><p className="eyebrow">SO LEAD INTAKE</p><h2 id="so-add-lead-title">Add my lead</h2><p className="subtext">Capture a customer enquiry from your own contacts or outreach.</p></div><button className="modal-close" onClick={onClose} disabled={saving} aria-label="Close">×</button></header>
+      <header className="sales-detail-header"><div><p className="eyebrow">CUSTOMER ENQUIRY</p><h2 id="so-add-lead-title">Add my lead</h2><p className="subtext">Capture a customer enquiry from your own contacts or outreach.</p></div><button className="modal-close" onClick={onClose} disabled={saving} aria-label="Close">×</button></header>
       <form onSubmit={submit}>
         <div className="sales-detail-scroll">
           <section className="sales-form-card">
