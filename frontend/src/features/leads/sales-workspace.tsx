@@ -373,7 +373,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
 
   return <section className="page sales-workspace">
     <div className="sales-hero"><div>{!isPs && <p className="eyebrow">CE WORKSPACE</p>}<h1>{isPs ? followUpsOnly ? "Today's follow-ups" : allLeadsOnly ? "All leads" : "Fresh leads" : "My queue"}</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions"><button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{isPs ? <button className="button primary" onClick={() => setAddingSoLead(true)}>＋ Add my lead</button> : <button className="button primary" onClick={() => { setAddLeadError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
-    {isPs && followUpsOnly ? <div className="followup-overview"><section className="sales-metrics compact">{metricCards}</section><div className="followup-search-pane">{leadSearch}</div></div> : <section className="sales-overview-grid" aria-label="Lead overview">{!followUpsOnly && <EtbrTiles data={summary} embedded />}{metricCards}</section>}
+    {isPs && followUpsOnly ? <div className="followup-overview"><section className="sales-metrics compact">{metricCards}</section><div className="followup-search-pane">{leadSearch}</div></div> : <section className="sales-overview-grid" aria-label="Lead overview">{!followUpsOnly && <EtbrTiles data={summary} embedded exclude={isPs ? ["etbr_booked", "etbr_retailed"] : undefined} />}{metricCards}</section>}
     
     {isPs ? (
       <section className="panel sales-table-panel" style={{ background: "transparent", border: "none", boxShadow: "none", padding: 0 }}>
@@ -410,7 +410,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
         {error && <p className="form-error" role="alert">{error}</p>}
         {notice && <p role="status">{notice}</p>}
 
-        <VehiclePanel key={`vehicle-${detail.id}`} lead={detail} />
+        {!isPs && <VehiclePanel key={`vehicle-${detail.id}`} lead={detail} />}
         <TestDriveCompletion key={detail.id} lead={detail} canComplete={!!isPs} disabled={saving} onSavingChange={setCompletingDrive} onCompleted={updated => {
           setDetail(updated);
           if (draft.call_outcome && !updated.outcomePolicy.outcomes[draft.call_status]?.some(option => option.label === draft.call_outcome)) {

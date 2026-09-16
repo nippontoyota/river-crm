@@ -1309,7 +1309,7 @@ input[type="radio"] {
 .sales-overview-grid button.sales-metric:focus-visible { outline: 2px solid #0b8c6b; outline-offset: 3px; }
 
 .ps-shell .sales-workspace .sales-overview-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .sales-shell.ps-shell .sales-overview-grid .sales-metric {

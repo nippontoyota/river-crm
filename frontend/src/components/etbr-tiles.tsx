@@ -7,8 +7,8 @@ const tiles: [keyof EtbrMetrics, string, string, string][] = [
   ["etbr_retailed", "Retailed", "Completed retail sales", "mint"],
 ];
 
-export function EtbrTiles({ data, embedded = false }: { data?: EtbrMetrics | null; embedded?: boolean }) {
-  const cards = tiles.map(([key, label, description, tone]) => <article className={`sales-metric panel${embedded ? ` ${tone}` : ""}`} key={key} title={description} style={embedded ? undefined : { padding: 20, cursor: "default" }}>
+export function EtbrTiles({ data, embedded = false, exclude = [] }: { data?: EtbrMetrics | null; embedded?: boolean; exclude?: (keyof EtbrMetrics)[] }) {
+  const cards = tiles.filter(([key]) => !exclude.includes(key)).map(([key, label, description, tone]) => <article className={`sales-metric panel${embedded ? ` ${tone}` : ""}`} key={key} title={description} style={embedded ? undefined : { padding: 20, cursor: "default" }}>
     <span>{label}</span><strong>{data?.[key] ?? "—"}</strong>{!embedded && <small>{description}</small>}
   </article>);
   if (embedded) return <>{cards}</>;
