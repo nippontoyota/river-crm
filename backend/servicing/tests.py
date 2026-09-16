@@ -27,7 +27,7 @@ class ServiceWorkflowTests(APITestCase):
         self.so = self.user("so", "SO")
         self.service = self.user("service", "SERVICE")
         self.other_service = self.user("other-service", "SERVICE", "Thrissur")
-        self.lead = Lead.objects.create(name="Scooter Customer", phone="9876543210", email="rider@test.local", model_interest="Indie", branch="Kochi", assigned_so=self.ce, assigned_ps=self.so, status="QUALIFIED")
+        self.lead = Lead.objects.create(name="Scooter Customer", phone="9876543210", email="rider@test.local", model_interest="Indie", branch="Kochi", assigned_so=self.ce, assigned_ps=self.so, status="WALKIN", sales_outcome="BOOKED")
         self.vehicle = Vehicle.objects.create(chassis_number="RIVER123", model="Indie", related_lead=self.lead, created_by=self.so, **{"customer_name": self.lead.name, "customer_phone": self.lead.phone})
 
     def user(self, name, role, branch="Kochi"):
@@ -148,6 +148,8 @@ class ServiceWorkflowTests(APITestCase):
         self.assertEqual(self.client.get(f'/api/service-requests/{row["id"]}/').data["customer_snapshot"]["customer_name"], "Scooter Customer")
 
     def test_retail_requires_vehicle_all_entrypoints_and_legacy_can_be_backfilled(self):
+        self.lead.status, self.lead.sales_outcome = "QUALIFIED", "PENDING"
+        self.lead.save()
         self.vehicle.related_lead = None
         self.vehicle.save()
         self.client.force_authenticate(self.so)
@@ -169,6 +171,38 @@ class ServiceWorkflowTests(APITestCase):
         self.assertEqual(response.data["sales_outcome"], "RETAILED")
         legacy = Lead.objects.create(name="Legacy sale", phone="8877665544", assigned_ps=self.so, status="WON", sales_outcome="RETAILED")
         self.assertEqual(self.client.post("/api/vehicles/", {"chassis_number": "LEGACY123", "model": "Indie", "related_lead": legacy.pk}, format="json").status_code, 201)
+
+    def test_vehicle_and_service_records_require_a_booked_sale(self):
+        for state in ["FRESH", "PENDING", "QUALIFIED", "LOST"]:
+            with self.subTest(state=state):
+                self.lead.status, self.lead.sales_outcome = state, "LOST" if state == "LOST" else "PENDING"
+                self.lead.save()
+                self.client.force_authenticate(self.ce)
+                self.assertEqual(self.client.get("/api/leads/?service_eligible=true").data["count"], 0)
+                response = self.client.post("/api/vehicles/", {"chassis_number": "UNBOOKED123", "model": "Indie", "related_lead": self.lead.pk}, format="json")
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertIn("related_lead", response.data)
+                for user in [self.ce, self.service]:
+                    response = self.create_request(user)
+                    self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+        self.assertFalse(Vehicle.objects.filter(chassis_number="UNBOOKED123").exists())
+        for state, outcome in [("WALKIN", "BOOKED"), ("WON", "RETAILED"), ("WON", "PENDING")]:
+            self.lead.status, self.lead.sales_outcome = state, outcome
+            self.lead.save()
+            self.client.force_authenticate(self.ce)
+            self.assertEqual(self.client.get("/api/leads/?service_eligible=true").data["count"], 1)
+            self.assertEqual(self.create_request(acknowledge_active=True).status_code, 201)
+        self.client.force_authenticate(self.other_ce)
+        self.assertEqual(self.client.get("/api/leads/?service_eligible=true").data["count"], 0)
+
+    def test_only_cre_and_service_staff_can_add_service(self):
+        for user in [self.admin, self.ceo, self.so, self.user("manager", "SALES_MANAGER"), self.user("reception", "RECEPTIONIST")]:
+            with self.subTest(role=user.role):
+                self.assertEqual(self.create_request(user).status_code, 403)
+        self.assertEqual(ServiceRequest.objects.count(), 0)
+        self.assertEqual(self.create_request(self.ce).status_code, 201)
+        self.assertEqual(self.create_request(self.service, acknowledge_active=True).status_code, 201)
 
     def test_service_account_access_creation_and_lifecycle(self):
         self.client.force_authenticate(self.admin)

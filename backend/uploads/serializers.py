@@ -11,18 +11,22 @@ class UploadBatchSerializer(serializers.ModelSerializer):
 
     crm_duplicates_found = serializers.SerializerMethodField()
     file_duplicates_found = serializers.SerializerMethodField()
+    intake_duplicates_found = serializers.SerializerMethodField()
     removed_duplicates = serializers.SerializerMethodField()
     pending_duplicates = serializers.SerializerMethodField()
 
     class Meta:
         model = UploadBatch
-        fields = ["id", "filename", "status", "total_rows", "parsed_ok", "duplicates_found", "crm_duplicates_found", "file_duplicates_found", "removed_duplicates", "pending_duplicates", "skipped", "error_message", "created_at", "committed_at", "mapping_version", "original_deleted_at", "validation_errors_found"]
+        fields = ["id", "filename", "status", "total_rows", "parsed_ok", "duplicates_found", "crm_duplicates_found", "file_duplicates_found", "intake_duplicates_found", "removed_duplicates", "pending_duplicates", "skipped", "error_message", "created_at", "committed_at", "mapping_version", "original_deleted_at", "validation_errors_found"]
 
     def get_crm_duplicates_found(self, batch):
         return batch.rows.filter(duplicate_of__isnull=False).count()
 
     def get_file_duplicates_found(self, batch):
         return sum(1 for row in batch.rows.all() if row.data.get("_duplicate_type") == "FILE")
+
+    def get_intake_duplicates_found(self, batch):
+        return sum(1 for row in batch.rows.all() if row.data.get("_duplicate_type") == "INTAKE")
 
     def get_removed_duplicates(self, batch):
         return sum(1 for row in batch.rows.all() if row.resolution == UploadRow.Resolution.SKIP and row.data.get("_duplicate_type"))
@@ -56,12 +60,10 @@ class UploadRowSerializer(serializers.ModelSerializer):
         return row.data.get("_duplicate_type", "")
 
 
-class ResolveRowsSerializer(serializers.Serializer):
-    rows = serializers.ListField(child=serializers.DictField(), allow_empty=False)
+class RowResolutionSerializer(serializers.Serializer):
+    id = serializers.IntegerField(min_value=1)
+    resolution = serializers.ChoiceField(choices=UploadRow.Resolution.choices)
 
-    def validate_rows(self, rows):
-        valid = {choice for choice, _ in UploadRow.Resolution.choices}
-        for row in rows:
-            if "id" not in row or row.get("resolution") not in valid:
-                raise serializers.ValidationError("Each row needs an id and valid resolution.")
-        return rows
+
+class ResolveRowsSerializer(serializers.Serializer):
+    rows = RowResolutionSerializer(many=True, allow_empty=False)

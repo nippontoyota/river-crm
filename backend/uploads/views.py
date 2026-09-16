@@ -17,7 +17,7 @@ from leads.phone_lock import lock_phones
 from .models import UploadBatch, UploadRow
 from .serializers import ResolveRowsSerializer, UploadBatchSerializer, UploadRowSerializer
 from .storage import upload_bytes
-from .tasks import parse_upload_batch, refresh_counts, delete_original
+from .tasks import classify_rows, parse_upload_batch, refresh_counts, delete_original
 
 
 def template(value):
@@ -67,7 +67,14 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
         serializer = ResolveRowsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         for item in serializer.validated_data['rows']:
-            batch.rows.filter(pk=item['id']).update(resolution=item['resolution'], resolution_explicit=True)
+            row = batch.rows.filter(pk=item['id']).first()
+            if not row:
+                raise ValidationError({'rows': 'Choose a row from this upload.'})
+            if item['resolution'] == UploadRow.Resolution.OVERWRITE and not Lead.objects.filter(pk=row.duplicate_of_id, phone=row.normalized_phone, deleted_at__isnull=True).exists():
+                raise ValidationError({'rows': 'Only a matched CRM lead can be overwritten.'})
+            row.resolution = item['resolution']
+            row.resolution_explicit = True
+            row.save(update_fields=['resolution', 'resolution_explicit'])
         refresh_counts(batch)
         return Response({'detail': 'Duplicate choices saved.', 'duplicates_found': batch.duplicates_found})
 
@@ -104,12 +111,18 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
             values, errors = validate_customer({**row.data, 'phone': row.normalized_phone, **corrections}, excel=True)
             # Preserve unresolved mapping conflicts in fields the admin did not correct.
             errors = {**{k: v for k, v in row.validation_errors.items() if k not in corrections}, **errors}
-        row.normalized_phone = values.pop('phone')
-        row.data = values
+        phone = values.pop('phone')
+        if phone != row.normalized_phone or row.validation_error:
+            row.resolution_explicit = False
+        row.normalized_phone = phone
+        row.data = {**{key: value for key, value in row.data.items() if key.startswith('_')}, **values}
         row.validation_errors = errors
         row.validation_error = ' '.join(errors.values())
         row.answers_expired = False
         row.save()
+        rows = classify_rows(batch, list(batch.rows.order_by('row_number')), preserve_choices=True)
+        UploadRow.objects.bulk_update(rows, ['data', 'duplicate_of', 'resolution', 'resolution_explicit'])
+        row.refresh_from_db()
         refresh_counts(batch)
         IntakeAudit.objects.create(actor=request.user, mapping_version=batch.mapping_version, action='excel_row_corrected')
         return Response(UploadRowSerializer(row).data)
@@ -154,6 +167,8 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
                 lead = matches.select_for_update().filter(pk=row.duplicate_of_id).first()
                 if not lead:
                     raise ValidationError({'detail': 'An overwrite target changed. Review duplicates again.'})
+                if not data['rto']:
+                    data['rto'] = lead.rto
                 for field, value in data.items():
                     setattr(lead, field, value)
                 lead.save(update_fields=[*data, 'updated_at'])

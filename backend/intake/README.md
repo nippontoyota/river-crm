@@ -124,7 +124,7 @@ Mapping rules use this schema:
 
 `fields` maps an entry ID or exact label to an approved field, a name component or `ignore`. JSON uses original labels as IDs; repeated labels have distinct identities. Excel uses `column:1`, `column:2`, etc. Meta uses original labels and occurrence suffixes when needed. `primary` selects an entry ID, including a blank primary that must be corrected. Full name takes precedence over explicitly mapped first/last names. Equivalent normalized values can share a field; conflicting values need a primary selection or correction.
 
-After saved rules, aliases normalize capitalization, whitespace, punctuation and underscores. Supported phone aliases include Phone, Ph No:, Phone Number, phone_number, Mobile, Mobile No, Contact Number and Phone Nnumber. Name aliases include Full Name and Customer Name. Email, model, city, profession and enquiry-date aliases follow the shared mapping service. There is no fuzzy matching. Integrations require explicit mappings for Location, Contact and Date. Excel preserves `location → city` and `date → enquiry_date` compatibility.
+After saved rules, aliases normalize capitalization, whitespace, punctuation and underscores. Supported phone aliases include Phone, Ph No:, Phone Number, phone_number, Mobile, Mobile No, Contact Number and Phone Nnumber. Name aliases include Full Name and Customer Name. Email, model, city, profession and enquiry-date aliases follow the shared mapping service. Column labels are not fuzzy matched; RTO values support conservative spelling correction. Integrations require explicit mappings for Location, Contact and Date. Excel preserves `location → city` and `date → enquiry_date` compatibility.
 
 Validation accepts ten-digit Indian phone numbers with separators, 12 digits beginning 91, or 11 digits beginning 0. It rejects arbitrary leading digits or letters. Name and phone are required. Optional supplied values must pass email, length, RTO, configured model/branch/activity/sub-activity and enquiry-date validation. Empty configured lists produce configuration errors for populated choice fields. Missing enquiry dates remain null; dates accept ISO and day-first formats and cannot be invalid or future. XLSX native date cells work.
 
@@ -139,6 +139,17 @@ Admin actions:
 New mapping versions apply to future receipts. To update pending receipts, select them and invoke Reprocess on the chosen version. Resolved, expired, actively processing or other-form receipts are skipped. Imported leads stay unchanged. A pending same-phone receipt waits behind the earliest matching receipt. Existing CRM leads require review. PostgreSQL phone locks also cover manual creation, customer-phone changes and Excel commit; manual capture directs phones with intake enquiries to admin review.
 
 ## Uploads and retention
+
+The downloaded CSV and bundled XLSX samples include an **RTO** column. Codes
+(`kl05`, `KL-05`, `KL 5`), office names (`Kottayam`), combined labels and clear
+spelling variations are normalized to the configured code. Unknown, ambiguous
+or conflicting code/name values stay in review for correction. Blank RTOs in
+older files remain supported, and blank RTOs do not erase an existing RTO during
+an explicit overwrite. No new database migration is needed: upload rows store
+`data.rto` in their existing JSON field, and committed leads use the indexed
+`Lead.rto` column added in migration `0014_lead_rto`. Admin, CE/SO, manager and CEO
+lead details expose that value. Correcting a row refreshes duplicate matches;
+changing its phone clears the previous duplicate decision.
 
 Uploads keep the existing batch/row review and commit endpoints. Choose a saved Excel template when uploading, or select one and reparse a ready batch. The mapping editor preserves column identities and duplicate headers. Nonempty rows with missing or unfamiliar required fields remain visible with errors. Correct rows in the upload review panel, then commit the valid rows. Default behavior skips CRM, within-file and pending-intake duplicates; admins can save explicit import/overwrite/skip decisions. Commit revalidates current choices and phone matches under a batch lock. Repeated commits create nothing further. Committed batches cannot be reparsed.
 

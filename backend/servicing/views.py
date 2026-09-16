@@ -12,7 +12,7 @@ from accounts.models import User
 from notifications.models import Notification
 from .models import ServiceEvent, ServiceRequest, Vehicle, VehicleEvent
 from .permissions import ServicePermission, VehiclePermission, visible_leads, visible_requests
-from .serializers import ActionSerializer, RequestDetailSerializer, RequestSerializer, VehicleSerializer, configured_branch, normalize_chassis, vehicle_history
+from .serializers import ActionSerializer, RequestDetailSerializer, RequestSerializer, VehicleSerializer, configured_branch, normalize_chassis, validate_vehicle_sale, vehicle_history
 
 
 class Conflict(APIException):
@@ -71,7 +71,7 @@ class VehicleViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
         actor = active_actor(self.request)
         lead = serializer.validated_data.get("related_lead")
         if lead:
-            get_object_or_404(visible_leads(actor).select_for_update(), pk=lead.pk)
+            validate_vehicle_sale(get_object_or_404(visible_leads(actor).select_for_update(), pk=lead.pk))
         serializer.validated_data.pop("reason", None)
         try:
             with transaction.atomic():
@@ -136,6 +136,7 @@ class ServiceRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
         if actor.role not in {"CRE", "SERVICE"}:
             raise PermissionDenied("CE or branch service staff record new requests.")
         vehicle = Vehicle.objects.select_for_update(of=("self",)).select_related("related_lead").get(pk=serializer.validated_data["vehicle"].pk)
+        validate_vehicle_sale(vehicle.related_lead)
         acknowledged = serializer.validated_data.pop("acknowledge_active", False)
         if vehicle.requests.exclude(status__in=["RESOLVED", "CANCELLED"]).exists() and not acknowledged:
             raise Conflict({"detail": "This scooter already has an active service request. Confirm this is a separate issue before saving.", "active_request": True})

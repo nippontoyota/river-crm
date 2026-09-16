@@ -43,6 +43,8 @@ def apply_lead_filters(queryset, filters):
         queryset = queryset.filter(branch__iexact=value.strip())
     if value := filters.get("sales_outcome"):
         queryset = queryset.filter(sales_outcome=value)
+    if filters.get("service_eligible") == "true":
+        queryset = queryset.filter(Q(sales_outcome__in=["BOOKED", "RETAILED"]) | Q(status__in=["WALKIN", "WON"]))
     for key, field in (("model", "model_interest"), ("city", "city"), ("campaign", "campaign")):
         if value := filters.get(key):
             queryset = queryset.filter(**{f"{field}__icontains": value})

@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, getLeadDetail, getSystemConfig, type CurrentUser, type LeadDetail } from "@/lib/crm";
 import { formatDateTime } from "@/lib/dates";
-import { getServiceRequest, getVehicle, serviceAction, serviceStatuses, type Page, type ServiceRequest, type Vehicle } from "@/lib/service";
+import { canAddService, getServiceRequest, getVehicle, serviceAction, serviceStatuses, type Page, type ServiceRequest, type Vehicle } from "@/lib/service";
 import { ServiceHistory, VehicleRegistration } from "./vehicle-panel";
 
 function SalePicker({ selected, onSelect }: { selected: LeadDetail | null; onSelect: (lead: LeadDetail | null) => void }) {
@@ -11,10 +11,10 @@ function SalePicker({ selected, onSelect }: { selected: LeadDetail | null; onSel
   const [matches, setMatches] = useState<{ id: number; name: string; phone: string; sales_outcome: string }[]>([]);
   const [error, setError] = useState("");
   const search = async () => {
-    try { const rows = await api<Page<{ id: number; name: string; phone: string; sales_outcome: string }>>(`/api/leads/?q=${encodeURIComponent(query)}`); setMatches(rows.results); setError(rows.results.length ? "" : "No accessible leads found."); }
+    try { const rows = await api<Page<{ id: number; name: string; phone: string; sales_outcome: string }>>(`/api/leads/?service_eligible=true&q=${encodeURIComponent(query)}`); setMatches(rows.results); setError(rows.results.length ? "" : "No booked or retailed sales found."); }
     catch (e) { setError(e instanceof Error ? e.message : "Unable to search sales."); }
   };
-  return <div className="service-sale-picker"><label>Link an existing CRM lead <small>Optional</small><div className="service-inline"><input aria-label="Search accessible sales" value={query} onChange={e => setQuery(e.target.value)} placeholder="Customer name or phone" /><button type="button" className="filter" disabled={!query.trim()} onClick={() => void search()}>Find sale</button></div></label>
+  return <div className="service-sale-picker"><label>Link a booked or retailed sale <small>Optional</small><div className="service-inline"><input aria-label="Search accessible sales" value={query} onChange={e => setQuery(e.target.value)} placeholder="Customer name or phone" /><button type="button" className="filter" disabled={!query.trim()} onClick={() => void search()}>Find sale</button></div></label>
     {selected && <p>Selected: {selected.name} · {selected.phone} <button className="filter" type="button" onClick={() => onSelect(null)}>Clear</button></p>}
     {matches.map(row => <button type="button" className="service-vehicle-choice" key={row.id} onClick={() => void getLeadDetail(row.id).then(lead => { onSelect(lead); setMatches([]); }).catch(e => setError(e.message))}><b>{row.name} · {row.phone}</b><span>#{row.id} · {row.sales_outcome}</span></button>)}
     {error && <p role="status">{error}</p>}
@@ -62,7 +62,7 @@ function NewRequest({ user, branches, onSaved, onCancel }: { user: CurrentUser; 
     catch (e) { setError(e instanceof Error ? e.message : "Unable to record request."); }
     finally { setBusy(false); }
   };
-  return <section className="service-card service-intake"><header><div><p className="eyebrow">SERVICE INTAKE</p><h2>Record a service request</h2></div><button className="filter" onClick={onCancel}>Close intake</button></header>
+  return <section className="service-card service-intake"><header><div><p className="eyebrow">SERVICE INTAKE</p><h2>Add service</h2></div><button className="filter" onClick={onCancel}>Close intake</button></header>
     <form className="service-lookup" onSubmit={lookup}><label>Chassis number<div className="service-inline"><input value={chassis} onChange={e => { setChassis(e.target.value); setVehicle(null); setUnknown(false); }} required maxLength={64} placeholder="Enter scooter chassis number" autoCapitalize="characters" /><button className="button primary" disabled={busy}>Look up scooter</button></div></label></form>
     {error && <p role="alert" className="service-error">{error}</p>}
     {unknown && <><p>No scooter found. Register it to start its service history.</p>{user.role === "CRE" && <SalePicker selected={lead} onSelect={setLead} />}<VehicleRegistration key={lead?.id || "manual"} chassis={chassis} lead={lead || undefined} onSaved={item => { setVehicle(item); setUnknown(false); }} /></>}
@@ -158,9 +158,16 @@ export function ServiceDesk({ user }: { user: CurrentUser }) {
   const [chassis, setChassis] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const canCreate = canAddService(user);
+  const startIntake = useCallback(() => { if (canCreate) { setCreating(true); setDetail(null); setError(""); } }, [canCreate]);
   const open = useCallback(async (id: number) => { try { setDetail(await getServiceRequest(id)); setCreating(false); setError(""); } catch (e) { setError(e instanceof Error ? e.message : "Unable to open request."); } }, []);
   useEffect(() => { getSystemConfig().then(config => setBranches(config.lists?.branches || [])).catch(e => setError(e.message)); }, []);
   useEffect(() => { const listener = (event: Event) => { void open((event as CustomEvent<number>).detail); }; window.addEventListener("service:open", listener); return () => window.removeEventListener("service:open", listener); }, [open]);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("addService") === "1") startIntake();
+    window.addEventListener("service:create", startIntake);
+    return () => window.removeEventListener("service:create", startIntake);
+  }, [startIntake]);
   useEffect(() => {
     let alive = true;
     const id = new URLSearchParams(window.location.search).get("request");
@@ -182,12 +189,12 @@ export function ServiceDesk({ user }: { user: CurrentUser }) {
   }, [page, status, branch, query, dateFrom, dateTo, version]);
   const lookup = async (event: FormEvent) => {
     event.preventDefault(); setError(""); setVehicle(null);
-    try { const result = await api<Page<Vehicle>>(`/api/vehicles/?chassis=${encodeURIComponent(chassis)}`); if (!result.results.length) { setError("No scooter found. Use New service request to register it."); return; } setVehicle(await getVehicle(result.results[0])); }
+    try { const result = await api<Page<Vehicle>>(`/api/vehicles/?chassis=${encodeURIComponent(chassis)}`); if (!result.results.length) { setError(canCreate ? "No scooter found. Use Add service to register it." : "No scooter found for this chassis number."); return; } setVehicle(await getVehicle(result.results[0])); }
     catch (e) { setError(e instanceof Error ? e.message : "Unable to look up scooter."); }
   };
-  return <div className="service-desk"><header className="service-page-heading"><div><p className="eyebrow">{user.role === "SERVICE" ? user.location : user.role === "CRE" ? "CE SERVICE INTAKE" : "SERVICE OVERVIEW"}</p><h1>Services</h1><p className="subtext">{user.role === "CRE" ? "Record requests, forward to a branch, and follow their progress." : user.role === "SERVICE" ? "Manage your branch’s requests and review each scooter’s history." : "Track requests and resolution across branches."}</p></div>{["CRE", "SERVICE"].includes(user.role) && <button className="button primary" onClick={() => { setCreating(true); setDetail(null); }}>＋ New service request</button>}</header>
+  return <div className="service-desk"><header className="service-page-heading"><div><p className="eyebrow">{user.role === "SERVICE" ? user.location : user.role === "CRE" ? "CE SERVICE INTAKE" : "SERVICE OVERVIEW"}</p><h1>Services</h1><p className="subtext">{user.role === "CRE" ? "Record requests, forward to a branch, and follow their progress." : user.role === "SERVICE" ? "Manage your branch’s requests and review each scooter’s history." : "Track requests and resolution across branches."}</p></div>{canCreate && <button className="button primary" onClick={startIntake}>＋ Add service</button>}</header>
     {error && <p className="service-error" role="alert">{error}</p>}
-    {creating && <NewRequest user={user} branches={branches} onCancel={() => setCreating(false)} onSaved={row => { setCreating(false); setVersion(v => v + 1); void open(row.id); }} />}
+    {canCreate && creating && <NewRequest user={user} branches={branches} onCancel={() => setCreating(false)} onSaved={row => { setCreating(false); setVersion(v => v + 1); void open(row.id); }} />}
     {detail && <RequestDetail key={`${detail.id}-${detail.revision}`} initial={detail} user={user} branches={branches} onClose={() => setDetail(null)} onChanged={() => setVersion(v => v + 1)} />}
     <section className="service-card"><form className="service-lookup" onSubmit={lookup}><label>Scooter history by chassis<div className="service-inline"><input value={chassis} onChange={e => { setChassis(e.target.value); setVehicle(null); }} required maxLength={64} placeholder="Exact chassis number" /><button className="filter">View history</button></div></label></form>
       {vehicle && <><VehicleSummary vehicle={vehicle} /><ServiceHistory rows={vehicle.history || []} />{user.role === "ADMIN" && <VehicleCorrection key={vehicle.chassis_number} vehicle={vehicle} onSaved={updated => void getVehicle(updated).then(setVehicle).catch(e => setError(e.message))} />}</>}

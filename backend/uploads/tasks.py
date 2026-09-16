@@ -7,6 +7,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from intake.mapping import map_entries, normalize_phone, parse_date, sanitize_entries
+from intake.models import Submission
+from intake.services import UNRESOLVED
 from leads.models import Lead
 from leads.serializers import configured_source
 from .models import UploadBatch, UploadRow
@@ -40,22 +42,30 @@ def read_rows(filename, content):
         workbook.close()
 
 
-def classify_rows(batch, rows):
+def classify_rows(batch, rows, preserve_choices=False):
+    phones = {row.normalized_phone for row in rows if row.normalized_phone}
     existing = {}
-    for lead in Lead.objects.filter(phone__in={row.normalized_phone for row in rows if row.normalized_phone}, deleted_at__isnull=True).only('id', 'phone').order_by('id'):
+    for lead in Lead.objects.filter(phone__in=phones, deleted_at__isnull=True).only('id', 'phone').order_by('id'):
         existing.setdefault(lead.phone, lead)
+    pending = set(Submission.objects.filter(normalized_phone__in=phones, state__in=UNRESOLVED).values_list('normalized_phone', flat=True))
     first = {}
     for row in rows:
+        previous_match = (row.duplicate_of_id, row.data.get('_duplicate_type'), row.data.get('_duplicate_label'))
+        previous_resolution = row.resolution
         for key in list(row.data):
             if key.startswith('_'):
                 del row.data[key]
         row.duplicate_of = None
         row.resolution = UploadRow.Resolution.IMPORT
+        row.duplicate_of = existing.get(row.normalized_phone) if not row.validation_error else None
         if row.validation_error:
-            continue
-        row.duplicate_of = existing.get(row.normalized_phone)
-        if row.duplicate_of:
+            pass
+        elif row.duplicate_of:
             row.data['_duplicate_type'] = 'CRM'
+            row.resolution = UploadRow.Resolution.SKIP
+        elif row.normalized_phone in pending:
+            row.data['_duplicate_type'] = 'INTAKE'
+            row.data['_duplicate_label'] = 'Pending Lead Intake enquiry'
             row.resolution = UploadRow.Resolution.SKIP
         elif row.normalized_phone in first:
             row.data['_duplicate_type'] = 'FILE'
@@ -63,6 +73,11 @@ def classify_rows(batch, rows):
             row.resolution = UploadRow.Resolution.SKIP
         else:
             first[row.normalized_phone] = row.row_number
+        current_match = (row.duplicate_of_id, row.data.get('_duplicate_type'), row.data.get('_duplicate_label'))
+        if preserve_choices and row.resolution_explicit and previous_match == current_match:
+            row.resolution = previous_resolution
+        else:
+            row.resolution_explicit = False
     return rows
 
 

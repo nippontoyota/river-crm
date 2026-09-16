@@ -18,5 +18,6 @@ class Command(BaseCommand):
             user.set_password("ServiceBrowser123!")
             user.save()
             users[name] = user
-        lead, _ = Lead.objects.get_or_create(phone="9876543210", defaults={"name": "Anjali Service Rider", "email": "anjali@example.test", "model_interest": "River Indie", "source": "Website", "branch": "Kochi", "status": "QUALIFIED", "assigned_so": users["ce"], "assigned_ps": users["so"]})
+        lead, _ = Lead.objects.get_or_create(phone="9876543210", defaults={"name": "Anjali Service Rider", "email": "anjali@example.test", "model_interest": "River Indie", "source": "Website", "branch": "Kochi", "status": "WALKIN", "sales_outcome": "BOOKED", "assigned_so": users["ce"], "assigned_ps": users["so"]})
+        Lead.objects.get_or_create(phone="9876543211", defaults={"name": "New Enquiry", "model_interest": "River Indie", "source": "Website", "branch": "Kochi", "assigned_so": users["ce"]})
         self.stdout.write(f"Service browser users ready; sales lead #{lead.pk}.")

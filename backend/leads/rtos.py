@@ -1,3 +1,7 @@
+import re
+from difflib import SequenceMatcher
+
+
 # Kerala MVD RTO / SRTO office codes, verified 2026-09-10.
 # Source: https://mvd.kerala.gov.in/en/directory
 KERALA_RTO_CHOICES = [
@@ -88,3 +92,37 @@ KERALA_RTO_CHOICES = [
     ('KL-85', 'Ramanattukara'),
     ('KL-86', 'Payyannur'),
 ]
+
+
+def normalize_rto(value):
+    """Resolve a code/name to one office; leave uncertain matches for review."""
+    raw = str(value or '').strip().casefold()
+    if not raw:
+        return ''
+    if re.fullmatch(r'[0-9]{1,2}', raw):
+        raw = f'kl{raw}'
+    code_pattern = r'\bk[\W_]*l[\W_]*([0-9]{1,3})(?![0-9])'
+    codes = {f'KL-{int(number):02d}' for number in re.findall(code_pattern, raw)}
+    if len(codes) > 1 or codes - dict(KERALA_RTO_CHOICES).keys():
+        return None
+    code = next(iter(codes), None)
+    name = re.sub(code_pattern, '', raw)
+    name = re.sub(r'\b(?:sub[\s-]*)?regional[\s-]+transport[\s-]+office\b|\b(?:s[\s-]*rto|rto|office|code|kerala)\b', '', name)
+    name = ''.join(character for character in name if character.isalnum())
+    if not name:
+        return code
+    names = {''.join(c for c in label.casefold() if c.isalnum()): key for key, label in KERALA_RTO_CHOICES}
+    names['thiruvananthapuram'] = 'KL-01'
+    match = names.get(name)
+    if not match:
+        # Short/ambiguous fragments must never guess a customer's RTO.
+        if len(name) < 5 or any(c.isdigit() for c in name):
+            return None
+        scores = {}
+        for label, key in names.items():
+            scores[key] = max(scores.get(key, 0), SequenceMatcher(None, name, label).ratio())
+        ranked = sorted(scores, key=scores.get, reverse=True)
+        if scores[ranked[0]] < 0.84 or scores[ranked[0]] - scores[ranked[1]] < 0.08:
+            return None
+        match = ranked[0]
+    return match if code is None or code == match else None

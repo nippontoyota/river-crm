@@ -2,7 +2,9 @@
 
 CE saves incoming requests and forwards them to a configured branch. Service Department users work from a shared branch queue. Admin can correct vehicle records and transfer active requests. CEO reads the all-branch overview. Sales officers see service history for their accessible leads.
 
-Chassis numbers are normalized to uppercase without whitespace and are unique. Register scooters from **Vehicle & service history** on a sale, or from service intake. New retail transitions require a linked vehicle; historical sales can be backfilled without changing their outcomes. Unlinked scooters store their own customer details. Linked scooters display current CRM contact details, while every request retains its intake snapshots.
+Chassis numbers are normalized to uppercase without whitespace and are unique. **Vehicle & service history** appears only on booked or retailed sales, never on new enquiries. CRM links and new service requests for linked vehicles require a booked or retailed sale. Register scooters on those sales or from service intake. New retail transitions require a linked vehicle; historical sales can be backfilled without changing their outcomes. Unlinked scooters store their own customer details. Linked scooters display current CRM contact details, while every request retains its intake snapshots.
+
+**Add service** is available throughout the CE workspace and in the Service Department workspace. It opens the shared intake form. Admin and CEO retain their existing management/read permissions; they cannot create service requests.
 
 ## API
 

@@ -1,4 +1,6 @@
-import { api } from "./crm";
+import { api, type CurrentUser } from "./crm";
+
+export const canAddService = (user: CurrentUser) => user.role === "CRE" || (user.role === "SERVICE" && !!user.location?.trim());
 
 export type Customer = { customer_name: string; customer_phone: string; customer_email: string };
 export type Vehicle = Customer & {

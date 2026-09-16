@@ -22,6 +22,11 @@ def configured_branch(value):
     return match
 
 
+def validate_vehicle_sale(lead):
+    if lead and lead.sales_outcome not in {"BOOKED", "RETAILED"} and lead.status not in {"WALKIN", "WON"}:
+        raise serializers.ValidationError({"related_lead": "Vehicle and service records can only be linked to a booked or retailed sale."})
+
+
 class VehicleSerializer(serializers.ModelSerializer):
     chassis_number = serializers.CharField(max_length=128)
     customer_phone = serializers.RegexField(r"^[0-9]{10}$", required=False)
@@ -43,6 +48,7 @@ class VehicleSerializer(serializers.ModelSerializer):
     def validate_related_lead(self, lead):
         if lead and not visible_leads(self.context["request"].user).filter(pk=lead.pk).exists():
             raise serializers.ValidationError("Choose a sale you have permission to access.")
+        validate_vehicle_sale(lead)
         return lead
 
     def validate(self, attrs):

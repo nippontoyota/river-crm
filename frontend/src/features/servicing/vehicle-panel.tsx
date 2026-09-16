@@ -35,11 +35,13 @@ export function VehicleRegistration({ chassis = "", lead, onSaved, onCancel }: {
 }
 
 export function VehiclePanel({ lead }: { lead: LeadDetail }) {
+  const booked = ["BOOKED", "RETAILED"].includes(lead.salesOutcome) || ["WALKIN", "WON"].includes(lead.statusCode);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selected, setSelected] = useState<Vehicle | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => { let alive = true; api<Page<Vehicle>>(`/api/vehicles/?lead=${lead.id}`).then(data => { if (alive) setVehicles(data.results); }).catch(e => { if (alive) setError(e.message); }); return () => { alive = false; }; }, [lead.id]);
+  useEffect(() => { if (!booked) return; let alive = true; api<Page<Vehicle>>(`/api/vehicles/?lead=${lead.id}`).then(data => { if (alive) setVehicles(data.results); }).catch(e => { if (alive) setError(e.message); }); return () => { alive = false; }; }, [lead.id, booked]);
+  if (!booked) return null;
   return <section className="service-vehicle-panel"><header><div><h3>Vehicle & service history</h3><p className="subtext">Record the chassis before marking this sale Retailed.</p></div><button type="button" className="filter" onClick={() => setAdding(true)}>＋ Add scooter</button></header>
     {error && <p role="alert">{error}</p>}
     {vehicles.map(vehicle => <button type="button" className="service-vehicle-choice" key={vehicle.id} onClick={() => void getVehicle(vehicle).then(setSelected).catch(e => setError(e.message))}><b>{vehicle.chassis_number}</b><span>{vehicle.model} · {vehicle.registration_number || "Registration pending"}</span></button>)}

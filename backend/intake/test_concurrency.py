@@ -53,7 +53,7 @@ class IntakeConcurrencyTests(TransactionTestCase):
 
     def batch(self, phone='9876543210'):
         batch = UploadBatch.objects.create(filename='concurrent.csv', storage_path='imports/concurrent.csv', uploaded_by=self.admin, status='READY', original_deleted_at=timezone.now())
-        UploadRow.objects.create(batch=batch, row_number=2, normalized_phone=phone, data={'name': 'Excel Customer', 'source': 'WEBSITE'})
+        UploadRow.objects.create(batch=batch, row_number=2, normalized_phone=phone, data={'name': 'Excel Customer', 'source': 'WEBSITE', 'rto': 'Kottayam'})
         return batch
 
     def commit(self, batch):
@@ -91,6 +91,14 @@ class IntakeConcurrencyTests(TransactionTestCase):
         results = self.race(lambda: self.commit(batch), lambda: self.commit(batch))
         self.assertEqual(sum(result['created'] for result in results), 1)
         self.assertEqual(Lead.objects.count(), 1)
+        self.assertEqual(Lead.objects.get().rto, 'KL-05')
+
+    def test_different_batches_committed_simultaneously_skip_same_phone(self):
+        first, second = self.batch(), self.batch()
+        results = self.race(lambda: self.commit(first), lambda: self.commit(second))
+        self.assertEqual(sum(result['created'] for result in results), 1)
+        self.assertEqual(sum(result['skipped'] for result in results), 1)
+        self.assertEqual(Lead.objects.get().rto, 'KL-05')
 
     def test_manual_and_intake_race(self):
         receipt_id = self.accept()

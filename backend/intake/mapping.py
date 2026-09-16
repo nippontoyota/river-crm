@@ -13,6 +13,7 @@ from rest_framework.exceptions import ValidationError
 
 from leads.models import Lead, SystemConfig
 from leads.serializers import configured_source
+from leads.rtos import normalize_rto
 
 FIELDS = ('name', 'phone', 'email', 'model_interest', 'city', 'rto', 'profession', 'branch', 'enquiry_date', 'campaign', 'source_label', 'activity', 'sub_activity')
 COMPONENTS = ('first_name', 'last_name')
@@ -29,6 +30,7 @@ for destination, names in {
     'email': ['Email', 'E-mail', 'Email Address'],
     'model_interest': ['Model', 'Vehicle Interest', 'Interested Model', 'Model / Vehicle Interest'],
     'city': ['City', 'Town'], 'profession': ['Profession', 'Occupation'],
+    'rto': ['RTO Name', 'RTO / SRTO', 'RTO Code', 'RTO Information', 'Regional Transport Office'],
     'enquiry_date': ['Enquiry Date', 'Inquiry Date'],
 }.items():
     ALIASES.update({normalize_label(name): destination for name in names})
@@ -131,6 +133,9 @@ def parse_date(value):
 def validate_customer(values, excel=False):
     allowed = FIELDS + (('source',) if excel else ())
     data = {key: string(values.get(key)) for key in allowed}
+    rto = normalize_rto(data['rto'])
+    if rto is not None:
+        data['rto'] = rto
     errors = {}
     if not data['name']:
         errors['name'] = 'Name is required.'
@@ -153,7 +158,7 @@ def validate_customer(values, excel=False):
     except ValueError as error:
         errors['enquiry_date'] = str(error)  # Static messages; never include the supplied value.
     if data['rto'] and data['rto'] not in dict(Lead._meta.get_field('rto').choices):
-        errors['rto'] = 'Choose an approved RTO.'
+        errors['rto'] = 'RTO could not be matched unambiguously. Use an approved code or office name, such as KL-05 or Kottayam.'
     lists = SystemConfig.objects.filter(pk=1).values_list('lists', flat=True).first() or {}
     for field, name in (('model_interest', 'models'), ('activity', 'activities'), ('branch', 'branches')):
         if data[field]:
@@ -178,6 +183,8 @@ def validate_customer(values, excel=False):
 
 
 def equivalent(field, value):
+    if field == 'rto':
+        return normalize_rto(value) or value.casefold()
     if field == 'phone':
         return normalize_phone(value) or value.casefold()
     if field == 'enquiry_date':

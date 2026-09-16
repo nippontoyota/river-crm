@@ -68,11 +68,11 @@ const optionsWithCurrent = (options: string[], current = "") => {
   const value = current.trim();
   return value && !options.includes(value) ? [value, ...options] : options;
 };
-const downloadLeadSample = (source: string) => {
+const downloadLeadSample = (source: string, model: string) => {
   const leadSampleRows = [
-    ["name", "phone", "email", "source", "campaign", "model", "city", "enquiry date"],
-    ["Aarav Sharma", "9876543210", "aarav@example.com", source, "Campaign name", "Admin model name", "Kochi", "22/08/2026"],
-    ["Ananya Reddy", "9876543211", "ananya@example.com", source, "Campaign name", "Admin model name", "Thrissur", "22/08/2026"],
+    ["name", "phone", "email", "source", "campaign", "model", "city", "enquiry date", "RTO"],
+    ["Aarav Sharma", "9876543210", "aarav@example.com", source, "Campaign name", model, "Kochi", formatDate(new Date()), "kl07"],
+    ["Ananya Reddy", "9876543211", "ananya@example.com", source, "Campaign name", model, "Thrissur", formatDate(new Date()), "Thrissur"],
   ];
   const csv = leadSampleRows.map(row => row.map(value => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -463,7 +463,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
       const nextUpload = summary.status === "READY" ? await getUpload(upload.id, true) : summary;
       setUpload(nextUpload);
       if (nextUpload.status === "READY" && nextUpload.removed_duplicates > 0) {
-        setNotice(`${nextUpload.removed_duplicates} duplicate ${nextUpload.removed_duplicates === 1 ? "row was" : "rows were"} removed: ${nextUpload.crm_duplicates_found} already in CRM, ${nextUpload.file_duplicates_found} repeated in this file.`);
+        setNotice(`${nextUpload.removed_duplicates} duplicate ${nextUpload.removed_duplicates === 1 ? "row was" : "rows were"} skipped: ${nextUpload.crm_duplicates_found} already in CRM, ${nextUpload.file_duplicates_found} repeated in this file, ${nextUpload.intake_duplicates_found || 0} pending in Lead Intake.`);
       }
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Unable to check import."); }
     finally { setCheckingUpload(false); }
@@ -481,8 +481,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
     setImportingUpload(true); setError("");
     try {
       const result = await commitUpload(upload.id);
-      const duplicateNote = upload.removed_duplicates ? ` ${upload.removed_duplicates} duplicate ${upload.removed_duplicates === 1 ? "row was" : "rows were"} skipped.` : "";
-      setUpload(null); setNotice(`${result.created} leads imported.${duplicateNote} Assign them from the pool.`);
+      setUpload(null); setNotice(`${result.created} leads imported. ${result.overwritten} existing leads updated. ${result.skipped} rows skipped. Assign new leads from the pool.`);
       setLoading(true);
       const pageResult = await getLeadsPage(leadQuery(false, false, effectiveActiveFilters, page, searchFilter, leadView, reassignmentRole));
       setLeads(pageResult.results); setTotalLeads(pageResult.count);
@@ -527,7 +526,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
         <label className="search"><span>⌕</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name or mobile..." /></label>
         <select className="filter" aria-label="Upload mapping template" value={uploadTemplate} onChange={event => setUploadTemplate(event.target.value)}><option value="">Automatic upload mapping</option>{uploadTemplates.map(mapping => <option key={mapping.id} value={mapping.id}>{mapping.template_name} · v{mapping.version}</option>)}</select>
         <label className="button filter bulk-upload-button">{uploading ? "Uploading…" : "Bulk Upload"}<input hidden type="file" accept=".xlsx,.csv" onChange={event => void selectFile(event.target.files?.[0])} /></label>
-        <button className="filter sample-download" onClick={() => downloadLeadSample(sourceOptions.find(item => item !== "WALKIN") || "WALKIN")}>Download sample format</button>
+        <button className="filter sample-download" onClick={() => downloadLeadSample(sourceOptions.find(item => item !== "WALKIN") || "WALKIN", models[0] || "")}>Download sample format</button>
       </section>
       <section className="lead-filters admin-lead-filters">
         <div className="lead-filters-grid">
@@ -572,11 +571,11 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
         </div>
         {upload.removed_duplicates > 0 && (
           <div style={{ marginTop: "1rem" }}>
-            <p className="subtext">{upload.removed_duplicates} duplicate {upload.removed_duplicates === 1 ? "row was" : "rows were"} removed automatically: {upload.crm_duplicates_found} already in CRM, {upload.file_duplicates_found} repeated inside this file.</p>
-            {removedDuplicateRows.length > 0 && <div style={{ display: "grid", gap: ".5rem", marginTop: ".75rem" }}>{removedDuplicateRows.map(row => <div key={row.id} className="lead-summary"><b>Row {row.row_number} · {row.data.name || "Unnamed lead"}</b><span>{row.duplicate_type === "CRM" ? "Already in CRM" : "Duplicate in Excel"}</span><small>{row.normalized_phone} · Matches {row.existing_name || "matching lead"}</small></div>)}</div>}
+            <p className="subtext">{upload.removed_duplicates} duplicate {upload.removed_duplicates === 1 ? "row is" : "rows are"} skipped: {upload.crm_duplicates_found} already in CRM, {upload.file_duplicates_found} repeated inside this file, {upload.intake_duplicates_found || 0} pending in Lead Intake.</p>
+            {removedDuplicateRows.length > 0 && <div style={{ display: "grid", gap: ".5rem", marginTop: ".75rem" }}>{removedDuplicateRows.map(row => <div key={row.id} className="lead-summary"><b>Row {row.row_number} · {row.data.name || "Unnamed lead"}</b><span>{row.duplicate_type === "CRM" ? "Already in CRM" : row.duplicate_type === "INTAKE" ? "Pending in Lead Intake" : "Duplicate in file"}</span><small>{row.normalized_phone} · Matches {row.existing_name || "matching lead"}</small></div>)}</div>}
           </div>
         )}
-        {duplicateRows.length > 0 && <div style={{ marginTop: "1rem" }}><p className="subtext">Duplicates need review. Remove them from this import to keep the existing lead.</p><button className="filter" onClick={() => void removeDuplicates(duplicateRows.map(row => row.id))}>Remove all duplicates</button><div style={{ display: "grid", gap: ".5rem", marginTop: ".75rem" }}>{duplicateRows.map(row => <div key={row.id} className="lead-summary"><b>Row {row.row_number} · {row.data.name || "Unnamed lead"}</b><span>{row.duplicate_type === "CRM" ? "Already in CRM" : "Duplicate in Excel"}</span><small>{row.normalized_phone} · Matches {row.existing_name || "matching lead"}</small><button className="row-action" onClick={() => void removeDuplicates([row.id])}>Remove duplicate</button></div>)}</div></div>}
+        {duplicateRows.length > 0 && <div style={{ marginTop: "1rem" }}><p className="subtext">Duplicates need review. Remove them from this import to keep the existing lead.</p><button className="filter" onClick={() => void removeDuplicates(duplicateRows.map(row => row.id))}>Remove all duplicates</button><div style={{ display: "grid", gap: ".5rem", marginTop: ".75rem" }}>{duplicateRows.map(row => <div key={row.id} className="lead-summary"><b>Row {row.row_number} · {row.data.name || "Unnamed lead"}</b><span>{row.duplicate_type === "CRM" ? "Already in CRM" : row.duplicate_type === "INTAKE" ? "Pending in Lead Intake" : "Duplicate in file"}</span><small>{row.normalized_phone} · Matches {row.existing_name || "matching lead"}</small><button className="row-action" onClick={() => void removeDuplicates([row.id])}>Remove duplicate</button></div>)}</div></div>}
         {upload.error_message && <p className="subtext">{upload.error_message}</p>}
         <UploadReview key={upload.id} batch={upload} onChange={setUpload} />
       </section>
@@ -616,6 +615,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
                 <span><small>Customer name</small><b>{activeLead.name}</b></span>
                 <span><small>Mobile</small><b>{activeLead.phone}</b></span><span><small>Activity</small><b>{leadDetail?.activity || "—"}</b></span><span><small>Sub-activity</small><b>{leadDetail?.sub_activity || "—"}</b></span>
                 <span><small>Model</small><b>{activeLead.model}</b></span>
+                <span><small>RTO</small><b>{rtoOptions.find(option => option.value === activeLead.rto)?.label || activeLead.rto || "—"}</b></span>
                 <span><small>Color variant</small><b>{leadDetail?.qualification?.variant || "—"}</b></span>
                 <span><small>Buying plan</small><b>{leadDetail?.qualification?.buying_timeline || "—"}</b></span>
                 <span><small>Finance</small><b>{leadDetail?.qualification?.finance_type || "—"}</b></span>
