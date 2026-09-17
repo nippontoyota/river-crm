@@ -149,7 +149,7 @@ class LeadSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Lead
-        fields = ["id", "uid", "name", "phone", "email", "source", "source_label", "campaign", "activity", "sub_activity", "test_drive_completed_at", "model_interest", "city", "rto", "branch", "enquiry_date", "status", "category", "sales_outcome", "assigned_so", "assigned_so_name", "assigned_ps", "assigned_ps_name", "generated_by", "ps_officer_id", "next_follow_up", "call_count", "qualification", "qualification_input", "flagged_to_manager", "needs_cre_reassignment", "needs_so_reassignment", "profession", "created_at", "updated_at"]
+        fields = ["id", "uid", "name", "phone", "email", "source", "source_label", "campaign", "activity", "sub_activity", "test_drive_completed_at", "model_interest", "city", "pincode", "rto", "branch", "enquiry_date", "status", "category", "sales_outcome", "assigned_so", "assigned_so_name", "assigned_ps", "assigned_ps_name", "generated_by", "ps_officer_id", "next_follow_up", "call_count", "qualification", "qualification_input", "flagged_to_manager", "needs_cre_reassignment", "needs_so_reassignment", "profession", "created_at", "updated_at"]
         read_only_fields = ["test_drive_completed_at", "uid", "assigned_so", "assigned_ps", "generated_by", "needs_cre_reassignment", "needs_so_reassignment", "created_at", "updated_at"]
         extra_kwargs = {"source": {"required": True}}
 
@@ -300,6 +300,7 @@ class SOLeadUpdateSerializer(serializers.Serializer):
     campaign = serializers.CharField(max_length=160, required=False, allow_blank=True)
     model_interest = serializers.CharField(max_length=100, required=False, allow_blank=True)
     city = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    pincode = serializers.CharField(max_length=6, required=False, allow_blank=True, validators=Lead._meta.get_field("pincode").validators)
     status = serializers.ChoiceField(choices=Lead.Status.choices, required=False, allow_blank=True)
     category = serializers.ChoiceField(choices=Lead.Category.choices, required=False)
     sales_outcome = serializers.ChoiceField(choices=Lead.SalesOutcome.choices, required=False)

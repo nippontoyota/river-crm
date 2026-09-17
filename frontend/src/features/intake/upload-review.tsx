@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { getUpload, resolveUploadDuplicates, type UploadBatch } from '@/lib/crm';
 
-const fieldLabels: Record<string, string> = { name: 'Name', phone: 'Phone', email: 'Email', source: 'Source', model_interest: 'Model', city: 'City', rto: 'RTO', enquiry_date: 'Enquiry date', campaign: 'Campaign' };
+const fieldLabels: Record<string, string> = { name: 'Name', phone: 'Phone', email: 'Email', source: 'Source', model_interest: 'Model', city: 'City', pincode: 'Pincode', rto: 'RTO', enquiry_date: 'Enquiry date', campaign: 'Campaign' };
 
 export function UploadReview({ batch, onChange, disabled, onBusyChange }: { batch: UploadBatch; onChange: (batch: UploadBatch) => void; disabled: boolean; onBusyChange: (busy: boolean) => void }) {
   const [error, setError] = useState('');

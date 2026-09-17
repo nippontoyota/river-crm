@@ -15,7 +15,7 @@ from leads.models import Lead, SystemConfig
 from leads.serializers import configured_source
 from leads.rtos import normalize_rto
 
-FIELDS = ('name', 'phone', 'email', 'model_interest', 'city', 'rto', 'profession', 'branch', 'enquiry_date', 'campaign', 'source_label', 'activity', 'sub_activity')
+FIELDS = ('name', 'phone', 'email', 'model_interest', 'city', 'pincode', 'rto', 'profession', 'branch', 'enquiry_date', 'campaign', 'source_label', 'activity', 'sub_activity')
 COMPONENTS = ('first_name', 'last_name')
 
 
@@ -153,6 +153,10 @@ def validate_customer(values, excel=False):
             validate_email(data['email'])
         except DjangoValidationError:
             errors['email'] = 'Enter a valid email address.'
+    try:
+        Lead._meta.get_field('pincode').run_validators(data['pincode'])
+    except DjangoValidationError as error:
+        errors['pincode'] = error.messages[0]
     try:
         data['enquiry_date'] = parse_date(data['enquiry_date'])
     except ValueError as error:

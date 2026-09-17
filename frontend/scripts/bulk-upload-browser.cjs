@@ -33,7 +33,7 @@ if (![apiBase, webBase].every(url => ['localhost', '127.0.0.1'].includes(new URL
     });
     await click('Download sample format');
     const sample = await page.evaluate(() => window.sampleCsv);
-    assert.equal(sample.split('\n')[0], '"name","phone","email","source","enquiry date"');
+    assert.equal(sample.split('\n')[0], '"name","phone","email","source","enquiry date","city","pincode"');
     const existingLead = (await admin('/api/leads/?q=9876543299')).data.results[0];
     const selectCsv = async (csv) => {
       await page.$eval('input[type=file]', (input, content) => {

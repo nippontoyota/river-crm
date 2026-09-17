@@ -1,6 +1,6 @@
 import { api } from './crm';
 
-export const customerFields = ['name', 'phone', 'email', 'model_interest', 'city', 'rto', 'profession', 'branch', 'enquiry_date', 'campaign', 'source_label', 'activity', 'sub_activity'] as const;
+export const customerFields = ['name', 'phone', 'email', 'model_interest', 'city', 'pincode', 'rto', 'profession', 'branch', 'enquiry_date', 'campaign', 'source_label', 'activity', 'sub_activity'] as const;
 export type CustomerField = typeof customerFields[number];
 export type CustomerValues = Partial<Record<CustomerField, string | null>>;
 export type IntakeState = 'RECEIVED' | 'PROCESSING' | 'NEEDS_REVIEW' | 'IMPORTED' | 'LINKED' | 'FAILED' | 'DISMISSED';

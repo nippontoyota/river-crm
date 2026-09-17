@@ -15,8 +15,8 @@ from .storage import delete_paths, download_bytes
 
 
 # These headings match Download sample format. No aliases or saved mappings.
-HEADINGS = ('name', 'phone', 'email', 'source', 'enquiry date')
-COLUMNS = ('name', 'phone', 'email', 'source', 'enquiry_date')
+HEADINGS = ('name', 'phone', 'email', 'source', 'enquiry date', 'city', 'pincode')
+COLUMNS = ('name', 'phone', 'email', 'source', 'enquiry_date', 'city', 'pincode')
 
 
 class FileFormatError(ValueError):

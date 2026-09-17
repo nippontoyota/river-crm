@@ -88,7 +88,7 @@ if (![apiBase, webBase].every(url => ['127.0.0.1', 'localhost'].includes(new URL
     await page.screenshot({ path: '/tmp/crm-intake-desktop.png', fullPage: true });
     await page.goto(webBase + '/leads');
     await page.waitForFunction(name => document.body.textContent.includes(name), {}, 'Browser Valid ' + stamp);
-    const headers = 'name,phone,email,source,enquiry date\n';
+    const headers = 'name,phone,email,source,enquiry date,city,pincode\n';
     await page.waitForSelector('input[type=file]');
     const uploadCsv = content => page.$eval('input[type=file]', (input, csv) => {
       const transfer = new DataTransfer();
@@ -96,9 +96,9 @@ if (![apiBase, webBase].every(url => ['127.0.0.1', 'localhost'].includes(new URL
       input.files = transfer.files;
       input.dispatchEvent(new Event('change', { bubbles: true }));
     }, content);
-    await uploadCsv(headers + 'Spreadsheet Customer,,,WEBSITE,\n');
+    await uploadCsv(headers + 'Spreadsheet Customer,,,WEBSITE,,,\n');
     await page.waitForFunction(() => document.body.textContent.includes('Fix 1 row'));
-    await uploadCsv(headers + `Spreadsheet Customer,${phone4},,WEBSITE,\n`);
+    await uploadCsv(headers + `Spreadsheet Customer,${phone4},,WEBSITE,,,\n`);
     await page.waitForFunction(() => document.querySelector('.upload-review')?.textContent.includes('No duplicate phone numbers or invalid rows found.'));
     await click('Import leads');
     await page.waitForFunction(() => document.body.textContent.includes('1 leads imported.'));

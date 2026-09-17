@@ -108,7 +108,7 @@ Reference: [Meta's maintained Python SDK form model](https://github.com/facebook
 
 ## Mapping and review
 
-The shared customer fields are `name`, `phone`, `email`, `model_interest`, `city`, `rto`, `profession`, `branch`, `enquiry_date`, `campaign`, `source_label`, `activity`, and `sub_activity`. Integration configuration supplies source. Excel also accepts `source` and validates it against Admin Lists.
+The shared customer fields are `name`, `phone`, `email`, `model_interest`, `city`, `pincode`, `rto`, `profession`, `branch`, `enquiry_date`, `campaign`, `source_label`, `activity`, and `sub_activity`. Integration configuration supplies source. Excel also accepts `source` and validates it against Admin Lists.
 
 Mapping rules use this schema:
 
@@ -140,19 +140,16 @@ New mapping versions apply to future receipts. To update pending receipts, selec
 
 ## Uploads and retention
 
-The downloaded CSV and bundled XLSX samples include an **RTO** column. Codes
-(`kl05`, `KL-05`, `KL 5`), office names (`Kottayam`), combined labels and clear
-spelling variations are normalized to the configured code. Unknown, ambiguous
-or conflicting code/name values stay in review for correction. Blank RTOs in
-older files remain supported, and blank RTOs do not erase an existing RTO during
-an explicit overwrite. No new database migration is needed: upload rows store
-`data.rto` in their existing JSON field, and committed leads use the indexed
-`Lead.rto` column added in migration `0014_lead_rto`. Admin, CE/SO, manager and CEO
-lead details expose that value. Bulk upload values are corrected offline and uploaded again.
+City and pincode use the shared lead fields. Apply migration `0019_lead_pincode`
+before importing the updated sample. City permits up to 100 characters; a supplied
+pincode must be six ASCII digits with a nonzero first digit. Both values may be
+blank. CSV text and numeric XLSX pincodes are normalized to strings, and blank
+optional values do not erase saved values during approved duplicate updates.
+Admin, CE/SO, manager and CEO lead details expose the saved city and pincode.
 
-Bulk uploads use the fixed sample headings: `name, phone, email, source, enquiry date`. All headings must be present once; optional values may be blank. Unknown, missing, repeated and blank headings are rejected with specific reasons. There are no mapping templates, heading aliases, reparse actions or in-app spreadsheet edits. Download the sample, correct invalid headings or row values offline, then upload again. Invalid rows block the whole import.
+Bulk uploads use the fixed sample headings: `name, phone, email, source, enquiry date, city, pincode`. All headings must be present once; optional values may be blank. Unknown, missing, repeated and blank headings are rejected with specific reasons. There are no mapping templates, heading aliases, reparse actions or in-app spreadsheet edits. Download the sample, correct invalid headings or row values offline, then upload again. Invalid rows block the whole import.
 
-Phone number is the bulk import identity. Country-code and local-prefix formatting is normalized before checking duplicates within the file, existing CRM leads and pending intake. Only Admin can upload, approve/reject duplicates, and commit. Approving a CRM match updates that same lead's supplied customer details, preserving sales status, assignments, fields outside the sample and blank optional fields. Approving one repeated phone selects that row and skips its siblings. Reject skips a row. Separate leads with the same phone cannot be created through bulk upload. The importer checks matches again under the shared phone lock; changed matches return to review without a partial import. Repeated commits create nothing further. Existing database IDs and integration receipt workflows are unchanged.
+Phone number is the bulk import identity. Country-code and local-prefix formatting is normalized before checking duplicates within the file, existing CRM leads and pending intake. Admin can manage any upload; Meta Uploader accounts can upload, approve/reject duplicates, and commit only their own batches. Approving a CRM match updates that same lead's supplied customer details, preserving sales status, assignments, fields outside the sample and blank optional fields. Approving one repeated phone selects that row and skips its siblings. Reject skips a row. Separate leads with the same phone cannot be created through bulk upload. The importer checks matches again under the shared phone lock; changed matches return to review without a partial import. Repeated commits create nothing further. Existing database IDs and integration receipt workflows are unchanged.
 
 Original spreadsheets are deleted after parsing (including failed parsing); failed deletions are retried by retention. Bulk uploads retain validated customer fields for review, without raw mapping answers. Resolved intake receipts and committed batches drop temporary answers; unresolved answers and bulk row input expire after 30 days. Expired input must be uploaded or supplied again. The worker does not refetch expired Meta answers. Retention runs hourly, independently of the intake enable flag.
 

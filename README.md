@@ -3,11 +3,15 @@
 Admins can create a **Meta Uploader** account from **Users**. This company-wide
 role signs in to `/bulk-upload` and can upload CSV/XLSX files, review duplicates,
 and import its own batches. It has no access to lead lists, assignments, reports,
-or other users' uploads. The existing sample format stays unchanged:
-`name, phone, email, source, enquiry date`. New leads enter the unassigned pool;
+or other users' uploads. Both upload screens use the same sample format:
+`name, phone, email, source, enquiry date, city, pincode`. New leads enter the unassigned pool;
 approved duplicate updates preserve ownership and sales status. Admins can disable,
 enable, or delete uploader accounts while retaining upload and lead history.
-Apply the accounts migration before using this role.
+Apply the accounts migration before using this role and lead migration `0019_lead_pincode`
+before using the updated bulk format. All seven headings are required; city and
+pincode values may be blank. City allows up to 100 characters. A supplied pincode
+must contain six digits starting with 1–9. Both upload roles use the same validation
+and save these fields on the shared lead record.
 
 The uploader dashboard shows all-time imported leads, approved updates, files
 awaiting import, and uploaded files for the signed-in account. Recent uploads can

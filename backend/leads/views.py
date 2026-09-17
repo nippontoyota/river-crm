@@ -366,7 +366,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             return Response({"detail": "This status transition is not allowed."}, status=status.HTTP_400_BAD_REQUEST)
         if not request.user.is_admin and request.user.role == User.Role.SALES_OFFICER and data.get("qualification"):
             return Response({"detail": "PS/SO users cannot edit CE qualification details."}, status=status.HTTP_403_FORBIDDEN)
-        editable_fields = ("name", "phone", "email", "source", "source_label", "campaign", "activity", "sub_activity", "model_interest", "city", "branch", "enquiry_date", "flagged_to_manager")
+        editable_fields = ("name", "phone", "email", "source", "source_label", "campaign", "activity", "sub_activity", "model_interest", "city", "pincode", "branch", "enquiry_date", "flagged_to_manager")
         before = {field: audit_value(getattr(lead, field)) for field in ("status", "category", "sales_outcome", *editable_fields)}
         with transaction.atomic():
             if "phone" in data and data["phone"] != lead.phone:

@@ -583,6 +583,8 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
               <div className="sales-info-grid" style={{ marginTop: "1rem" }}>
                 <span><small>Customer name</small><b>{activeLead.name}</b></span>
                 <span><small>Mobile</small><b>{activeLead.phone}</b></span><span><small>Activity</small><b>{leadDetail?.activity || "—"}</b></span><span><small>Sub-activity</small><b>{leadDetail?.sub_activity || "—"}</b></span>
+                <span><small>City</small><b>{activeLead.city || "—"}</b></span>
+                <span><small>Pincode</small><b>{activeLead.pincode || "—"}</b></span>
                 <span><small>Model</small><b>{activeLead.model}</b></span>
                 <span><small>RTO</small><b>{rtoOptions.find(option => option.value === activeLead.rto)?.label || activeLead.rto || "—"}</b></span>
                 <span><small>Color variant</small><b>{leadDetail?.qualification?.variant || "—"}</b></span>

@@ -313,7 +313,7 @@ class IntakeTests(TestCase):
             self.assertEqual(raised.exception.pause, pause); self.assertNotIn('private', str(raised.exception))
 
     def test_bulk_upload_rejects_duplicate_headings_without_mapping(self):
-        content = b'name,phone,phone,source,enquiry date\nCustomer,9876543210,9876543211,website,\n'
+        content = b'name,phone,phone,source,enquiry date,city,pincode\nCustomer,9876543210,9876543211,website,,,\n'
         batch = UploadBatch.objects.create(filename='test.csv', storage_path='imports/test.csv', uploaded_by=self.admin)
         with patch('uploads.tasks.download_bytes', return_value=content):
             parse_upload_batch.run(batch.pk)
@@ -325,7 +325,7 @@ class IntakeTests(TestCase):
 
     def test_excel_retention_after_file_removed_and_manual_pending_guard(self):
         batch = UploadBatch.objects.create(filename='test.csv', storage_path='imports/test.csv', uploaded_by=self.admin)
-        with patch('uploads.tasks.download_bytes', return_value=b'name,phone,email,source,enquiry date\nCustomer,bad,,website,\n'):
+        with patch('uploads.tasks.download_bytes', return_value=b'name,phone,email,source,enquiry date,city,pincode\nCustomer,bad,,website,,,\n'):
             parse_upload_batch.run(batch.pk)
         UploadBatch.objects.filter(pk=batch.pk).update(created_at=timezone.now() - timedelta(days=31), original_deleted_at=timezone.now())
         purge_expired_answers.run(); self.assertTrue(batch.rows.get().answers_expired)

@@ -121,9 +121,9 @@ export function BulkUploadPage() {
       </section>
       <aside className="panel uploader-guide">
         <p className="eyebrow">BEFORE YOU UPLOAD</p><h2>One format. Every lead.</h2>
-        <p className="subtext">Keep these five column headings exactly as shown in the sample.</p>
-        <div className="uploader-columns">{["name", "phone", "email", "source", "enquiry date"].map(field => <code key={field}>{field}</code>)}</div>
-        <dl><div><dt>Phone</dt><dd>Used to find repeated and existing leads.</dd></div><div><dt>Source</dt><dd>Use a configured source, such as META.</dd></div><div><dt>Enquiry date</dt><dd>DD/MM/YYYY, for example 17/09/2026.</dd></div></dl>
+        <p className="subtext">Keep these seven column headings exactly as shown in the sample.</p>
+        <div className="uploader-columns">{["name", "phone", "email", "source", "enquiry date", "city", "pincode"].map(field => <code key={field}>{field}</code>)}</div>
+        <dl><div><dt>City</dt><dd>Up to 100 characters. Leave blank if unknown.</dd></div><div><dt>Pincode</dt><dd>Six digits, starting with 1–9. Leave blank if unknown.</dd></div><div><dt>Phone</dt><dd>Used to find repeated and existing leads.</dd></div><div><dt>Source</dt><dd>Use a configured source, such as META.</dd></div><div><dt>Enquiry date</dt><dd>DD/MM/YYYY, for example 17/09/2026.</dd></div></dl>
         <div className="uploader-handoff"><span aria-hidden="true">✓</span><p><b>Connected to your CRM</b>After you select Import leads, new leads appear in the admin pool. Existing assignment and reporting rules apply.</p></div>
       </aside>
     </div>

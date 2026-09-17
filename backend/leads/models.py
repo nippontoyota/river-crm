@@ -1,6 +1,7 @@
 import uuid
 
 from django.conf import settings
+from django.core.validators import RegexValidator
 from django.db import models, transaction
 
 from .rtos import KERALA_RTO_CHOICES
@@ -51,6 +52,9 @@ class Lead(models.Model):
     test_drive_completed_at = models.DateTimeField(null=True, blank=True)
     model_interest = models.CharField(max_length=100, blank=True)
     city = models.CharField(max_length=100, blank=True)
+    pincode = models.CharField(max_length=6, blank=True, validators=[RegexValidator(
+        regex=r"\A[1-9][0-9]{5}\Z", message="Enter a six-digit pincode starting with 1–9.",
+    )])
     rto = models.CharField(max_length=5, choices=KERALA_RTO_CHOICES, blank=True, db_index=True)
     profession = models.CharField(max_length=100, blank=True)
     branch = models.CharField(max_length=120, blank=True)

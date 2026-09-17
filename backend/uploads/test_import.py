@@ -52,6 +52,8 @@ class RtoNormalizationTests(SimpleTestCase):
 @override_settings(PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'], SUPABASE_URL='', SUPABASE_SECRET_KEY='')
 class BulkImportTests(TestCase):
     def setUp(self):
+        caches['default'].clear()
+        self.addCleanup(caches['default'].clear)
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         storage = self.settings(BASE_DIR=Path(directory.name))
@@ -106,7 +108,7 @@ class BulkImportTests(TestCase):
         return Submission.objects.create(connection=connection, form=form, identity=phone, external_id=phone, source='WEBSITE', normalized_phone=phone, state='NEEDS_REVIEW')
 
     def test_sample_csv_and_xlsx_import_customer_fields(self):
-        self.assertEqual(HEADINGS, ('name', 'phone', 'email', 'source', 'enquiry date'))
+        self.assertEqual(HEADINGS, ('name', 'phone', 'email', 'source', 'enquiry date', 'city', 'pincode'))
         SystemConfig.objects.filter(pk=1).update(lists={'sources': ['WEBSITE', 'META']})
         for index, extension in enumerate(['csv', 'xlsx']):
             with self.subTest(extension=extension):
@@ -127,14 +129,86 @@ class BulkImportTests(TestCase):
                 self.assertTrue(OperationEvent.objects.filter(lead=lead, snapshot__rto='').exists())
                 self.assertTrue(self.commit(batch).data['already_committed'])
 
+    def test_both_bulk_roles_save_city_and_pincode_in_csv_and_xlsx(self):
+        ce = User.objects.create_user(email='location-ce@example.com', role='CRE')
+        ceo = User.objects.create_user(email='location-ceo@example.com', role='CEO')
+        uploader = User.objects.create_user(email='location-uploader@example.com', role='META_UPLOADER')
+        for index, user in enumerate([self.admin, uploader]):
+            for offset, extension in enumerate(['csv', 'xlsx']):
+                with self.subTest(role=user.role, extension=extension):
+                    self.client.force_authenticate(user)
+                    batch = self.upload([self.customer(phone=f'98765432{index}{offset}', city='  Kochi / കൊച്ചി  ', pincode=682001 if extension == 'xlsx' else ' 682001 ')], extension=extension)
+                    row = batch.rows.get()
+                    self.assertEqual((row.data['city'], row.data['pincode']), ('Kochi / കൊച്ചി', '682001'))
+                    self.assertEqual(self.commit(batch).data['created'], 1)
+                    lead = Lead.objects.get(phone=row.normalized_phone)
+                    self.assertEqual((lead.city, lead.pincode), ('Kochi / കൊച്ചി', '682001'))
+                    self.client.force_authenticate(self.admin)
+                    pool = self.client.get(f'/api/leads/?unassigned=true&q={lead.phone}').data['results'][0]
+                    self.assertEqual((pool['city'], pool['pincode']), (lead.city, lead.pincode))
+                    self.client.post(f'/api/leads/{lead.pk}/assign/', {'sales_officer_id': ce.pk}, format='json')
+                    for reader, path in [(ce, f'/api/leads/{lead.pk}/'), (ceo, f'/api/ceo/leads/{lead.pk}/')]:
+                        self.client.force_authenticate(reader)
+                        detail = self.client.get(path)
+                        self.assertEqual(detail.status_code, 200)
+                        self.assertEqual((detail.data['city'], detail.data['pincode']), (lead.city, lead.pincode))
+
+    def test_bulk_location_validation_blocks_all_rows_until_corrected(self):
+        for role in ['ADMIN', 'META_UPLOADER']:
+            user = User.objects.create_user(email=f'location-validation-{role}@example.com', role=role)
+            self.client.force_authenticate(user)
+            for extension in ['csv', 'xlsx']:
+                for values, field in [({'city': 'x' * 101}, 'city'), *[({'pincode': value}, 'pincode') for value in ['12345', '1234567', '012345', '682 001', 'ABC123', '６８２００１', '-682001', '682001.5']]]:
+                    with self.subTest(role=role, extension=extension, values=values):
+                        batch = self.upload([self.customer(**values), self.customer(phone='9876543211', city='Kochi', pincode='682001')], extension=extension)
+                        self.assertIn(field, batch.rows.get(row_number=2).validation_errors)
+                        self.assertEqual(self.commit(batch).status_code, 400)
+                        self.assertFalse(Lead.objects.exists())
+        blank = self.upload([self.customer(city='', pincode='')])
+        self.assertEqual(self.commit(blank).data['created'], 1)
+        self.assertEqual(Lead.objects.get().pincode, '')
+
+    def test_duplicate_location_updates_preserve_blank_values_and_revalidate(self):
+        lead = Lead.objects.create(name='Existing', phone='9876543210', city='Kochi', pincode='682001', assigned_so=self.admin, status='QUALIFIED')
+        self.sign_in_uploader()
+        batch = self.upload([self.customer(city='Kottayam', pincode='686001')])
+        self.choose(batch.rows.get(), 'APPROVE')
+        self.assertEqual(self.commit(batch).data['overwritten'], 1)
+        lead.refresh_from_db()
+        self.assertEqual((lead.city, lead.pincode, lead.assigned_so_id, lead.status), ('Kottayam', '686001', self.admin.pk, 'QUALIFIED'))
+        audit = lead.audit_events.get(event='import_overwrite')
+        self.assertEqual((audit.before['pincode'], audit.after['pincode']), ('682001', '686001'))
+        blank = self.upload([self.customer(city='', pincode='')])
+        self.choose(blank.rows.get(), 'APPROVE')
+        self.commit(blank)
+        lead.refresh_from_db()
+        self.assertEqual((lead.city, lead.pincode), ('Kottayam', '686001'))
+        invalid = self.upload([self.customer(phone='9876543211', pincode='682001')])
+        row = invalid.rows.get()
+        row.data['pincode'] = 'bad'
+        row.save(update_fields=['data'])
+        self.assertEqual(self.commit(invalid).status_code, 400)
+        self.assertEqual(Lead.objects.count(), 1)
+
+    def test_lead_api_validates_pincode_for_manual_updates_too(self):
+        lead = Lead.objects.create(name='Existing', phone='9876543210')
+        for path in [f'/api/leads/{lead.pk}/', f'/api/leads/{lead.pk}/so-update/']:
+            invalid = self.client.patch(path, {'pincode': 'bad'}, format='json')
+            self.assertEqual(invalid.status_code, 400, invalid.data)
+            self.assertIn('pincode', invalid.data)
+            valid = self.client.patch(path, {'pincode': '682001'}, format='json')
+            self.assertEqual(valid.status_code, 200, valid.data)
+            self.assertEqual(valid.data['pincode'], '682001')
+
     def test_bad_headings_report_missing_unknown_repeated_and_blank_columns(self):
         cases = [
-            (HEADINGS[:-1], 'Missing headings: enquiry date'),
+            (HEADINGS[:4] + HEADINGS[5:], 'Missing headings: enquiry date'),
+            (HEADINGS[:5], 'Missing headings: city, pincode'),
             (('Customer Name', *HEADINGS[1:]), 'Unrecognized headings: Customer Name'),
             (('phone', *HEADINGS[1:]), 'Repeated headings: phone'),
             (('', *HEADINGS[1:]), 'Blank headings in columns: 1'),
             ((*HEADINGS, 'assigned_so'), 'Unrecognized headings: assigned_so'),
-            ((*HEADINGS, 'campaign', 'model', 'city', 'RTO'), 'Unrecognized headings: campaign, model, city, RTO'),
+            ((*HEADINGS, 'campaign', 'model', 'RTO'), 'Unrecognized headings: campaign, model, RTO'),
         ]
         for extension in ['csv', 'xlsx']:
             for headings, message in cases:
@@ -148,7 +222,7 @@ class BulkImportTests(TestCase):
         batch = self.upload([], expected='FAILED')
         self.assertIn('no leads', batch.error_message)
         batch = self.upload([['Name', '9876543210']], expected='FAILED')
-        self.assertIn('Row 2 has 2 cells; expected 5', batch.error_message)
+        self.assertIn('Row 2 has 2 cells; expected 7', batch.error_message)
 
     def test_invalid_rows_block_import_until_fixed_offline(self):
         batch = self.upload([self.customer(phone='123', enquiry_date='invalid'), self.customer(phone='9876543211')])
