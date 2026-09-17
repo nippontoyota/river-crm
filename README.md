@@ -1,5 +1,14 @@
 # Incheon Mobility CRM
 
+Admins can create a **Meta Uploader** account from **Users**. This company-wide
+role signs in to `/bulk-upload` and can upload CSV/XLSX files, review duplicates,
+and import its own batches. It has no access to lead lists, assignments, reports,
+or other users' uploads. The existing sample format stays unchanged:
+`name, phone, email, source, enquiry date`. New leads enter the unassigned pool;
+approved duplicate updates preserve ownership and sales status. Admins can disable,
+enable, or delete uploader accounts while retaining upload and lead history.
+Apply the accounts migration before using this role.
+
 Admin Lists manages lead sources, activities, and sub-activities grouped under an
 activity. These optional fields appear in admin, CE, SO, and receptionist intake
 forms. Removing an option does not alter historical leads. SO sources retain

@@ -38,10 +38,10 @@ export type Metrics = { total_assigned: number; total_called: number; calls_toda
 export type LifecycleEvent = { action: "DISABLED" | "ENABLED" | "DELETED"; reason: string; actor: string; summary: Record<string, unknown>; created_at: string };
 export type AnalyticsOfficer = Metrics & { id: number; name: string; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; account_history?: LifecycleEvent[] };
 export type Analytics = { summary: Metrics & EtbrMetrics; source: { source: string; total: number; qualified: number; won: number }[]; cre: AnalyticsOfficer[]; officers: AnalyticsOfficer[] };
-export type CurrentUser = { id: number; first_name: string; last_name: string; email: string; role: "ADMIN" | "CEO" | "CRE" | "SO" | "SALES_MANAGER" | "RECEPTIONIST" | "COMPLAINTS" | "FEEDBACK" | "SERVICE"; is_active?: boolean; deleted_at?: string | null; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; location?: string };
+export type CurrentUser = { id: number; first_name: string; last_name: string; email: string; role: "ADMIN" | "CEO" | "CRE" | "SO" | "SALES_MANAGER" | "RECEPTIONIST" | "COMPLAINTS" | "FEEDBACK" | "SERVICE" | "META_UPLOADER"; is_active?: boolean; deleted_at?: string | null; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; location?: string };
 export type OffboardingRoute = { status: string; destination: "POOL" | "DISTRIBUTE"; recipient_ids: number[] };
 export type OffboardingImpact = {
-  version: string; assignment_role: "CRE" | "SO" | "FEEDBACK" | "SERVICE"; actionable_count: number; closed_count: number; followup_count: number; complaint_count: number;
+  version: string; assignment_role: "CRE" | "SO" | "FEEDBACK" | "SERVICE" | "META_UPLOADER"; actionable_count: number; closed_count: number; followup_count: number; complaint_count: number;
   lead_groups: { status: string; label: string; count: number; branches: string[] }[];
   eligible_users: { id: number; name: string; location: string; load: number }[];
 };
@@ -193,7 +193,7 @@ export const getUpload = (id: number, includeRows = false) => api<UploadBatch>(`
 export const resolveUploadDuplicates = (id: number, rows: { id: number; resolution: "APPROVE" | "SKIP" }[]) => api<{ detail: string; duplicates_found: number }>(`/api/uploads/${id}/resolve-duplicates/`, { method: "POST", body: JSON.stringify({ rows }) });
 export const commitUpload = (id: number) => api<{ created: number; overwritten: number; skipped: number }>(`/api/uploads/${id}/commit/`, { method: "POST", body: JSON.stringify({}) });
 export type UploadRow = { file_rows: number[]; validation_errors: Record<string, string>; id: number; row_number: number; data: import("./intake").CustomerValues & { source?: string }; normalized_phone: string; validation_error: string; duplicate_of: number | null; existing_name: string; existing_status: string; duplicate_type: "CRM" | "FILE" | "INTAKE" | ""; resolution: "PENDING" | "SKIP" | "OVERWRITE" | "IMPORT" };
-export type UploadBatch = { mapping_version: number | null; original_deleted_at: string | null; validation_errors_found: number; id: number; status: "PARSING" | "READY" | "COMMITTED" | "FAILED"; total_rows: number; parsed_ok: number; duplicates_found: number; crm_duplicates_found: number; file_duplicates_found: number; intake_duplicates_found: number; removed_duplicates: number; pending_duplicates: number; skipped: number; error_message: string; rows?: UploadRow[] };
+export type UploadBatch = { filename: string; mapping_version: number | null; original_deleted_at: string | null; validation_errors_found: number; id: number; status: "PARSING" | "READY" | "COMMITTED" | "FAILED"; total_rows: number; parsed_ok: number; duplicates_found: number; crm_duplicates_found: number; file_duplicates_found: number; intake_duplicates_found: number; removed_duplicates: number; pending_duplicates: number; skipped: number; error_message: string; rows?: UploadRow[] };
 
 export type RtoOption = { value: string; label: string };
 export type SystemConfig = { complaint_subtypes: Record<string, string[]>; so_lead_sources: string[]; rto_options: RtoOption[]; lists: { branches?: string[]; sources?: string[]; activities?: string[]; subActivities?: Record<string, string[]>; models?: string[]; colorVariants?: string[] }; updated_at?: string };

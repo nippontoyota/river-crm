@@ -32,6 +32,7 @@ class User(AbstractUser):
         COMPLAINTS = "COMPLAINTS", "Complaints department"
         FEEDBACK = "FEEDBACK", "Feedback Caller"
         SERVICE = "SERVICE", "Service Department"
+        META_UPLOADER = "META_UPLOADER", "Meta Uploader"
 
     username = None
     email = models.EmailField(unique=True)

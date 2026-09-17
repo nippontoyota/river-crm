@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, FormEvent } from "react";
 import { createUser, disableUser, enableUser, getOffboardingImpact, getSystemConfig, getUsers, permanentlyDeleteUser, updateUserBranch, type CurrentUser, type OffboardingImpact, type OffboardingRoute } from "@/lib/crm";
 
 const roleOptions = [
+  { value: "META_UPLOADER", label: "Meta Uploader" },
   { value: "SERVICE", label: "Service Department" },
   { value: "FEEDBACK", label: "Feedback Caller" },
   { value: "CEO", label: "CEO" },
@@ -61,6 +62,7 @@ export function TeamPage() {
     // Map UI roles to Backend roles
     const uiRole = formData.get("role") as string;
     let backendRole = "ADMIN";
+    if (uiRole === "Meta Uploader") backendRole = "META_UPLOADER";
     if (uiRole === "CE") backendRole = "CRE";
     if (uiRole === "PS/SO") backendRole = "SO";
     if (uiRole === "Feedback Caller") backendRole = "FEEDBACK";
@@ -147,6 +149,7 @@ export function TeamPage() {
   };
 
   const displayRole = (role: string) => {
+    if (role === "META_UPLOADER") return "Meta Uploader";
     if (role === "FEEDBACK") return "Feedback Caller";
     if (role === "CRE") return "CE";
     if (role === "SO") return "PS/SO";
@@ -207,6 +210,7 @@ export function TeamPage() {
                 <select name="role" required value={selectedRole} onChange={e => setSelectedRole(e.target.value)}>
                   <option value="">Select...</option>
                   <option value="Admin">Admin</option>
+                  <option value="Meta Uploader">Meta Uploader</option>
                   <option value="Service Department">Service Department</option><option value="CEO">CEO</option><option value="Feedback Caller">Feedback Caller</option>
                   <option value="CE">CE</option>
                   <option value="PS/SO">PS/SO</option>
@@ -280,7 +284,7 @@ export function TeamPage() {
             <div className="team-users-scroll">
               {filteredUsers.length ? filteredUsers.map(user => {
                 const isActive = user.is_active !== false;
-                const managed = ["CRE", "SO", "FEEDBACK", "SERVICE"].includes(user.role);
+                const managed = ["CRE", "SO", "FEEDBACK", "SERVICE", "META_UPLOADER"].includes(user.role);
                 return (
                   <div className="team-user-row" key={user.id}>
                     <div className="team-user-main">
@@ -306,8 +310,8 @@ export function TeamPage() {
         <button className="modal-close" onClick={() => setOffboarding(null)} aria-label="Close">×</button>
         <p className="eyebrow">{offboarding.action === "DELETE" ? "PERMANENT ACCOUNT REMOVAL" : "TEMPORARY ACCESS PAUSE"}</p>
         <h2 id="offboarding-title">{offboarding.action === "DELETE" ? "Delete" : "Disable"} {`${offboarding.user.first_name} ${offboarding.user.last_name}`.trim() || offboarding.user.email}</h2>
-        <p className="team-offboarding-copy">{offboarding.user.role === "SERVICE" ? "Service requests remain in the shared branch queue. This account loses access; its history is retained." : offboarding.user.role === "FEEDBACK" ? "Open feedback calls will be automatically reassigned within their branches. Completed feedback stays with this caller." : "Lead stages and history stay unchanged. Decide where each active status group goes before access is removed."}</p>
-        {offboarding.user.role !== "SERVICE" && <div className="team-impact-strip">
+        <p className="team-offboarding-copy">{offboarding.user.role === "META_UPLOADER" ? "This account loses upload access. Imported leads and upload history are retained." : offboarding.user.role === "SERVICE" ? "Service requests remain in the shared branch queue. This account loses access; its history is retained." : offboarding.user.role === "FEEDBACK" ? "Open feedback calls will be automatically reassigned within their branches. Completed feedback stays with this caller." : "Lead stages and history stay unchanged. Decide where each active status group goes before access is removed."}</p>
+        {!["SERVICE", "META_UPLOADER"].includes(offboarding.user.role) && <div className="team-impact-strip">
           <span><b>{offboarding.impact.actionable_count}</b> {offboarding.user.role === "FEEDBACK" ? "open feedback calls" : "active leads"}</span>
           <span><b>{offboarding.impact.closed_count}</b> closed retained</span>
           <span><b>{offboarding.impact.followup_count}</b> follow-ups held</span>
@@ -332,7 +336,7 @@ export function TeamPage() {
               {route?.destination === "DISTRIBUTE" && offboarding.impact.assignment_role === "SO" && <p className="team-route-note">Only branch-matched PS/SO employees receive leads; unmatched branches stay in the pool.</p>}
             </article>;
           })}
-          {!offboarding.impact.lead_groups.length && <div className="team-no-work">{offboarding.user.role === "SERVICE" ? "No individual requests need reassignment. The branch queue remains available to other service staff." : offboarding.user.role === "FEEDBACK" ? "Branch assignment is automatic. Calls without an available caller remain in the unassigned queue." : "No active leads need routing. Closed history remains attached to this employee."}</div>}
+          {!offboarding.impact.lead_groups.length && <div className="team-no-work">{offboarding.user.role === "META_UPLOADER" ? "No leads need reassignment. Uploaded leads remain in the CRM." : offboarding.user.role === "SERVICE" ? "No individual requests need reassignment. The branch queue remains available to other service staff." : offboarding.user.role === "FEEDBACK" ? "Branch assignment is automatic. Calls without an available caller remain in the unassigned queue." : "No active leads need routing. Closed history remains attached to this employee."}</div>}
         </div>
         {offboarding.action === "DELETE" && <label className="team-delete-reason">Reason for permanent deletion *<textarea maxLength={500} value={reason} onChange={event => setReason(event.target.value)} placeholder="Record why this account is being permanently removed" /></label>}
         {error && <p className="form-error" role="alert">{error}</p>}

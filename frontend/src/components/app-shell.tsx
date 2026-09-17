@@ -9,9 +9,10 @@ import { canAddService } from "@/lib/service";
 import { FeedbackBell } from "@/components/feedback-bell";
 import { formatDate, formatWeekday } from "@/lib/dates";
 
-type AppShellProps = { children: ReactNode; role: "Service Department" | "CEO" | "Admin" | "Sales officer" | "Sales manager" | "Receptionist" | "Feedback Caller" };
+type AppShellProps = { children: ReactNode; role: "Meta Uploader" | "Service Department" | "CEO" | "Admin" | "Sales officer" | "Sales manager" | "Receptionist" | "Feedback Caller" };
 
 function roleType(user: CurrentUser) {
+  if (user.role === "META_UPLOADER") return "Meta Uploader";
   if (user.role === "SERVICE") return "Service Department";
   if (user.role === "FEEDBACK") return "Feedback Caller";
   if (user.role === "CEO") return "CEO";
@@ -21,6 +22,7 @@ function roleType(user: CurrentUser) {
   return "Sales officer";
 }
 
+const uploadLinks = [["/bulk-upload", "Bulk upload", "↑"]] as const;
 const serviceLinks = [["/services", "Services", "⚒"]] as const;
 const ceoLinks = [
   ["/services", "Services", "⚒"],
@@ -96,7 +98,7 @@ export function AppShell({ children, role }: AppShellProps) {
   const displayName = user ? `${user.first_name} ${user.last_name}`.trim() || user.email : "Sign in";
   const initials = user ? `${user.first_name[0] || ""}${user.last_name[0] || ""}` || user.email.slice(0, 2).toUpperCase() : "?";
   const workspaceRole = user?.role === "CRE" ? "CE" : user?.role === "SO" ? "PS/SO" : user?.role === "SALES_MANAGER" ? "Sales Manager" : user?.role === "RECEPTIONIST" ? "Receptionist" : user?.role === "COMPLAINTS" ? "Complaints department" : role;
-  const links = role === "Service Department" ? serviceLinks : role === "Feedback Caller" ? feedbackLinks : role === "CEO" ? ceoLinks : role === "Admin" ? adminLinks : role === "Sales manager" ? managerLinks : role === "Sales officer" ? user?.role === "CRE" ? creLinks : user?.role === "COMPLAINTS" ? complaintLinks : officerLinks : receptionistLinks;
+  const links = role === "Meta Uploader" ? uploadLinks : role === "Service Department" ? serviceLinks : role === "Feedback Caller" ? feedbackLinks : role === "CEO" ? ceoLinks : role === "Admin" ? adminLinks : role === "Sales manager" ? managerLinks : role === "Sales officer" ? user?.role === "CRE" ? creLinks : user?.role === "COMPLAINTS" ? complaintLinks : officerLinks : receptionistLinks;
   const shellRoleClass = role === "Feedback Caller" ? "feedback-shell" : role === "CEO" ? "ceo-shell" : role === "Sales manager" ? "manager-shell" : role === "Sales officer" ? user?.role === "SO" ? "ps-shell" : user?.role === "COMPLAINTS" ? "complaints-shell" : "cre-shell" : role === "Receptionist" ? "receptionist-shell" : "";
   const signOut = async () => {
     try { await logout(); }
@@ -106,8 +108,8 @@ export function AppShell({ children, role }: AppShellProps) {
   if (checkingAccess) return null;
 
   if (sessionConflict) {
-    const actualRole = sessionConflict.role === "SERVICE" ? "Service Department" : sessionConflict.role === "FEEDBACK" ? "Feedback Caller" : sessionConflict.role === "CEO" ? "CEO" : sessionConflict.role === "ADMIN" ? "Admin" : sessionConflict.role === "SALES_MANAGER" ? "Sales Manager" : sessionConflict.role === "RECEPTIONIST" ? "Receptionist" : sessionConflict.role === "CRE" ? "CE" : sessionConflict.role === "COMPLAINTS" ? "Complaints department" : "PS/SO";
-    const actualHome = sessionConflict.role === "SERVICE" ? "/services" : sessionConflict.role === "FEEDBACK" ? "/feedback" : sessionConflict.role === "CEO" ? "/ceo" : sessionConflict.role === "ADMIN" ? "/leads" : sessionConflict.role === "SALES_MANAGER" ? "/manager/analytics" : sessionConflict.role === "RECEPTIONIST" ? "/capture" : sessionConflict.role === "COMPLAINTS" ? "/complaints" : "/my-leads";
+    const actualRole = sessionConflict.role === "META_UPLOADER" ? "Meta Uploader" : sessionConflict.role === "SERVICE" ? "Service Department" : sessionConflict.role === "FEEDBACK" ? "Feedback Caller" : sessionConflict.role === "CEO" ? "CEO" : sessionConflict.role === "ADMIN" ? "Admin" : sessionConflict.role === "SALES_MANAGER" ? "Sales Manager" : sessionConflict.role === "RECEPTIONIST" ? "Receptionist" : sessionConflict.role === "CRE" ? "CE" : sessionConflict.role === "COMPLAINTS" ? "Complaints department" : "PS/SO";
+    const actualHome = sessionConflict.role === "META_UPLOADER" ? "/bulk-upload" : sessionConflict.role === "SERVICE" ? "/services" : sessionConflict.role === "FEEDBACK" ? "/feedback" : sessionConflict.role === "CEO" ? "/ceo" : sessionConflict.role === "ADMIN" ? "/leads" : sessionConflict.role === "SALES_MANAGER" ? "/manager/analytics" : sessionConflict.role === "RECEPTIONIST" ? "/capture" : sessionConflict.role === "COMPLAINTS" ? "/complaints" : "/my-leads";
     const actualName = `${sessionConflict.first_name} ${sessionConflict.last_name}`.trim() || sessionConflict.email;
     return (
       <main className="page" style={{ maxWidth: "32rem", margin: "6rem auto", textAlign: "center" }}>
@@ -127,7 +129,7 @@ export function AppShell({ children, role }: AppShellProps) {
     );
   }
 
-  const homeHref = role === "Service Department" ? "/services" : role === "Feedback Caller" ? "/feedback" : role === "CEO" ? "/ceo" : role === "Admin" ? "/leads" : role === "Sales manager" ? "/manager/analytics" : role === "Receptionist" ? "/capture" : user?.role === "COMPLAINTS" ? "/complaints" : "/my-leads";
+  const homeHref = role === "Meta Uploader" ? "/bulk-upload" : role === "Service Department" ? "/services" : role === "Feedback Caller" ? "/feedback" : role === "CEO" ? "/ceo" : role === "Admin" ? "/leads" : role === "Sales manager" ? "/manager/analytics" : role === "Receptionist" ? "/capture" : user?.role === "COMPLAINTS" ? "/complaints" : "/my-leads";
 
   return <div className={`app-shell ${["Sales officer", "Sales manager"].includes(role) ? "sales-shell" : ""} ${shellRoleClass}`}>
     <aside className="sidebar">
@@ -152,7 +154,7 @@ export function AppShell({ children, role }: AppShellProps) {
       </div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><div><b>{role === "Service Department" ? "Branch services" : role === "CEO" ? "Company performance" : role === "Admin" ? "Lead control" : role === "Sales manager" ? "Branch command" : role === "Receptionist" ? "Front Desk" : user?.role === "COMPLAINTS" ? "Complaint queue" : user?.role === "SO" ? displayName : role === "Feedback Caller" ? "Customer feedback" : `${workspaceRole} pipeline`}</b><small>{formatWeekday(new Date())}, {formatDate(new Date())}</small></div><div className="top-actions">{user && canAddService(user) && <button className="button primary" onClick={() => pathname === "/services" ? window.dispatchEvent(new Event("service:create")) : router.push("/services?addService=1")}>＋ Add service</button>}{user && ["SERVICE", "CRE"].includes(user.role) && <ServiceBell />}{user?.role === "FEEDBACK" && <FeedbackBell />}{role === "Admin" && pathname !== "/complaints" && <button className="button primary" onClick={() => ["/leads", "/all-leads"].includes(pathname) ? window.dispatchEvent(new Event("incheon:add-lead")) : router.push("/leads?addLead=1")}>＋ Add lead</button>}<button className="mobile-signout" onClick={() => void signOut()} aria-label="Sign out" title="Sign out">↪</button></div></header>
+      <header className="topbar"><div><b>{role === "Meta Uploader" ? "Bulk lead uploads" : role === "Service Department" ? "Branch services" : role === "CEO" ? "Company performance" : role === "Admin" ? "Lead control" : role === "Sales manager" ? "Branch command" : role === "Receptionist" ? "Front Desk" : user?.role === "COMPLAINTS" ? "Complaint queue" : user?.role === "SO" ? displayName : role === "Feedback Caller" ? "Customer feedback" : `${workspaceRole} pipeline`}</b><small>{formatWeekday(new Date())}, {formatDate(new Date())}</small></div><div className="top-actions">{user && canAddService(user) && <button className="button primary" onClick={() => pathname === "/services" ? window.dispatchEvent(new Event("service:create")) : router.push("/services?addService=1")}>＋ Add service</button>}{user && ["SERVICE", "CRE"].includes(user.role) && <ServiceBell />}{user?.role === "FEEDBACK" && <FeedbackBell />}{role === "Admin" && pathname !== "/complaints" && <button className="button primary" onClick={() => ["/leads", "/all-leads"].includes(pathname) ? window.dispatchEvent(new Event("incheon:add-lead")) : router.push("/leads?addLead=1")}>＋ Add lead</button>}<button className="mobile-signout" onClick={() => void signOut()} aria-label="Sign out" title="Sign out">↪</button></div></header>
       {children}
     </main>
   </div>;

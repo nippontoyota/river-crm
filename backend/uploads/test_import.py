@@ -10,6 +10,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from openpyxl import Workbook
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.models import User
 from ceo.models import Milestone, OperationEvent
@@ -245,6 +246,64 @@ class BulkImportTests(TestCase):
             self.client.force_authenticate(User.objects.create_user(email=f'{role}@example.com', role=role))
             for path, method in [('', 'post'), (f'{batch.pk}/', 'get'), (f'{batch.pk}/commit/', 'post'), (f'{batch.pk}/resolve-duplicates/', 'post')]:
                 self.assertEqual(getattr(self.client, method)(f'/api/uploads/{path}').status_code, 403)
+
+    def sign_in_uploader(self):
+        user = User.objects.create_user(email='meta-uploader@example.com', password='Upload123!', role=User.Role.META_UPLOADER)
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(user).access_token}')
+        return user
+
+    def test_meta_uploader_fixed_format_review_and_import(self):
+        uploader = self.sign_in_uploader()
+        self.assertEqual(self.client.get('/api/auth/me/').data['user']['role'], 'META_UPLOADER')
+        invalid = self.upload([self.customer(source='meta')], headers=('customer', *HEADINGS[1:]), expected='FAILED')
+        self.assertEqual(self.commit(invalid).status_code, 400)
+        for extension in ['csv', 'xlsx']:
+            batch = self.upload([self.customer(source='meta'), self.customer(source='meta', name='Chosen')], extension=extension)
+            self.assertEqual(batch.uploaded_by, uploader)
+            self.assertEqual(self.client.get(f'/api/uploads/{batch.pk}/?include_rows=true').status_code, 200)
+            self.assertEqual(self.commit(batch).status_code, 409)
+            self.choose(batch.rows.get(row_number=3), 'APPROVE')
+            self.assertEqual(self.commit(batch).status_code, 200)
+        lead = Lead.objects.get(phone='9876543210')
+        self.assertEqual((lead.name, lead.source, lead.status, lead.assigned_so_id, lead.assigned_ps_id), ('Chosen', 'META', 'FRESH', None, None))
+        self.assertTrue(LeadAudit.objects.filter(lead=lead, actor=uploader, event='imported').exists())
+        self.assertTrue(LeadAudit.objects.filter(lead=lead, actor=uploader, event='import_overwrite').exists())
+
+    def test_meta_uploader_cannot_access_other_uploads_or_crm(self):
+        admin_batch = self.upload([self.customer()])
+        other = User.objects.create_user(email='other-uploader@example.com', role=User.Role.META_UPLOADER)
+        other_batch = UploadBatch.objects.create(filename='other.csv', storage_path='other.csv', uploaded_by=other)
+        self.sign_in_uploader()
+        for batch in [admin_batch, other_batch]:
+            for suffix, method in [('', 'get'), ('commit/', 'post'), ('resolve-duplicates/', 'post')]:
+                self.assertEqual(getattr(self.client, method)(f'/api/uploads/{batch.pk}/{suffix}').status_code, 404)
+        for path in ['/api/leads/', '/api/auth/users/', '/api/auth/sales-officers/', '/api/system-config/', '/api/notifications/', '/api/feedback/', '/api/vehicles/', '/api/service-requests/', '/api/complaints/', '/api/intake/submissions/', '/api/analytics/admin/', '/api/analytics/me/', '/api/ceo/feedback/']:
+            for method in ['get', 'post', 'patch', 'delete']:
+                with self.subTest(path=path, method=method):
+                    # Test real JWT authentication, including views with custom permissions.
+                    response = getattr(self.client, method)(path)
+                    self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.client.post('/api/auth/logout/').status_code, 204)
+
+    def test_admin_can_manage_meta_uploader_and_preserve_upload_history(self):
+        created = self.client.post('/api/auth/users/', {'first_name': 'Meta', 'email': 'new-uploader@example.com', 'password': 'Upload123!', 'role': 'META_UPLOADER'}, format='json')
+        self.assertEqual(created.status_code, 201, created.data)
+        user = User.objects.get(pk=created.data['id'])
+        batch = UploadBatch.objects.create(filename='test.csv', storage_path='test.csv', uploaded_by=user)
+        token = str(RefreshToken.for_user(user).access_token)
+        for action in ['disable', 'enable', 'permanent-delete']:
+            impact = self.client.get(f'/api/auth/users/{user.pk}/offboarding-impact/')
+            self.assertEqual(impact.status_code, 200)
+            response = self.client.post(f'/api/auth/users/{user.pk}/{action}/', {'impact_version': impact.data['version'], 'routes': [], 'reason': 'Account no longer needed'}, format='json')
+            self.assertEqual(response.status_code, 200, response.data)
+            if action != 'enable':
+                blocked = APIClient()
+                blocked.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+                self.assertEqual(blocked.get('/api/auth/me/').status_code, 401)
+        batch.refresh_from_db()
+        self.assertEqual(batch.uploaded_by_id, user.pk)
+        self.assertEqual(self.client.get(f'/api/auth/users/{user.pk}/lifecycle-history/').status_code, 200)
 
     def test_source_is_revalidated_before_import_and_deleted_leads_do_not_block(self):
         Lead.objects.create(name='Deleted', phone='9876543210', deleted_at=timezone.now())

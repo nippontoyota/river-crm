@@ -8,7 +8,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.response import Response
 
-from accounts.permissions import IsAdmin
+from accounts.permissions import IsAdminOrMetaUploader
 from intake.mapping import validate_customer
 from intake.services import publish
 from leads.models import Lead, LeadAudit
@@ -20,12 +20,15 @@ from .tasks import COLUMNS, classify_rows, parse_upload_batch, refresh_counts, d
 
 
 class UploadBatchViewSet(viewsets.GenericViewSet):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrMetaUploader]
     serializer_class = UploadBatchSerializer
     parser_classes = [MultiPartParser, JSONParser]
 
     def get_queryset(self):
-        return UploadBatch.objects.order_by('-created_at')
+        batches = UploadBatch.objects.order_by('-created_at')
+        if self.request.user.role == 'META_UPLOADER':
+            batches = batches.filter(uploaded_by=self.request.user)
+        return batches
 
     def create(self, request):
         uploaded = request.FILES.get('file')

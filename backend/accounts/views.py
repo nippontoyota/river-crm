@@ -78,7 +78,7 @@ class UserLifecycleHistoryView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, request, user_id):
-        user = get_user_model().objects.filter(pk=user_id, role__in=[get_user_model().Role.CRE, get_user_model().Role.SALES_OFFICER, get_user_model().Role.FEEDBACK, get_user_model().Role.SERVICE]).first()
+        user = get_user_model().objects.filter(pk=user_id, role__in=[get_user_model().Role.CRE, get_user_model().Role.SALES_OFFICER, get_user_model().Role.FEEDBACK, get_user_model().Role.SERVICE, get_user_model().Role.META_UPLOADER]).first()
         if not user:
             return Response({"detail": "Employee not found."}, status=status.HTTP_404_NOT_FOUND)
         events = [{

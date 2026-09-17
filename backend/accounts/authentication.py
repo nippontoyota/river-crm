@@ -24,8 +24,14 @@ class CookieJWTAuthentication(JWTAuthentication):
             raise exceptions.PermissionDenied("CEO access is read-only.")
         if user.role == "SERVICE" and not service_path_allowed(request):
             raise exceptions.PermissionDenied("Service accounts can only access their service workspace.")
+        if user.role == "META_UPLOADER" and not meta_uploader_path_allowed(request):
+            raise exceptions.PermissionDenied("Meta uploader accounts can only access bulk lead uploads.")
         return user, validated_token
 
 
 def service_path_allowed(request):
     return request.path.startswith(("/api/vehicles/", "/api/service-requests/", "/api/notifications/")) or request.path in {"/api/auth/me/", "/api/auth/logout/", "/api/auth/csrf/"} or (request.path == "/api/system-config/" and request.method in {"GET", "HEAD", "OPTIONS"})
+
+
+def meta_uploader_path_allowed(request):
+    return request.path.startswith("/api/uploads/") or request.path in {"/api/auth/me/", "/api/auth/logout/", "/api/auth/csrf/"}
