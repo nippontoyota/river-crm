@@ -33,10 +33,8 @@ if (![apiBase, webBase].every(url => ['localhost', '127.0.0.1'].includes(new URL
     });
     await click('Download sample format');
     const sample = await page.evaluate(() => window.sampleCsv);
-    assert.match(sample.split('\n')[0], /"RTO"/);
-    assert.match(sample, /"kl07"/);
-    assert.match(sample, /"Thrissur"/);
-    assert.match(sample, /"River Indie"/);
+    assert.equal(sample.split('\n')[0], '"name","phone","email","source","enquiry date"');
+    const existingLead = (await admin('/api/leads/?q=9876543299')).data.results[0];
     const selectCsv = async (csv) => {
       await page.$eval('input[type=file]', (input, content) => {
         const transfer = new DataTransfer();
@@ -55,12 +53,12 @@ if (![apiBase, webBase].every(url => ['localhost', '127.0.0.1'].includes(new URL
     const rows = sample.split('\n');
     rows.push(rows[1].replace('Aarav Sharma', 'Repeated file customer'));
     rows.push(rows[1].replace('Aarav Sharma', 'Existing CRM duplicate').replace('9876543210', '9876543299'));
-    rows.push(rows[1].replace('Aarav Sharma', 'Correct RTO Customer').replace('9876543210', '9876543298').replace('kl07', 'KL05 Kollam'));
+    rows.push(rows[1].replace('Aarav Sharma', 'Correct Email Customer').replace('9876543210', '9876543298').replace('aarav@example.com', 'invalid-email'));
     await selectCsv(rows.join('\n'));
     await page.waitForFunction(() => document.querySelector('.upload-review')?.textContent.includes('Fix 1 row'));
     assert.equal(await importDisabled(), true);
     assert.doesNotMatch(await page.$eval('.upload-review', e => e.textContent), /Edit row|Import separately/);
-    rows[5] = rows[5].replace('KL05 Kollam', 'KL-05');
+    rows[5] = rows[5].replace('invalid-email', 'aarav@example.com');
     await selectCsv(rows.join('\n'));
     await page.waitForFunction(() => document.querySelector('.bulk-import-review')?.textContent.includes('5 rows · 2 ready · 3 duplicates need review'));
     assert.equal(await importDisabled(), true);
@@ -81,7 +79,7 @@ if (![apiBase, webBase].every(url => ['localhost', '127.0.0.1'].includes(new URL
     await page.setViewport({ width: 1440, height: 1000 });
     await click('Import leads');
     await page.waitForFunction(() => document.body.textContent.includes('3 leads imported. 1 existing leads updated. 1 rows skipped.'));
-    for (const [phone, rto] of [['9876543210', 'KL-07'], ['9876543211', 'KL-08'], ['9876543298', 'KL-05'], ['9876543299', 'KL-07']]) {
+    for (const [phone, rto] of [['9876543210', ''], ['9876543211', ''], ['9876543298', ''], ['9876543299', existingLead.rto]]) {
       const response = await admin('/api/leads/?q=' + phone);
       assert.equal(response.data.results.length, 1, `One lead per phone: ${phone}`);
       assert.equal(response.data.results[0].rto, rto);

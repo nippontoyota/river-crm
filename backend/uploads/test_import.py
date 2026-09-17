@@ -64,7 +64,7 @@ class BulkImportTests(TestCase):
         self.addCleanup(publisher.stop)
 
     def customer(self, **values):
-        return {'name': 'Customer', 'phone': '9876543210', 'source': 'website', 'model_interest': 'River Indie', 'rto': 'kl07', **values}
+        return {'name': 'Customer', 'phone': '9876543210', 'source': 'website', **values}
 
     def upload(self, rows, headers=HEADINGS, extension='csv', expected='READY'):
         values = [[row.get(field, '') for field in COLUMNS] if isinstance(row, dict) else row for row in rows]
@@ -104,31 +104,35 @@ class BulkImportTests(TestCase):
         return Submission.objects.create(connection=connection, form=form, identity=phone, external_id=phone, source='WEBSITE', normalized_phone=phone, state='NEEDS_REVIEW')
 
     def test_sample_csv_and_xlsx_import_customer_fields(self):
+        self.assertEqual(HEADINGS, ('name', 'phone', 'email', 'source', 'enquiry date'))
+        SystemConfig.objects.filter(pk=1).update(lists={'sources': ['WEBSITE', 'META']})
         for index, extension in enumerate(['csv', 'xlsx']):
             with self.subTest(extension=extension):
-                batch = self.upload([self.customer(phone=f'987654321{index}', email='rider@example.com', campaign='Launch', city='Kochi', enquiry_date=timezone.localdate())], extension=extension)
+                enquiry_date = timezone.localdate()
+                batch = self.upload([self.customer(phone=f'987654321{index}', email='rider@example.com', enquiry_date=enquiry_date.strftime('%d/%m/%Y') if extension == 'csv' else enquiry_date)], extension=extension)
                 row = batch.rows.get()
                 self.assertEqual(row.validation_errors, {})
-                self.assertEqual(row.data['rto'], 'KL-07')
                 self.assertIsNotNone(batch.original_deleted_at)
                 self.assertEqual(row.answers, [])
                 self.assertEqual(self.commit(batch).data, {'created': 1, 'overwritten': 0, 'skipped': 0})
                 lead = Lead.objects.get(phone=row.normalized_phone)
                 self.assertEqual((lead.status, lead.assigned_so_id, lead.assigned_ps_id), ('FRESH', None, None))
                 self.assertEqual(lead.enquiry_date, timezone.localdate())
-                self.assertEqual(lead.rto, 'KL-07')
+                self.assertEqual((lead.name, lead.email, lead.source), ('Customer', 'rider@example.com', 'WEBSITE'))
+                self.assertEqual((lead.campaign, lead.model_interest, lead.city, lead.rto), ('', '', '', ''))
                 self.assertTrue(LeadAudit.objects.filter(lead=lead, event='imported').exists())
-                self.assertTrue(Milestone.objects.filter(lead=lead, kind='E', rto='KL-07').exists())
-                self.assertTrue(OperationEvent.objects.filter(lead=lead, snapshot__rto='KL-07').exists())
+                self.assertTrue(Milestone.objects.filter(lead=lead, kind='E', rto='').exists())
+                self.assertTrue(OperationEvent.objects.filter(lead=lead, snapshot__rto='').exists())
                 self.assertTrue(self.commit(batch).data['already_committed'])
 
     def test_bad_headings_report_missing_unknown_repeated_and_blank_columns(self):
         cases = [
-            (HEADINGS[:-1], 'Missing headings: RTO'),
+            (HEADINGS[:-1], 'Missing headings: enquiry date'),
             (('Customer Name', *HEADINGS[1:]), 'Unrecognized headings: Customer Name'),
             (('phone', *HEADINGS[1:]), 'Repeated headings: phone'),
             (('', *HEADINGS[1:]), 'Blank headings in columns: 1'),
             ((*HEADINGS, 'assigned_so'), 'Unrecognized headings: assigned_so'),
+            ((*HEADINGS, 'campaign', 'model', 'city', 'RTO'), 'Unrecognized headings: campaign, model, city, RTO'),
         ]
         for extension in ['csv', 'xlsx']:
             for headings, message in cases:
@@ -142,19 +146,20 @@ class BulkImportTests(TestCase):
         batch = self.upload([], expected='FAILED')
         self.assertIn('no leads', batch.error_message)
         batch = self.upload([['Name', '9876543210']], expected='FAILED')
-        self.assertIn('Row 2 has 2 cells; expected 9', batch.error_message)
+        self.assertIn('Row 2 has 2 cells; expected 5', batch.error_message)
 
     def test_invalid_rows_block_import_until_fixed_offline(self):
-        batch = self.upload([self.customer(phone='123', rto='KL-99'), self.customer(phone='9876543211')])
+        batch = self.upload([self.customer(phone='123', enquiry_date='invalid'), self.customer(phone='9876543211')])
         self.assertIn('phone', batch.rows.get(row_number=2).validation_errors)
+        self.assertIn('enquiry_date', batch.rows.get(row_number=2).validation_errors)
         self.assertEqual(self.commit(batch).status_code, 400)
         self.assertFalse(Lead.objects.exists())
         fixed = self.upload([self.customer(), self.customer(phone='9876543211')])
         self.assertEqual(self.commit(fixed).data['created'], 2)
 
     def test_crm_duplicate_requires_admin_approval_and_updates_same_lead(self):
-        lead = Lead.objects.create(name='Existing', phone='9876543210', rto='KL-08', assigned_so=self.admin, status='QUALIFIED', profession='Engineer', branch='Kochi', email='old@example.com')
-        batch = self.upload([self.customer(name='Updated', phone='+91 98765-43210', rto='')])
+        lead = Lead.objects.create(name='Existing', phone='9876543210', rto='KL-08', assigned_so=self.admin, status='QUALIFIED', profession='Engineer', branch='Kochi', email='old@example.com', model_interest='River Indie', campaign='Launch', city='Kochi')
+        batch = self.upload([self.customer(name='Updated', phone='+91 98765-43210')])
         row = batch.rows.get()
         self.assertEqual(row.resolution, 'PENDING')
         self.assertEqual(self.commit(batch).status_code, 409)
@@ -163,6 +168,7 @@ class BulkImportTests(TestCase):
         self.assertEqual(self.commit(batch).data, {'created': 0, 'overwritten': 1, 'skipped': 0})
         lead.refresh_from_db()
         self.assertEqual((lead.name, lead.status, lead.assigned_so_id, lead.rto, lead.profession, lead.email, lead.branch), ('Updated', 'QUALIFIED', self.admin.pk, 'KL-08', 'Engineer', 'old@example.com', 'Kochi'))
+        self.assertEqual((lead.model_interest, lead.campaign, lead.city), ('River Indie', 'Launch', 'Kochi'))
         self.assertEqual(Lead.objects.count(), 1)
 
     def test_file_duplicates_choose_exactly_one_row_per_normalized_phone(self):

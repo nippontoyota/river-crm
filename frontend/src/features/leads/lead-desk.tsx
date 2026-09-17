@@ -67,11 +67,11 @@ const optionsWithCurrent = (options: string[], current = "") => {
   const value = current.trim();
   return value && !options.includes(value) ? [value, ...options] : options;
 };
-const downloadLeadSample = (source: string, model: string) => {
+const downloadLeadSample = (source: string) => {
   const leadSampleRows = [
-    ["name", "phone", "email", "source", "campaign", "model", "city", "enquiry date", "RTO"],
-    ["Aarav Sharma", "9876543210", "aarav@example.com", source, "Campaign name", model, "Kochi", formatDate(new Date()), "kl07"],
-    ["Ananya Reddy", "9876543211", "ananya@example.com", source, "Campaign name", model, "Thrissur", formatDate(new Date()), "Thrissur"],
+    ["name", "phone", "email", "source", "enquiry date"],
+    ["Aarav Sharma", "9876543210", "aarav@example.com", source, formatDate(new Date())],
+    ["Ananya Reddy", "9876543211", "ananya@example.com", source, formatDate(new Date())],
   ];
   const csv = leadSampleRows.map(row => row.map(value => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -518,7 +518,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
       <section className="lead-toolbar admin-filter-toolbar">
         <label className="search"><span>⌕</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name or mobile..." /></label>
         <label className="button filter bulk-upload-button">{uploading ? "Uploading…" : "Bulk Upload"}<input hidden type="file" accept=".xlsx,.csv" disabled={uploading || importingUpload || reviewingUpload} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; void selectFile(file); }} /></label>
-        <button className="filter sample-download" onClick={() => downloadLeadSample(sourceOptions.find(item => item !== "WALKIN") || "WALKIN", models[0] || "")}>Download sample format</button>
+        <button className="filter sample-download" onClick={() => downloadLeadSample(sourceOptions.find(item => item !== "WALKIN") || "WALKIN")}>Download sample format</button>
       </section>
       <section className="lead-filters admin-lead-filters">
         <div className="lead-filters-grid">

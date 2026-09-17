@@ -33,7 +33,7 @@ class UploadDuplicateTests(TestCase):
         admin = User.objects.create_user(email="manager@example.com", password="password-12345", role=User.Role.ADMIN)
         Lead.objects.create(name="Existing", phone="7000000000")
         batch = UploadBatch.objects.create(filename="leads.csv", storage_path="imports/test.csv", uploaded_by=admin)
-        content = b"name,phone,email,source,campaign,model,city,enquiry date,RTO\nExisting again,7000000000,,website,,,,,\nNew lead,7000000001,,meta,,,,,\n"
+        content = b"name,phone,email,source,enquiry date\nExisting again,7000000000,,website,\nNew lead,7000000001,,meta,\n"
 
         with patch("uploads.tasks.download_bytes", return_value=content):
             parse_upload_batch.run(batch.id)
@@ -53,7 +53,7 @@ class UploadDuplicateTests(TestCase):
     def test_parser_requires_review_of_duplicate_phones_inside_upload(self):
         admin = User.objects.create_user(email="manager@example.com", password="password-12345", role=User.Role.ADMIN)
         batch = UploadBatch.objects.create(filename="leads.csv", storage_path="imports/test.csv", uploaded_by=admin)
-        content = b"name,phone,email,source,campaign,model,city,enquiry date,RTO\nFirst lead,7000000000,,website,,,,,\nRepeated lead,7000000000,,meta,,,,,\nNew lead,7000000001,,meta,,,,,\n"
+        content = b"name,phone,email,source,enquiry date\nFirst lead,7000000000,,website,\nRepeated lead,7000000000,,meta,\nNew lead,7000000001,,meta,\n"
 
         with patch("uploads.tasks.download_bytes", return_value=content):
             parse_upload_batch.run(batch.id)
@@ -74,7 +74,7 @@ class UploadDuplicateTests(TestCase):
     def test_parser_rejects_a_source_not_in_admin_lists(self):
         admin = User.objects.create_user(email="manager@example.com", password="password-12345", role=User.Role.ADMIN)
         batch = UploadBatch.objects.create(filename="leads.csv", storage_path="imports/test.csv", uploaded_by=admin)
-        content = b"name,phone,email,source,campaign,model,city,enquiry date,RTO\nUnknown channel,7000000002,,partner,,,,,\n"
+        content = b"name,phone,email,source,enquiry date\nUnknown channel,7000000002,,partner,\n"
 
         with patch("uploads.tasks.download_bytes", return_value=content):
             parse_upload_batch.run(batch.id)
