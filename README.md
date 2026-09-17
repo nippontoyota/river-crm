@@ -9,6 +9,13 @@ approved duplicate updates preserve ownership and sales status. Admins can disab
 enable, or delete uploader accounts while retaining upload and lead history.
 Apply the accounts migration before using this role.
 
+The uploader dashboard shows all-time imported leads, approved updates, files
+awaiting import, and uploaded files for the signed-in account. Recent uploads can
+be reopened after a refresh. Totals count committed rows only; uploading or
+previewing a file does not add leads. Successful imports invalidate the analytics
+cache so subsequent admin and CEO report requests include the new records.
+New leads reach CE and branch workspaces through the existing assignment workflow.
+
 Admin Lists manages lead sources, activities, and sub-activities grouped under an
 activity. These optional fields appear in admin, CE, SO, and receptionist intake
 forms. Removing an option does not alter historical leads. SO sources retain

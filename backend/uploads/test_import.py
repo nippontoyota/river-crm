@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.cache import caches
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from openpyxl import Workbook
@@ -304,6 +305,87 @@ class BulkImportTests(TestCase):
         batch.refresh_from_db()
         self.assertEqual(batch.uploaded_by_id, user.pk)
         self.assertEqual(self.client.get(f'/api/auth/users/{user.pk}/lifecycle-history/').status_code, 200)
+
+    def test_upload_summary_is_persistent_scoped_and_counts_only_committed_rows(self):
+        admin_batch = self.upload([self.customer(phone='9876543299')])
+        self.commit(admin_batch)
+        uploader = self.sign_in_uploader()
+        empty = self.client.get('/api/uploads/summary/')
+        self.assertEqual(empty.status_code, 200)
+        self.assertEqual(empty.data['totals']['total_uploads'], 0)
+        batch = self.upload([self.customer(), self.customer(name='Duplicate'), self.customer(phone='9876543299')])
+        pending = self.client.get('/api/uploads/summary/').data
+        self.assertEqual(pending['totals']['imported_leads'], 0)
+        self.assertEqual(pending['totals']['awaiting_import'], 1)
+        self.choose(batch.rows.get(row_number=2), 'APPROVE')
+        self.choose(batch.rows.get(row_number=4), 'APPROVE')
+        self.commit(batch)
+        self.commit(batch)  # Retries must not inflate analytics.
+        failed = self.upload([], expected='FAILED')
+        awaiting = self.upload([self.customer(phone='9876543288')])
+        # A fresh session must return the same durable totals.
+        self.client = APIClient()
+        self.client.force_authenticate(uploader)
+        summary = self.client.get('/api/uploads/summary/').data
+        self.assertEqual(summary['totals'], {'total_uploads': 3, 'awaiting_import': 1, 'failed_uploads': 1, 'imported_leads': 1, 'updated_leads': 1, 'skipped_rows': 1})
+        self.assertEqual({item['id'] for item in summary['recent']}, {batch.pk, failed.pk, awaiting.pk})
+        committed = next(item for item in summary['recent'] if item['id'] == batch.pk)
+        self.assertEqual((committed['imported_leads'], committed['updated_leads'], committed['skipped']), (1, 1, 1))
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.get('/api/uploads/summary/').data['totals']['imported_leads'], 2)
+        self.client.force_authenticate(User.objects.create_user(email='ce-summary@example.com', role='CRE'))
+        self.assertEqual(self.client.get('/api/uploads/summary/').status_code, 403)
+
+    @override_settings(CACHE_TTL_SECONDS=300)
+    def test_uploader_import_reaches_admin_reports_ceo_and_assigned_ce(self):
+        caches['analytics'].clear()
+        self.addCleanup(caches['analytics'].clear)
+        ce = User.objects.create_user(email='ce-sync@example.com', role='CRE')
+        ceo = User.objects.create_user(email='ceo-sync@example.com', role='CEO')
+        before = self.client.get('/api/analytics/admin/')
+        self.assertEqual(before.data['summary']['total_assigned'], 0)
+        self.assertEqual(self.client.get('/api/analytics/admin/')['X-Cache'], 'HIT')
+        self.client.force_authenticate(ceo)
+        self.assertEqual(self.client.get('/api/ceo/overview/?range=all').data['etbr']['E'], 0)
+        self.assertEqual(self.client.get('/api/ceo/overview/?range=all')['X-Cache'], 'HIT')
+        self.sign_in_uploader()
+        batch = self.upload([self.customer(source='meta')])
+        self.assertEqual(self.commit(batch).data['created'], 1)
+        lead = Lead.objects.get(phone='9876543210')
+        self.client.credentials()
+        self.client.force_authenticate(self.admin)
+        for path in ['/api/leads/', '/api/leads/?unassigned=true']:
+            response = self.client.get(path)
+            self.assertEqual([item['id'] for item in response.data['results']], [lead.pk])
+        after = self.client.get('/api/analytics/admin/')
+        self.assertEqual(after['X-Cache'], 'MISS')
+        self.assertEqual(after.data['summary']['total_assigned'], 1)
+        self.assertEqual(after.data['source'][0]['source'], 'META')
+        self.client.force_authenticate(ceo)
+        report = self.client.get('/api/ceo/overview/?range=all')
+        self.assertEqual(report['X-Cache'], 'MISS')
+        self.assertEqual(report.data['etbr']['E'], 1)
+        self.assertEqual(self.client.get('/api/ceo/leads/?range=all').data['results'][0]['id'], lead.pk)
+        self.client.force_authenticate(ce)
+        self.assertEqual(self.client.get('/api/leads/').data['count'], 0)
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(f'/api/leads/{lead.pk}/assign/', {'sales_officer_id': ce.pk}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.client.force_authenticate(ce)
+        self.assertEqual(self.client.get('/api/leads/').data['results'][0]['id'], lead.pk)
+        self.assertEqual(self.client.get('/api/analytics/me/?range=all').data['summary']['total'], 1)
+        self.assertTrue(OperationEvent.objects.filter(lead=lead, kind='imported').exists())
+        self.assertEqual(Lead.objects.filter(phone=lead.phone).count(), 1)
+
+    def test_rejecting_every_duplicate_finishes_upload_without_adding_leads(self):
+        self.sign_in_uploader()
+        batch = self.upload([self.customer(), self.customer(name='Duplicate')])
+        for row in batch.rows.all():
+            self.choose(row, 'SKIP')
+        self.assertEqual(self.commit(batch).data, {'created': 0, 'overwritten': 0, 'skipped': 2})
+        totals = self.client.get('/api/uploads/summary/').data['totals']
+        self.assertEqual((totals['awaiting_import'], totals['imported_leads'], totals['skipped_rows']), (0, 0, 2))
+        self.assertFalse(Lead.objects.exists())
 
     def test_source_is_revalidated_before_import_and_deleted_leads_do_not_block(self):
         Lead.objects.create(name='Deleted', phone='9876543210', deleted_at=timezone.now())

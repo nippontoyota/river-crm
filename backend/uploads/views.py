@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from django.db import transaction
+from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -9,6 +10,7 @@ from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from accounts.permissions import IsAdminOrMetaUploader
+from analytics.cache import invalidate_analytics
 from intake.mapping import validate_customer
 from intake.services import publish
 from leads.models import Lead, LeadAudit
@@ -29,6 +31,26 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
         if self.request.user.role == 'META_UPLOADER':
             batches = batches.filter(uploaded_by=self.request.user)
         return batches
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        batches = self.get_queryset()
+        totals = batches.aggregate(
+            total_uploads=Count('pk'),
+            awaiting_import=Count('pk', filter=Q(status__in=['PARSING', 'READY'])),
+            failed_uploads=Count('pk', filter=Q(status='FAILED')),
+        )
+        totals.update(UploadRow.objects.filter(batch__in=batches, batch__status='COMMITTED').aggregate(
+            imported_leads=Count('pk', filter=Q(resolution='IMPORT')),
+            updated_leads=Count('pk', filter=Q(resolution='OVERWRITE')),
+            skipped_rows=Count('pk', filter=Q(resolution='SKIP')),
+        ))
+        recent = batches.annotate(
+            imported_leads=Count('rows', filter=Q(status='COMMITTED', rows__resolution='IMPORT')),
+            updated_leads=Count('rows', filter=Q(status='COMMITTED', rows__resolution='OVERWRITE')),
+        ).values('id', 'filename', 'status', 'total_rows', 'created_at', 'committed_at',
+                 'imported_leads', 'updated_leads', 'skipped')[:10]
+        return Response({'totals': totals, 'recent': list(recent)})
 
     def create(self, request):
         uploaded = request.FILES.get('file')
@@ -133,5 +155,6 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
         batch.skipped = len(rows) - len(selected)
         batch.save(update_fields=['status', 'committed_at', 'skipped'])
         batch.rows.update(answers=[])
+        transaction.on_commit(invalidate_analytics)
         transaction.on_commit(lambda: delete_original(batch.id))
         return Response({'created': created, 'overwritten': overwritten, 'skipped': batch.skipped})

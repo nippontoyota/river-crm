@@ -13,6 +13,13 @@ _MISSING = object()
 cache = caches["analytics"]
 
 
+def invalidate_analytics():
+    try:
+        cache.clear()
+    except Exception as error:
+        logger.warning("Analytics cache invalidation failed: %s", type(error).__name__)
+
+
 def analytics_cache_key(request, endpoint):
     user = request.user
     identity = {
