@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { IntakePage } from "@/features/intake/intake-page";
 
 export default function Page() {
-  redirect("/leads");
+  return <IntakePage />;
 }

@@ -38,6 +38,7 @@ const adminLinks = [
   ["/complaints", "Complaints", "⚑"],
   ["/team", "Users", "◬"],
   ["/lists", "Lists", "▤"],
+  ["/lead-intake", "Lead intake", "↓"],
   ["/leads", "Assignment", "▦"],
   ["/all-leads", "All leads", "☷"],
 ] as const;
