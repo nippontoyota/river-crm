@@ -7,6 +7,10 @@ on:
         description: 'Optional: explicitly authorized existing Meta test ID to replace; CRM receipt must already retain its answers.'
         type: string
         default: ''
+      review_existing_test_id:
+        description: 'Optional: correct an existing Meta TEST receipt with dummy details using the standard CRM review/import service.'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -40,6 +44,7 @@ jobs:
           INTAKE_SECRETS_JSON: ${{ secrets.INTAKE_SECRETS_JSON }}
           META_GRAPH_VERSION: ${{ vars.META_GRAPH_VERSION }}
           REPLACE_META_TEST_ID: ${{ inputs.replace_test_id }}
+          REVIEW_EXISTING_META_TEST_ID: ${{ inputs.review_existing_test_id }}
           INTAKE_EXECUTION_MODE: database
           INTAKE_ENABLED: 'true'
           CELERY_TASK_ALWAYS_EAGER: 'false'

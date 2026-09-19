@@ -1,4 +1,4 @@
-"""Manual production smoke test: create one labelled Meta test lead, never a CRM row."""
+"""Manual Meta test; optional existing-test correction uses the CRM review service."""
 import json
 import logging
 import os
@@ -88,6 +88,30 @@ def main():
 
     # Reuse our own test on reruns. Existing tests are never deleted.
     tests = request(f'{FORM_ID}/test_leads', {'fields': 'id,field_data', 'limit': 10})
+    review_id = os.environ.get('REVIEW_EXISTING_META_TEST_ID', '').strip()
+    if review_id:
+        if replace_test_id or not review_id.isascii() or not review_id.isdigit() or review_id not in {
+                str(test.get('id', '')) for test in tests.get('data', [])}:
+            raise ValueError('review_requires_confirmed_meta_test')
+        from intake.services import record, resolve
+        with transaction.atomic():
+            receipt = Submission.objects.select_for_update().get(form=form, external_id=review_id)
+            if receipt.state == 'IMPORTED' and receipt.lead.name.startswith(PREFIX):
+                print(f'PASS existing reviewed Meta test CRM lead_id={receipt.lead_id}; meta_lead_id={review_id}')
+                return
+            if receipt.state != 'NEEDS_REVIEW' or not receipt.fetched_at or receipt.answers_expired or existing_phone:
+                raise ValueError('review_test_not_eligible')
+            name = PREFIX + datetime.now(timezone.utc).strftime('%Y%m%dT%H%MZ') + ' - DO NOT CONTACT'
+            record(receipt, 'automation_test_review')
+            receipt = resolve(receipt.pk, 'correct', actor=None, corrections={
+                'name': name, 'phone': PHONE, 'email': 'meta-automation-test@example.com', 'city': 'Kochi',
+            })
+            if receipt.state != 'IMPORTED':
+                raise ValueError('review_test_not_imported')
+        print(f'PASS reviewed existing Meta test CRM lead_id={receipt.lead_id}; meta_lead_id={review_id}; status=FRESH')
+        print('TEST NAME: ' + name)
+        print('Existing Meta test fetched by Actions, then corrected through standard CRM review; no new Meta submission.')
+        return
     for test in tests.get('data', []):
         name = next((str(field.get('values', [''])[0]) for field in test.get('field_data', [])
                      if field.get('name') == 'full_name' and field.get('values')), '')
@@ -139,7 +163,8 @@ if __name__ == '__main__':
                       'dummy_phone_already_in_crm', 'form_questions_require_test_mapping',
                       'test_mapping_invalid', 'test_creation_not_confirmed',
                       'replacement_requires_retained_crm_receipt', 'replacement_test_id_mismatch',
-                      'test_deletion_not_confirmed'}
+                      'test_deletion_not_confirmed', 'review_requires_confirmed_meta_test',
+                      'review_test_not_eligible', 'review_test_not_imported'}
         code = str(error) if isinstance(error, ValueError) and str(error) in safe_codes else 'meta_test_failed'
         print('FAIL ' + code + '; details redacted')
         sys.exit(1)

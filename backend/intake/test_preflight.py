@@ -7,7 +7,7 @@ import sys
 from datetime import timedelta
 from contextlib import redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 
 from django.core.management import call_command
@@ -45,6 +45,43 @@ class PreflightTests(TransactionTestCase):
 
     def run_check(self):
         call_command('intake_check_credentials', stdout=self.out)
+
+    def test_existing_meta_test_uses_standard_review_and_is_idempotent(self):
+        import meta_test_lead
+        self.addCleanup(logging.disable, logging.root.manager.disable)
+        self.form.external_id, self.form.page_id = meta_test_lead.FORM_ID, meta_test_lead.PAGE_ID
+        self.form.save()
+        receipt = Submission.objects.create(connection=self.connection, form=self.form, external_id='789',
+            identity='meta:789', source='META', state='NEEDS_REVIEW', review_reason='validation',
+            fetched_at=timezone.now(), mapping_version=self.form.mappings.get(),
+            answers=[{'id': 'phone_number', 'label': 'phone_number', 'value': '<test phone>'}])
+        existing = Lead.objects.create(name='Keep customer', phone='9876543210', status='QUALIFIED')
+        before = Lead.objects.filter(pk=existing.pk).values().get()
+
+        def graph(request, **kwargs):
+            self.assertEqual(request.get_method(), 'GET')
+            payload = ({'data': [{'id': '789'}]} if '/test_leads?' in request.full_url
+                       else {'page': {'id': meta_test_lead.PAGE_ID}})
+            response = MagicMock()
+            response.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+            return response
+
+        with patch.dict(os.environ, {'REVIEW_EXISTING_META_TEST_ID': '789', 'REPLACE_META_TEST_ID': ''}), \
+                patch('meta_test_lead.build_opener') as opener, redirect_stdout(self.out):
+            opener.return_value.open.side_effect = graph
+            meta_test_lead.main()
+            meta_test_lead.main()
+        receipt.refresh_from_db()
+        self.assertEqual(receipt.state, 'IMPORTED')
+        self.assertEqual(receipt.lead.status, 'FRESH')
+        self.assertIsNone(receipt.lead.assigned_so_id)
+        self.assertEqual(receipt.lead.phone, meta_test_lead.PHONE)
+        self.assertTrue(receipt.lead.name.startswith(meta_test_lead.PREFIX))
+        self.assertEqual(Lead.objects.count(), 2)
+        self.assertEqual(Lead.objects.filter(pk=existing.pk).values().get(), before)
+        self.assertEqual(list(receipt.history.values_list('action', flat=True)),
+                         ['automation_test_review', 'corrected', 'imported'])
+        self.assertNotIn('private-token', self.out.getvalue())
 
     def test_real_fetch_mapping_preview_is_read_only_and_redacted(self):
         before = IntakeForm.objects.values().get()
