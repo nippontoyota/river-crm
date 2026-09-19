@@ -2,160 +2,173 @@
 
 Admins review website and selected Meta Instant Form enquiries at `/lead-intake`. Valid submissions create fresh, unassigned leads in the existing assignment pool. Intake never assigns a CE or changes a linked lead's customer details, owners or sales progress.
 
-## Low-cost deployment: existing river-crm + five-minute cron
+## Automatic delivery: existing CRM + Redis + Celery
 
-`INTAKE_EXECUTION_MODE=database` uses the existing receipt and upload tables as a
-queue. Meta webhooks save notifications immediately; the scheduled processor
-fetches those lead details and imports valid, fresh, unassigned leads. Website
-receipts and spreadsheet parsing use the same processor. No broker, dedicated
-worker, or Beat scheduler is required for **intake and uploads** in this mode.
+The production target is `INTAKE_EXECUTION_MODE=celery` with
+`CELERY_TASK_ALWAYS_EAGER=false` on web, worker and scheduler. Meta leads arrive
+automatically; no Fetch button or five-minute processing run is required.
 
-The default remains `celery` so deploying code alone does not strand existing work.
-Database mode ignores eager execution for intake/upload publication, even if
-`CELERY_TASK_ALWAYS_EAGER=true`. Other Celery jobs (including feedback and follow-up
-reminders) retain their existing configuration and schedules. Do not delete their
-infrastructure or change their eager setting as part of this cutover.
+Meta Instant Form → existing HTTPS webhook → saved receipt + Redis job → Celery
+worker → existing CRM database → CRM screen.
 
-### 1. Deploy backend and preserve existing configuration
+The webhook verifies the signature, saves a durable receipt, queues its ID and
+responds promptly. The worker retrieves lead details, applies the existing mapping,
+checks duplicates and imports valid, fresh, unassigned leads. The worker writes to
+the same database; it does not call the web service to deliver the lead. Pending
+receipts remain recoverable if Redis or a worker is temporarily unavailable.
 
-Keep the current web service, URL, database and keys. Root: `backend`; build:
-`bash build.sh`; Pre-Deploy: `python manage.py migrate --noinput`; start:
+Redis holds processing jobs; PostgreSQL holds the durable receipts and CRM leads.
+Use a dedicated persistent queue, separate from analytics caching. The existing
+one-minute sweep recovers pending/expired work, the fifteen-minute Meta scan catches
+missed notifications, and retention runs hourly. Normal delivery starts with the
+webhook. Admin lead lists refresh every 30 seconds while visible, so the screen
+updates without a manual import. Duplicates and invalid enquiries require review.
 
-```bash
-gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker --workers 1
-```
+### 1. Preserve the current service and Meta setup
 
-Deploy backend before frontend. The build script also runs migrations for manually
-configured services whose Pre-Deploy command is blank. Migration `intake.0002`
-adds nullable processing leases and per-form fetch progress; existing leads and
-connection/form identifiers are preserved. Do not switch web mode until the cron
-has run successfully against the same database.
+Keep `river-crm`, its database, callback URL, signing keys and existing connections,
+form IDs, mappings and activation dates. This switch needs no new database
+migration; keep already-applied migrations and their fields.
 
-### 2. Shared secrets and Meta setup
-
-Create a `river-runtime` environment group manually and copy existing values;
-do not rotate them or commit them. `render.yaml` references this group.
-
-| Variable | Value |
-| --- | --- |
-| `DATABASE_URL` | Same existing PostgreSQL database on web and cron |
-| `DJANGO_SECRET_KEY` | Existing value |
-| `JWT_SIGNING_KEY`, `INTAKE_FINGERPRINT_KEY` | Existing values; if absent, preserve their current Django-key fallback |
-| `DJANGO_DEBUG` | `false` |
-| `INTAKE_ENABLED` | `true` after Meta/forms are verified; controls website and Meta intake, not upload processing |
-| `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_UPLOAD_BUCKET` | Same existing upload storage on both services |
-| `INTAKE_SECRETS_JSON` | Existing credential references and tokens, including any website secrets |
-| `META_APP_SECRET` | Secret of the subscribed Meta app |
-| `META_VERIFY_TOKEN` | Exact token used for webhook verification |
-| `META_GRAPH_VERSION` | Explicit currently supported version verified in the Meta app dashboard |
-
-For a connection whose secret reference is `main-meta`, the corresponding JSON
-entry is `"main-meta": {"access_token": "YOUR_AUTHORIZED_PAGE_ACCESS_TOKEN"}`.
-Use the connection's actual existing reference and retain other entries. Never
-put this token in frontend environment variables or screenshots.
-
-Verify Meta's Page webhook callback is
-`https://river-crm.onrender.com/api/integrations/meta/webhook/`, its verification
-token matches, and the app is subscribed to the selected Page's `leadgen` events.
-Verify Page lead access, lead-retrieval permissions, token validity, and the app's
-production access/review requirements in Meta. Callback verification alone does
-not prove the app can retrieve leads. The configured Page ID, Form ID and mapping
-must match the advertised Instant Form. Keep the existing activation dates.
-
-Keep web host/CORS/CSRF and analytics `CACHE_URL` settings on the web service.
-Supabase storage is required for cross-service uploads: cron cannot read web-local
-media files. Confirm existing pending files are in the shared bucket before cutover.
-
-### 3. Create the scheduled processor, then switch web mode
-
-Create **one cron job** in the web service's region, from the same repository and
-commit. Manual setup avoids unintentionally recreating existing resources.
+The web settings remain:
 
 | Setting | Value |
 | --- | --- |
-| Name | `river-intake-processor` |
-| Runtime / root | Python / `backend` |
-| Compute | 0.5 CPU / 512 MB (`0.5c-512mb`); monitor actual memory |
-| Build | `pip install -r requirements.txt` |
-| Schedule | `*/5 * * * *` |
-| Command | `python manage.py migrate --check && python manage.py intake_process_pending` |
-| Environment | Link `river-runtime`; set `INTAKE_EXECUTION_MODE=database` |
+| Root | `backend` |
+| Build | `bash build.sh` |
+| Pre-Deploy | `python manage.py migrate --noinput` |
+| Start | `gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker --workers 1` |
 
-Confirm a successful cron run and a `processor` heartbeat in
-`GET /api/intake/connections/health/`. Then set **web**
-`INTAKE_EXECUTION_MODE=database` and redeploy. Resolve any service-level environment
-overrides; both services must use matching intake enablement and credentials.
-If existing workers/Beat remain for other features, set their
-`INTAKE_EXECUTION_MODE=database` too and restart them so their old automatic Meta
-scans stop. Leave unrelated Celery settings unchanged. In Lead Intake → Connections the new
-mode shows Scheduled processor rather than worker/scheduler health.
+The build script also runs migrations if Pre-Deploy is blank. Deploy the backend
+before the frontend. Do not change the live web's eager/mode overrides until the
+queue, worker and scheduler are verified.
 
-Runs finish when queues are empty or after about four minutes. A database lease
-prevents overlapping processors, including manual shell runs. Interrupted receipt
-leases expire and retry; each scan page and cursor commit together. Larger backlogs
-can take multiple runs, so five minutes is a normal scheduling delay, not an SLA.
-An idle run makes **no Meta requests**. Retention runs hourly within this budget.
+### 2. Prepare shared configuration
 
-Render bills cron by active runtime with a **$1 monthly minimum per job**, not a
-fixed unlimited $1 price. Cron jobs cannot use persistent disks. See
-[Render cron documentation](https://render.com/docs/cronjobs). Check actual runtime
-and billing after rollout. `render.yaml` describes the target setup; review its
-preview before syncing and preserve services used by other features.
+Create `river-runtime` manually, copying existing values without rotating keys.
+The Blueprint references this existing environment group. Use the same settings
+on web, worker and scheduler:
 
-### 4. Manual fetch and recovery
+| Variable | Required value |
+| --- | --- |
+| `DATABASE_URL` | Existing PostgreSQL database |
+| `DJANGO_SECRET_KEY` | Existing value |
+| `JWT_SIGNING_KEY`, `INTAKE_FINGERPRINT_KEY` | Existing values; preserve their Django-key fallback if currently absent |
+| `DJANGO_DEBUG` | `false` |
+| `INTAKE_EXECUTION_MODE` | `celery` |
+| `CELERY_TASK_ALWAYS_EAGER` | `false` |
+| `INTAKE_ENABLED` | `true` once existing Meta credentials and forms are verified |
+| `REDIS_URL` | New queue's **internal** connection URL |
+| `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_UPLOAD_BUCKET` | Same shared upload storage |
+| `INTAKE_SECRETS_JSON` | Existing Page-token and website-secret entries |
+| `META_APP_SECRET`, `META_VERIFY_TOKEN`, `META_GRAPH_VERSION` | Existing app secret, verification token and pinned supported version |
 
-Under **Lead Intake → Connections**, each eligible Meta form has **Fetch Meta
-leads**. This queues a catch-up scan for the next cron run; repeated clicks coalesce.
-Normal webhook enquiries continue automatically. The browser's status refresh
-reads CRM data only. There is no periodic Meta form scan in database mode.
+Keep any existing WhatsApp settings in the shared runtime configuration. Leave
+host/CORS/CSRF and analytics `CACHE_URL` on web. Do not use the analytics cache as
+the task queue. Resolve service-level overrides so all services agree. While
+preparing the environment group, preserve web's current eager/mode overrides until
+cutover; link worker and scheduler first.
 
-The scan starts at the last checkpoint minus the existing 30-minute overlap, or
-activation for the first scan, and ends at the click time. It resumes stored page
-progress across runs and preserves Meta lead-ID deduplication. The checkpoint
-advances only after a complete window. If a retry first finishes an older window,
-it then catches up to the new click time. No pre-activation leads are imported.
+Supabase storage is necessary across services: the worker cannot read files saved
+only on the web instance. Verify existing pending files are in the shared bucket.
 
-Fetch states are `idle`, `queued`, `running`, `completed`, `error`. Completed means
-the scan finished; individual receipts can still be queued or need review. On a
-scan error, the request stops with a redacted reason and retains progress. Correct
-the issue and click Fetch again; invalid/expired cursors restart the fixed window
-safely. Credential failures pause the connection: fix credentials on web and cron,
-resume the connection, then retry. Individual receipt errors retain automatic
-backoff and the existing ten-attempt limit. Missed webhooks are recovered only when
-an administrator requests a fetch.
+### 3. Provision queue, worker and scheduler
 
-`POST /api/intake/forms/{id}/fetch/` is admin-only, returns `202` with the form and
-fetch state, and returns `409` when database mode/intake/configuration is not ready.
-Form reads add `fetch_status` and `fetch_requested_at`; health adds `execution_mode`
-and the `processor` heartbeat. Internal cursors and credentials are never exposed.
-Upload metadata adds `processing_mode`; both upload screens explain the wait.
+Create these services from the same repository/commit and in **the existing web
+service's region**. Review current prices before provisioning; all three remain
+running and cost more than the former cron setup.
 
-For immediate processing from the cron environment, run
-`python manage.py intake_process_pending`. `intake_recover` delegates to this
-command in database mode; it does not initiate an unrequested Meta scan. Avoid
-Render's Trigger Run while a run is active because Render cancels the active run.
+| Service | Type / compute | Configuration |
+| --- | --- | --- |
+| `river-queue` | Persistent Key Value / `256mb` | `noeviction`; internal access only |
+| `river-worker` | Background Worker / `0.5c-512mb` | Root `backend`; build `pip install -r requirements.txt` |
+| `river-scheduler` | Background Worker / `0.5c-512mb` | Same root/build; exactly one instance |
 
-### 5. Verify and monitor
+Worker start command:
 
-- Submit a fresh Meta test lead to the configured form. Confirm webhook receipt,
-  then import into Fresh leads and manual assignment within about five minutes.
-- Click Fetch; verify that the test lead is not duplicated and the scan completes.
-- Upload a small CSV. The request should return pending quickly and become ready
-  after a cron run. Confirm Supabase download/deletion and final import.
-- Check processor heartbeat (stale after ten minutes), pending receipt age, failed
-  receipts, paused connections, scan errors, cron duration/cost and OOM events for
-  24 hours. Investigate repeated time-budget exits or sustained backlog.
-- On failure, keep the database and shared files, repair the cron environment and
-  rerun the command. `INTAKE_ENABLED=false` stops integration acceptance/processing
-  but upload recovery and retention continue. Pause new uploads operationally if
-  the processor/storage is unavailable. Do not restore eager intake as an OOM fix.
+```bash
+python manage.py migrate --check && celery -A config worker --loglevel=warning --concurrency=1 --prefetch-multiplier=1 --max-tasks-per-child=100
+```
 
-To keep or restore Celery processing instead, provision/verify the existing broker,
-worker and Beat first, then set `INTAKE_EXECUTION_MODE=celery` on all of them and web
-and stop the database cron. Use one worker child (`--concurrency=1
---prefetch-multiplier=1 --max-tasks-per-child=100`). The legacy fifteen-minute Meta
-reconciliation, receipt/upload sweep and retention remain available in that mode;
-unrelated feedback/follow-up schedules are unchanged in either mode.
+Scheduler start command:
+
+```bash
+python manage.py migrate --check && celery -A config beat --loglevel=warning --schedule=/tmp/celerybeat-schedule
+```
+
+Worker recycling bounds accumulation between tasks, not a single oversized task.
+Keep the existing 1,000-row / 10 MB spreadsheet limits and 25 MB expanded-XLSX
+limit. Parsing runs in the worker; final import remains synchronous and bounded.
+
+`render.yaml` describes this target, including queue URL references and mode/eager
+overrides. For an existing manually configured service, use these instructions for
+a staged cutover. If syncing a Blueprint, first review the preview, set matching
+regions, and ensure it updates the existing web service rather than creating a
+second one. Do not add another Beat scheduler if one already exists. See
+[Render's Celery deployment guide](https://render.com/docs/deploy-celery).
+
+### 4. Verify Meta and cut over
+
+The callback stays:
+`https://river-crm.onrender.com/api/integrations/meta/webhook/`.
+
+Keep the existing Meta app. Verify its Page `leadgen` subscription, matching
+verification token/app secret, valid authorized Page token and lead access.
+Confirm the configured Page/Form IDs match the advertised Instant Form. Check the
+account's production access, permissions and app-review requirements in Meta;
+webhook verification alone does not prove lead retrieval works.
+
+For a connection referencing `main-meta`, the matching secret JSON entry is
+`"main-meta": {"access_token": "YOUR_AUTHORIZED_PAGE_ACCESS_TOKEN"}`. Use the actual
+existing reference and preserve all other entries. Credentials stay server-side.
+
+1. Confirm Redis is reachable and both worker and scheduler have fresh independent
+   heartbeats in `GET /api/intake/connections/health/`. Worker startup may recover
+   pending work, so verify shared credentials/database/storage before starting it.
+2. If `river-intake-processor` cron was created, suspend it and let any current run
+   finish. Keep the durable receipts, files and prior migration fields.
+3. Set web `INTAKE_EXECUTION_MODE=celery`, `CELERY_TASK_ALWAYS_EAGER=false`,
+   `INTAKE_ENABLED=true`, and the same internal `REDIS_URL`; redeploy. Confirm all
+   three services use these values. Do not disable eager mode without a healthy
+   broker and worker.
+4. In Lead Intake → Connections, verify Worker/Scheduler health and automatic
+   delivery messaging. The manual Fetch button and five-minute text are hidden.
+5. Submit one fresh Meta test enquiry. Confirm receipt, worker processing, Fresh
+   lead creation, source/mapping, and unassigned status without pressing Fetch.
+   Delivery normally takes seconds plus the screen's refresh interval; backlog or
+   provider outages can delay it.
+6. Repeat the notification and confirm no duplicate lead. Upload a small CSV and
+   verify pending → ready, duplicate review, import, and shared-storage deletion.
+7. Run `python manage.py intake_recover` in the web shell if pending work needs an
+   immediate recovery sweep. This publishes jobs to Redis; the worker processes them.
+
+### 5. Monitor and recover
+
+Watch web and worker memory, OOM events, worker/scheduler heartbeats, oldest pending
+receipt, failed receipts, paused connections, recovery checkpoints, queue memory,
+and actual bills for 24 hours. A missing/stale heartbeat requires investigation;
+normal manual review records do not necessarily mean processing is broken.
+
+If the queue/worker fails, preserve receipts and storage, repair the service and
+run recovery. Credentials failures pause a connection: fix them on all services,
+resume it in CRM, then allow the automatic retries/recovery scan to run. Do not
+restore eager execution to address an outage or OOM. If maintenance requires it,
+set `INTAKE_ENABLED=false` consistently and pause new uploads operationally while
+repairing the system. Upload recovery remains enabled independently of that flag.
+
+Feedback and follow-up reminder schedules remain unchanged. This setup uses the
+same Celery worker/Beat for their existing jobs. Do not remove services needed by
+other features or run multiple scheduler instances.
+
+### Compatibility with the earlier cron mode
+
+The optional `database` mode, `intake_process_pending` command and fetch-progress
+fields remain for compatibility; they are not the production target. No existing
+records or APIs are removed. The manual fetch endpoint returns `409` in Celery
+mode. Health still reports `execution_mode`; forms retain fetch status fields,
+and uploads retain `processing_mode` so old clients stay compatible. Set no cron
+schedule for this deployment. Existing receipt/lead IDs provide deduplication
+across the cutover, and automatic reconciliation covers interrupted manual scans.
 
 ### Upload review API
 
@@ -172,33 +185,23 @@ Final import stays atomic and synchronous for capped batches, with fresh phone
 locks/match checks. Row limits apply to both new files and commits of legacy batches.
 No new database tables are required.
 
-### Five-minute processor verification (2026-09-19)
+### Automatic Celery verification (2026-09-19)
 
-- 88 isolated PostgreSQL intake/upload tests passed, including signed webhook
-  persistence without a broker, manual-fetch permissions/idempotency, interrupted
-  pages, real deadline recovery, credential failures and upload processing with
-  integration intake disabled.
-- Production frontend build, TypeScript and lint on the changed intake components
-  passed. Desktop/mobile browser checks used an isolated database and simulated
-  Graph responses: fetch, webhook import, no duplicate on retry, health/error
-  displays, queued upload, review and final import all passed.
-- Live Meta delivery, Render cron execution, shared Supabase storage and production
-  memory/cost still require the rollout checks above. The existing schema-generator
-  diagnostics remain; no new unique schema warnings/errors were introduced.
-
-### Earlier Celery/upload verification (2026-09-19)
-
-- 76 upload/intake tests passed against isolated PostgreSQL, including phone-lock
-  concurrency, 1,000/1,001-row CSV/XLSX limits, rollback and legacy-batch handling.
-- Real Redis, one Gunicorn worker, one Celery child and one scheduler passed two
-  rounds of concurrent 1,000-row uploads/imports, a 1,000-row duplicate batch,
-  worker restart and queue-outage recovery. Signed Meta webhooks used simulated
-  Graph responses; storage was local rather than production Supabase.
-- Sampled aggregate RSS peaks: web 134 MB, worker 190 MB, scheduler 94 MB, queue
-  15 MB. These local synthetic results are not a guarantee of Render memory usage.
-- Frontend production build/type checking and Admin/Meta Uploader browser flows
-  passed, including 50-row pagination and batch-wide rejection. The original
-  lead desk already has an unrelated ESLint state-update error and hook warning.
+- 88 isolated PostgreSQL intake/upload tests passed, preserving both processing
+  modes, duplicate protection, row limits and concurrency behavior.
+- Real Redis, one Gunicorn worker, one Celery child and one Beat scheduler passed
+  automatic signed-webhook import, duplicate delivery, recovery scans, worker
+  restart and recovery of Meta receipts/uploads accepted during a Redis outage.
+  Two rounds of concurrent 1,000-row uploads/imports and 1,000-row duplicate review
+  also passed. Graph responses were simulated and storage was local.
+- Sampled aggregate RSS peaks were web 133 MB, worker 190 MB, scheduler 94 MB and
+  queue 15 MB. These local measurements are not a production memory guarantee.
+- Production frontend build/type checking and targeted intake lint passed. Browser
+  checks covered desktop/mobile, worker/scheduler health, hidden manual/cron
+  controls, automatic Fresh lead appearance on the normal 30-second refresh
+  without a page reload, and duplicate delivery creating one lead.
+- Live Meta credentials/subscriptions, hosted Render services, shared Supabase
+  storage and production memory/cost still require the rollout checks above.
 
 Run the backend regressions using an isolated UTF-8 PostgreSQL test database:
 `backend/.venv/bin/python backend/manage.py test uploads intake --noinput`.

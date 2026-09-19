@@ -1,8 +1,14 @@
-# Target: existing river-crm plus one five-minute cron job.
+# Target: existing river-crm plus a persistent queue, Celery worker and scheduler.
 # Follow backend/intake/README.md for a staged manual cutover first.
 # Create river-runtime manually with existing secrets; do not rotate signing keys.
-# Review Blueprint changes before syncing; retain workers used by other features.
+# Use the existing web service's region for every service. Check the Blueprint preview.
+# Verify worker/scheduler health before changing the web's eager/mode overrides.
 services:
+  - type: keyvalue
+    name: river-queue
+    plan: 256mb
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
   - type: web
     name: river-crm
     runtime: python
@@ -14,7 +20,16 @@ services:
     envVars:
       - fromGroup: river-runtime
       - key: INTAKE_EXECUTION_MODE
-        value: database
+        value: celery
+      - key: CELERY_TASK_ALWAYS_EAGER
+        value: "false"
+      - key: INTAKE_ENABLED
+        value: "true"
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: river-queue
+          property: connectionString
       - key: CACHE_URL
         sync: false
       - key: CACHE_TTL_SECONDS
@@ -25,15 +40,44 @@ services:
         sync: false
       - key: CSRF_TRUSTED_ORIGINS
         sync: false
-  - type: cron
-    name: river-intake-processor
+  - type: worker
+    name: river-worker
     runtime: python
     plan: 0.5c-512mb
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    schedule: "*/5 * * * *"
-    startCommand: python manage.py migrate --check && python manage.py intake_process_pending
+    startCommand: python manage.py migrate --check && celery -A config worker --loglevel=warning --concurrency=1 --prefetch-multiplier=1 --max-tasks-per-child=100
     envVars:
       - fromGroup: river-runtime
       - key: INTAKE_EXECUTION_MODE
-        value: database
+        value: celery
+      - key: CELERY_TASK_ALWAYS_EAGER
+        value: "false"
+      - key: INTAKE_ENABLED
+        value: "true"
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: river-queue
+          property: connectionString
+  - type: worker
+    name: river-scheduler
+    runtime: python
+    plan: 0.5c-512mb
+    numInstances: 1
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manage.py migrate --check && celery -A config beat --loglevel=warning --schedule=/tmp/celerybeat-schedule
+    envVars:
+      - fromGroup: river-runtime
+      - key: INTAKE_EXECUTION_MODE
+        value: celery
+      - key: CELERY_TASK_ALWAYS_EAGER
+        value: "false"
+      - key: INTAKE_ENABLED
+        value: "true"
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: river-queue
+          property: connectionString
