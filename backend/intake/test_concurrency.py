@@ -142,3 +142,35 @@ class IntakeConcurrencyTests(TransactionTestCase):
         Submission.objects.filter(pk=later).update(next_attempt_at=timezone.now())
         process_submission.run(str(later))
         self.assertEqual(Lead.objects.count(), 1)
+
+
+    @override_settings(INTAKE_EXECUTION_MODE='database')
+    def test_overlapping_database_processors_run_reminders_once(self):
+        from contextlib import nullcontext
+        from threading import Event
+        from feedback.models import FeedbackState
+        from .models import Heartbeat
+        from .processor import process_pending
+        FeedbackState.objects.get_or_create(pk=1)
+        entered, release = Event(), Event()
+        def reminders():
+            entered.set()
+            if not release.wait(timeout=10):
+                raise RuntimeError('test synchronization timeout')
+        def first():
+            close_old_connections()
+            try:
+                return process_pending(reminders=True, automatic_meta=True)
+            finally:
+                close_old_connections()
+        with patch('intake.processor.time_limit', return_value=nullcontext()), patch('notifications.tasks.create_due_follow_up_notifications.run', side_effect=reminders) as reminder:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(first)
+                try:
+                    self.assertTrue(entered.wait(timeout=5))
+                    self.assertEqual(process_pending(reminders=True, automatic_meta=True), 'Another processor is running.')
+                finally:
+                    release.set()
+                self.assertIn('Processing completed', future.result(timeout=10))
+            self.assertEqual(reminder.call_count, 1)
+        self.assertIsNone(Heartbeat.objects.get(name='processor').lease_token)

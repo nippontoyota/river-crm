@@ -66,9 +66,19 @@ class ConnectionSerializer(serializers.ModelSerializer):
 class FormSerializer(serializers.ModelSerializer):
     page_id = serializers.CharField(required=False, allow_blank=True, default='', max_length=100)
     fetch_status = serializers.ReadOnlyField()
+    scan_delayed = serializers.SerializerMethodField()
+
+    def get_scan_delayed(self, obj) -> bool:
+        from .processor import META_SCAN_STALE_SECONDS
+        if not settings.INTAKE_ENABLED or obj.connection.origin != 'META' or not obj.enabled or not obj.connection.enabled:
+            return False
+        boundary = max(obj.activated_at, obj.connection.activated_at)
+        since = obj.last_reconciled_at or boundary
+        return (timezone.now() - since).total_seconds() >= META_SCAN_STALE_SECONDS
+
     class Meta:
         model = IntakeForm
-        fields = ['id', 'connection', 'name', 'external_id', 'page_id', 'enabled', 'activated_at', 'checkpoint', 'last_reconciled_at', 'reconcile_error', 'fetch_requested_at', 'fetch_status']
+        fields = ['id', 'connection', 'name', 'external_id', 'page_id', 'enabled', 'activated_at', 'checkpoint', 'last_reconciled_at', 'reconcile_error', 'fetch_requested_at', 'fetch_status', 'scan_delayed']
         read_only_fields = ['checkpoint', 'last_reconciled_at', 'reconcile_error', 'fetch_requested_at', 'fetch_status']
 
     def validate(self, attrs):
@@ -233,6 +243,13 @@ class HealthSerializer(serializers.Serializer):
     execution_mode = serializers.ChoiceField(choices=['celery', 'database'])
     heartbeats = serializers.DictField(child=serializers.DateTimeField())
     connections = HealthConnectionSerializer(many=True)
+    processor_interval_seconds = serializers.IntegerField()
+    meta_scan_interval_seconds = serializers.IntegerField()
+    processor_stale_after_seconds = serializers.IntegerField()
+    meta_scan_stale_after_seconds = serializers.IntegerField()
+    last_processor_attempt_at = serializers.DateTimeField(allow_null=True)
+    last_processor_success_at = serializers.DateTimeField(allow_null=True)
+    processor_delayed = serializers.BooleanField()
 
 
 class ErrorResponseSerializer(serializers.Serializer):

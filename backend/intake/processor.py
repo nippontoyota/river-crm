@@ -7,13 +7,31 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from .meta import MetaFailure, form_lead_page
-from .models import Connection, Heartbeat, IntakeForm
+from .models import Connection, Heartbeat, IntakeForm, Submission
 from .services import accept
 from .tasks import due_receipts, process_submission, purge_expired_answers
+
+
+PROCESSOR_INTERVAL_SECONDS = 300
+META_SCAN_INTERVAL_SECONDS = 1800
+PROCESSOR_STALE_SECONDS = 900
+META_SCAN_STALE_SECONDS = 3600
+
+
+def request_due_scans():
+    now = timezone.now()
+    return IntakeForm.objects.filter(
+        enabled=True, connection__enabled=True, connection__paused_reason='', connection__origin='META',
+        activated_at__lte=now, connection__activated_at__lte=now, fetch_requested_at__isnull=True,
+    ).filter(
+        Q(last_reconciled_at__isnull=True) |
+        Q(last_reconciled_at__lte=now - timedelta(seconds=META_SCAN_INTERVAL_SECONDS)) |
+        Q(reconcile_end__isnull=False)
+    ).update(fetch_requested_at=now)
 
 
 class ProcessingDeadline(BaseException):
@@ -68,20 +86,23 @@ def fetch_page(form_id):
                     current.last_reconciled_at = timezone.now()
                 current.reconcile_start = current.reconcile_end = None
             current.save(update_fields=['checkpoint', 'reconcile_cursor', 'reconcile_error', 'fetch_requested_at', 'last_reconciled_at', 'reconcile_start', 'reconcile_end'])
+        return len(leads)
     except Exception as error:
         code = error.code if isinstance(error, MetaFailure) else 'reconciliation_temporarily_unavailable'
-        changes = {'fetch_requested_at': None, 'reconcile_error': code}
-        # Expired/repeated cursors restart the same fixed window on manual retry.
+        changes = {'reconcile_error': code}
+        # Keep the request for the next run; never retry failures in a tight loop.
+        # Expired/repeated cursors restart the same fixed window with identity deduplication.
         if code in ('meta_request_rejected', 'meta_invalid_pagination'):
             changes['reconcile_cursor'] = ''
         IntakeForm.objects.filter(pk=form_id, reconcile_lease_until=lease).update(**changes)
         if isinstance(error, MetaFailure) and error.pause:
             Connection.objects.filter(pk=form.connection_id).update(paused_reason=code)
+        return None
     finally:
         IntakeForm.objects.filter(pk=form_id, reconcile_lease_until=lease).update(reconcile_lease_until=None)
 
 
-def process_pending(max_seconds=240):
+def process_pending(max_seconds=240, *, automatic_meta=False, reminders=False):
     from uploads.models import UploadBatch
     from uploads.tasks import parse_upload_batch
 
@@ -97,17 +118,29 @@ def process_pending(max_seconds=240):
         heartbeat.lease_until = now + timedelta(seconds=max_seconds + 30)
         heartbeat.lease_token = token
         heartbeat.save()
+        Heartbeat.objects.update_or_create(name='processor_attempt', defaults={'seen_at': now})
 
     def beat():
         Heartbeat.objects.filter(name='processor', lease_token=token).update(seen_at=timezone.now())
 
     deadline = time.monotonic() + max_seconds
+    started = now
+    scanned = 0
+    failed_forms = set()
+    budget_reached = False
     try:
         with time_limit(max_seconds):
-            # Retention also covers uploads when integration intake is disabled.
+            if reminders:
+                from feedback.tasks import process_feedback_queue
+                from notifications.tasks import create_due_follow_up_notifications
+                create_due_follow_up_notifications.run()
+                process_feedback_queue.run()
+            # Run due retention before scanning so a long catch-up cannot starve it.
+            # Upload retention also runs when integration intake is disabled.
             if not Heartbeat.objects.filter(name='retention', seen_at__gt=timezone.now() - timedelta(hours=1)).exists():
                 purge_expired_answers.run()
                 Heartbeat.objects.update_or_create(name='retention', defaults={'seen_at': timezone.now()})
+            scans_requested = False
             while time.monotonic() < deadline:
                 did_work = False
                 # Alternate queues so a large recovery scan cannot starve uploads or webhooks.
@@ -121,17 +154,38 @@ def process_pending(max_seconds=240):
                         process_submission.run(str(receipt_id))
                         did_work = True
                         beat()
+                    if automatic_meta and not scans_requested:
+                        request_due_scans()
+                        scans_requested = True
                     forms = IntakeForm.objects.filter(fetch_requested_at__isnull=False, enabled=True, connection__enabled=True, connection__paused_reason='', connection__origin='META').filter(
                         Q(reconcile_lease_until__isnull=True) | Q(reconcile_lease_until__lte=timezone.now())
-                    ).order_by('fetch_requested_at', 'pk').values_list('pk', flat=True)[:100]
+                    ).exclude(pk__in=failed_forms).order_by('fetch_requested_at', 'pk').values_list('pk', flat=True)[:100]
                     for form_id in list(forms):
-                        fetch_page(form_id)
+                        result = fetch_page(form_id)
+                        if result is None:
+                            failed_forms.add(form_id)
+                        else:
+                            scanned += result
                         did_work = True
                         beat()
                 if not did_work:
                     break
     except ProcessingDeadline:
-        return 'Time budget reached; remaining work will resume on the next run.'
+        budget_reached = True
     finally:
         Heartbeat.objects.filter(name='processor', lease_token=token).update(seen_at=timezone.now(), lease_until=None, lease_token=None)
-    return 'Pending intake and upload work processed.'
+    # A clean budget yield is successful: durable in-flight work resumes next run.
+    # Unhandled exceptions skip this heartbeat even though the lease is released.
+    counts = dict(Submission.objects.values('state').annotate(total=Count('pk')).values_list('state', 'total'))
+    imported = Submission.objects.filter(state='IMPORTED', updated_at__gte=started).count()
+    pending_receipts = sum(counts.get(state, 0) for state in ('RECEIVED', 'PROCESSING'))
+    pending_scans = IntakeForm.objects.filter(fetch_requested_at__isnull=False).count()
+    pending_uploads = UploadBatch.objects.filter(status='PARSING').count()
+    summary = (
+        f'scanned={scanned} imported={imported} awaiting_review={counts.get("NEEDS_REVIEW", 0)} '
+        f'failed={counts.get("FAILED", 0)} scan_failures={len(failed_forms)} '
+        f'upload_failures={UploadBatch.objects.filter(status="FAILED").count()} '
+        f'remaining_receipts={pending_receipts} remaining_scans={pending_scans} remaining_uploads={pending_uploads}'
+    )
+    Heartbeat.objects.update_or_create(name='processor_success', defaults={'seen_at': timezone.now()})
+    return ('Time budget reached; remaining work will resume on the next run. ' if budget_reached else 'Processing completed. ') + summary

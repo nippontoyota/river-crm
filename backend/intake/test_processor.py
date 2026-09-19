@@ -195,7 +195,7 @@ class ProcessorTests(TestCase):
             self.assertEqual(graph.call_args.args[2]['after'], 'page-two')
             self.form.refresh_from_db()
             self.assertEqual(self.form.checkpoint, original_end)
-            self.assertEqual(self.form.fetch_status, 'queued')  # Finish up to the new click time next.
+            self.assertEqual(self.form.fetch_status, 'completed')  # Retry retains the original fixed window.
             fetch_page(self.form.pk)
         self.form.refresh_from_db()
         self.assertEqual(self.form.fetch_status, 'completed')
@@ -266,3 +266,151 @@ class ProcessorTests(TestCase):
         self.assertEqual(receipt.state, 'NEEDS_REVIEW')
         self.assertIn('email', receipt.errors)
         self.assertFalse(Lead.objects.exists())
+
+    def test_automatic_catchup_incremental_overlap_and_webhook_identity(self):
+        from datetime import datetime
+        boundary = datetime.fromisoformat('2026-08-29T00:00:00+05:30')
+        Connection.objects.filter(pk=self.connection.pk).update(activated_at=boundary)
+        IntakeForm.objects.filter(pk=self.form.pk).update(activated_at=boundary)
+        self.receipt()  # Existing webhook delivery, before the first automatic scan.
+        calls = []
+        def graph(connection, path, params):
+            if path.endswith('/leads'):
+                calls.append(params)
+                return self.page('222', '333')
+            return self.graph(connection, path, params)
+        with patch('intake.meta.graph', side_effect=graph), patch('intake.tasks.graph', side_effect=self.graph):
+            out = self.run_processor(automatic_meta=True)
+            self.form.refresh_from_db()
+            checkpoint = self.form.checkpoint
+            self.assertEqual(json.loads(calls[0]['filtering'])[0]['value'], int(boundary.timestamp()) - 1)
+            self.assertEqual(Lead.objects.count(), 2)
+            self.assertEqual(Submission.objects.count(), 2)
+            self.assertIn('scanned=2', out)
+            self.run_processor(automatic_meta=True)
+            self.assertEqual(len(calls), 1)
+            IntakeForm.objects.filter(pk=self.form.pk).update(last_reconciled_at=timezone.now() - timedelta(minutes=31))
+            self.run_processor(automatic_meta=True)
+            self.assertEqual(json.loads(calls[1]['filtering'])[0]['value'], int((checkpoint - timedelta(minutes=30)).timestamp()) - 1)
+            self.assertEqual(Lead.objects.count(), 2)
+        self.assertFalse(IntakeAudit.objects.filter(action='meta_fetch_requested').exists())
+        self.assertFalse(Lead.objects.exclude(status='FRESH', assigned_so=None, assigned_ps=None).exists())
+        for private in ('test-token', 'Test customer', '9876543'):
+            self.assertNotIn(private, out)
+
+    def test_automatic_scan_skips_disabled_paused_and_future_forms(self):
+        for changes in ({'enabled': False}, {'activated_at': timezone.now() + timedelta(days=1)}):
+            IntakeForm.objects.filter(pk=self.form.pk).update(**changes)
+            with patch('intake.meta.graph') as graph:
+                self.run_processor(automatic_meta=True)
+                graph.assert_not_called()
+        IntakeForm.objects.filter(pk=self.form.pk).update(enabled=True, activated_at=self.connection.activated_at)
+        for changes in ({'enabled': False}, {'enabled': True, 'paused_reason': 'meta_access_required'}):
+            Connection.objects.filter(pk=self.connection.pk).update(**changes)
+            with patch('intake.meta.graph') as graph:
+                self.run_processor(automatic_meta=True)
+                graph.assert_not_called()
+
+    def test_automatic_failures_retry_once_per_run_and_expired_cursor_restarts_window(self):
+        for failure in (MetaFailure('meta_temporarily_unavailable'), TimeoutError('private-token'), MetaFailure('meta_request_rejected', permanent=True)):
+            with self.subTest(code=str(type(failure))):
+                IntakeForm.objects.filter(pk=self.form.pk).update(fetch_requested_at=timezone.now(), reconcile_cursor='expired')
+                with patch('intake.meta.graph', side_effect=failure) as graph:
+                    out = self.run_processor(automatic_meta=True)
+                self.assertEqual(graph.call_count, 1)
+                self.assertIn('scan_failures=1', out)
+                self.assertNotIn('private-token', out)
+                self.form.refresh_from_db()
+                end = self.form.reconcile_end
+                self.assertIsNotNone(self.form.fetch_requested_at)
+                with patch('intake.meta.graph', return_value=self.page()) as graph:
+                    self.run_processor(automatic_meta=True)
+                self.assertEqual(graph.call_count, 1)
+                if isinstance(failure, MetaFailure) and failure.permanent:
+                    self.assertNotIn('after', graph.call_args.args[2])
+                self.form.refresh_from_db()
+                self.assertEqual(self.form.checkpoint, end)
+                self.assertEqual(self.form.reconcile_error, '')
+
+    def test_automatic_import_preserves_existing_leads_reviews_and_audit(self):
+        from leads.models import FollowUp, LeadAudit
+        existing = Lead.objects.create(name='Existing owner', phone='9876543222', status='QUALIFIED', assigned_so=self.admin, duplicate_flag=True)
+        followup = FollowUp.objects.create(lead=existing, so=self.admin, scheduled_for=timezone.now() + timedelta(days=1))
+        audit = LeadAudit.objects.create(lead=existing, event='baseline', after={'kept': True})
+        before = Lead.objects.filter(pk=existing.pk).values().get()
+        review = self.receipt('555')
+        Submission.objects.filter(pk=review.pk).update(state='NEEDS_REVIEW', review_reason='validation', errors={'phone': 'Invalid phone.'})
+        def graph(connection, path, params):
+            if path.endswith('/leads'):
+                return self.page('222', '333', '444', '555')
+            value = self.graph(connection, path, params)
+            if path == '333':
+                value['field_data'][1]['values'] = ['invalid phone']
+            return value
+        with patch('intake.meta.graph', side_effect=graph), patch('intake.tasks.graph', side_effect=self.graph):
+            self.run_processor(automatic_meta=True)
+        self.assertEqual(Lead.objects.filter(pk=existing.pk).values().get(), before)
+        self.assertTrue(FollowUp.objects.filter(pk=followup.pk, notified_at=None).exists())
+        self.assertTrue(LeadAudit.objects.filter(pk=audit.pk, after={'kept': True}).exists())
+        self.assertEqual(Submission.objects.get(external_id='222').review_reason, 'existing_lead')
+        self.assertEqual(Submission.objects.get(external_id='333').review_reason, 'validation')
+        review.refresh_from_db()
+        self.assertEqual(review.errors, {'phone': 'Invalid phone.'})
+        self.assertEqual(review.attempts, 0)
+        self.assertEqual(Lead.objects.count(), 2)
+
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
+    def test_reminders_deduplicate_and_paused_meta_does_not_block_uploads(self):
+        from feedback.models import FeedbackTask
+        from leads.models import FollowUp, LeadAudit
+        from notifications.models import Notification
+        caller = User.objects.create_user(email='caller@example.com', password='test', role='FEEDBACK', location='Kochi')
+        lead = Lead.objects.create(name='Follow up', phone='9876543210', branch='Kochi', assigned_so=self.admin)
+        due = timezone.now() - timedelta(minutes=1)
+        followup = FollowUp.objects.create(lead=lead, so=self.admin, scheduled_for=due)
+        audit = LeadAudit.objects.create(lead=lead, event='baseline')
+        task = FeedbackTask.objects.create(lead=lead, source_audit=audit, kind='TDF', branch='Kochi', assigned_to=caller,
+                                           occurred_at=due, original_due_at=due, next_call_at=due)
+        Connection.objects.filter(pk=self.connection.pk).update(paused_reason='meta_access_required')
+        batch = UploadBatch.objects.create(filename='test.csv', storage_path='test.csv', uploaded_by=self.admin)
+        content = b'name,phone,email,source,enquiry date,city,pincode\nCustomer,9876543210,,META,,,\n'
+        with patch('uploads.tasks.download_bytes', return_value=content), patch('uploads.tasks.delete_paths'), patch('intake.meta.graph') as graph:
+            self.run_processor(automatic_meta=True, reminders=True)
+            count = Notification.objects.count()
+            self.assertGreater(count, 0)
+            self.run_processor(automatic_meta=True, reminders=True)
+            self.assertEqual(Notification.objects.count(), count)
+            graph.assert_not_called()
+        self.assertTrue(Notification.objects.filter(feedback_task=task, kind='FEEDBACK_DUE').exists())
+        followup.refresh_from_db()
+        self.assertIsNotNone(followup.notified_at)
+        batch.refresh_from_db()
+        self.assertEqual(batch.status, 'READY')
+        self.assertEqual(batch.rows.get().resolution, 'PENDING')  # Duplicate still requires review.
+
+    def test_success_health_does_not_advance_on_crash_and_scan_warning_is_separate(self):
+        self.run_processor()
+        success = Heartbeat.objects.get(name='processor_success').seen_at
+        with patch('notifications.tasks.create_due_follow_up_notifications.run', side_effect=RuntimeError('customer secret')):
+            with self.assertRaisesMessage(CommandError, 'processor_failed') as failure:
+                self.run_processor(reminders=True)
+        self.assertNotIn('customer secret', str(failure.exception))
+        self.assertEqual(Heartbeat.objects.get(name='processor_success').seen_at, success)
+        health = self.client.get('/api/intake/connections/health/').data
+        self.assertFalse(health['processor_delayed'])
+        self.assertTrue(health['connections'][0]['forms'][0]['scan_delayed'])
+        self.assertGreater(health['last_processor_attempt_at'], success)
+        Heartbeat.objects.filter(name='processor_success').update(seen_at=timezone.now() - timedelta(minutes=16))
+        IntakeForm.objects.filter(pk=self.form.pk).update(last_reconciled_at=timezone.now())
+        health = self.client.get('/api/intake/connections/health/').data
+        self.assertTrue(health['processor_delayed'])
+        self.assertFalse(health['connections'][0]['forms'][0]['scan_delayed'])
+
+    def test_retention_runs_once_per_hour(self):
+        with patch('intake.processor.purge_expired_answers.run') as purge:
+            self.run_processor()
+            self.run_processor()
+            self.assertEqual(purge.call_count, 1)
+            Heartbeat.objects.filter(name='retention').update(seen_at=timezone.now() - timedelta(hours=2))
+            self.run_processor()
+            self.assertEqual(purge.call_count, 2)

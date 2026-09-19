@@ -1,3 +1,6 @@
+# Legacy Celery Blueprint retained during the gated Actions cutover.
+# Do not sync it for Actions deployment: follow backend/intake/README.md instead.
+# Change live web mode only after preflight; retire old services after 24 hours.
 # Target: existing river-crm plus a persistent queue, Celery worker and scheduler.
 # Follow backend/intake/README.md for a staged manual cutover first.
 # Create river-runtime manually with existing secrets; do not rotate signing keys.

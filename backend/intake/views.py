@@ -217,7 +217,10 @@ class ConnectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
     @extend_schema(responses=HealthSerializer)
     @action(detail=False, methods=['get'])
     def health(self, request):
+        from .processor import META_SCAN_INTERVAL_SECONDS, META_SCAN_STALE_SECONDS, PROCESSOR_INTERVAL_SECONDS, PROCESSOR_STALE_SECONDS
         heartbeats = dict(Heartbeat.objects.values_list('name', 'seen_at'))
+        now = timezone.now()
+        last_success = heartbeats.get('processor_success')
         result = []
         for connection in self.get_queryset():
             receipts = connection.submissions.all()
@@ -226,7 +229,15 @@ class ConnectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
             result.append({**self.get_serializer(connection).data, 'counts': dict(receipts.values('state').annotate(total=Count('pk')).values_list('state', 'total')),
                 'oldest_pending_at': oldest, 'backlog_age_seconds': int((timezone.now() - oldest).total_seconds()) if oldest else 0,
                 'forms': FormSerializer(connection.forms.all(), many=True).data})
-        return Response({'enabled': settings.INTAKE_ENABLED, 'execution_mode': settings.INTAKE_EXECUTION_MODE, 'heartbeats': heartbeats, 'connections': result})
+        return Response({
+            'enabled': settings.INTAKE_ENABLED, 'execution_mode': settings.INTAKE_EXECUTION_MODE,
+            'heartbeats': heartbeats, 'connections': result,
+            'processor_interval_seconds': PROCESSOR_INTERVAL_SECONDS, 'meta_scan_interval_seconds': META_SCAN_INTERVAL_SECONDS,
+            'processor_stale_after_seconds': PROCESSOR_STALE_SECONDS, 'meta_scan_stale_after_seconds': META_SCAN_STALE_SECONDS,
+            'last_processor_attempt_at': heartbeats.get('processor_attempt'), 'last_processor_success_at': last_success,
+            'processor_delayed': settings.INTAKE_EXECUTION_MODE == 'database' and (
+                last_success is None or (now - last_success).total_seconds() >= PROCESSOR_STALE_SECONDS),
+        })
 
 
 class FormViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, AdminViewSet):
@@ -250,9 +261,9 @@ class FormViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, mixins.UpdateM
                 return Response({'detail': 'This form has not reached its activation time.'}, status=409)
             if not form.fetch_requested_at:
                 form.fetch_requested_at = now
-                form.reconcile_error = ''
-                form.save(update_fields=['fetch_requested_at', 'reconcile_error'])
                 IntakeAudit.objects.create(connection=form.connection, actor=request.user, action='meta_fetch_requested')
+            form.reconcile_error = ''
+            form.save(update_fields=['fetch_requested_at', 'reconcile_error'])
         return Response(self.get_serializer(form).data, status=202)
 
     def perform_create(self, serializer):

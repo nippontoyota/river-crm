@@ -107,8 +107,8 @@ def fetch_lead(receipt):
     return entries, submitted, attribution
 
 
-def form_lead_page(form, start, end, cursor=''):
-    params = {'fields': 'id,created_time', 'limit': 100,
+def form_lead_page(form, start, end, cursor='', *, limit=100):
+    params = {'fields': 'id,created_time', 'limit': limit,
               'filtering': json.dumps([{'field': 'time_created', 'operator': 'GREATER_THAN', 'value': int(start.timestamp()) - 1}, {'field': 'time_created', 'operator': 'LESS_THAN', 'value': int(end.timestamp()) + 1}])}
     if cursor:
         params['after'] = cursor

@@ -49,7 +49,7 @@ const autoNextDayFollowUpOutcomes = new Set(["RNR", "Switch Off", "Call Forwardi
 const professionOptions = ["Salaried", "Business", "Self Employed", "Doctor", "Govt Employee"];
 const buyingPlanOptions = ["Immediate", "1–2 Months", "2–3 Months", "Greater than 3 months"];
 const financeOptions = ["Inhouse", "Outright"];
-const lostReasons = ["Invalid Number", "Wrong Number", "Just enquired", "Service", "Insurance", "Internal", "Used car", "No Response", "Mock Call", "Plan Dropped", "DSA Enq", "BH Registration", "Existing Enq", "Duplicate Lead", "Not interested", "Did not enquire", "Lost to co-dealer", "Lost to competition", "Low Budget", "Out of Territory", "Not Eligible", "Job Enquiry"];
+const lostReasons = ["Invalid Number", "Wrong Number", "Just enquired", "Service", "Insurance", "No Response", "Plan Dropped", "Existing Enq", "Duplicate Lead", "Not interested", "Did not enquire", "Lost to co-dealer", "Lost to competition", "Low Budget", "Out of Territory", "Not Eligible", "Job Enquiry"];
 const pendingReasons = ["RNR", "DND", "Not Reachable", "Switched Off", "Busy", "Disconnecting the call", "Temporary out of Service", "Call me back", "Incoming call facility not available", "Out of Network", "Plan Postponed"];
 const emptyQualification = (): LeadQualification => ({ variant: "", buying_timeline: "", finance_type: "", trade_in: null, test_drive: "", notes: "" });
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
