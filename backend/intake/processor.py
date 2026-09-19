@@ -83,7 +83,9 @@ def fetch_page(form_id):
             form.reconcile_end = form.fetch_requested_at
         form.save(update_fields=['reconcile_lease_until', 'reconcile_start', 'reconcile_end'])
     try:
-        leads, cursor = form_lead_page(form, form.reconcile_start, form.reconcile_end, form.reconcile_cursor)
+        # A page commits as one transaction. Keep it short enough to advance the
+        # cursor within the four-minute budget over a remote database connection.
+        leads, cursor = form_lead_page(form, form.reconcile_start, form.reconcile_end, form.reconcile_cursor, limit=25)
         with transaction.atomic():
             current = IntakeForm.objects.select_for_update(of=('self',)).select_related('connection').get(pk=form_id)
             if current.reconcile_lease_until != lease or not current.enabled or not current.connection.enabled or current.connection.paused_reason:
