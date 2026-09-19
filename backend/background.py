@@ -2,7 +2,9 @@
 import io
 import logging
 import os
+import re
 import sys
+import traceback
 import uuid
 
 
@@ -48,9 +50,24 @@ def main():
             finally:
                 delete_paths([path])
             print('PASS shared storage upload/download/delete')
-    except (Exception, SystemExit):
+    except (Exception, SystemExit) as error:
         # Startup, SQL and SDK errors can contain secrets or customer data.
         print('FAIL background_run_failed; check runtime, migration status and access. Details redacted.')
+        # Types and source line numbers allow diagnosis without exception messages,
+        # SQL, arguments, locals or customer answers in this public repository.
+        for _ in range(4):
+            category = type(error).__name__
+            if not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]{0,80}', category):
+                category = 'redacted'
+            frames = []
+            for frame, line in traceback.walk_tb(error.__traceback__):
+                filename = os.path.basename(frame.f_code.co_filename)
+                if re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*\.py', filename):
+                    frames.append(f'{filename}:{line}')
+            print(f'FAIL category={category} source={",".join(frames[-3:])}')
+            error = error.__cause__ or error.__context__
+            if error is None:
+                break
         return 1
     return 0
 
