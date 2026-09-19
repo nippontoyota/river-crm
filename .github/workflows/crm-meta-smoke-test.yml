@@ -2,6 +2,11 @@ name: CRM Meta test lead (manual only)
 
 on:
   workflow_dispatch:
+    inputs:
+      replace_test_id:
+        description: 'Optional: explicitly authorized existing Meta test ID to replace; CRM receipt must already retain its answers.'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -34,6 +39,7 @@ jobs:
           DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
           INTAKE_SECRETS_JSON: ${{ secrets.INTAKE_SECRETS_JSON }}
           META_GRAPH_VERSION: ${{ vars.META_GRAPH_VERSION }}
+          REPLACE_META_TEST_ID: ${{ inputs.replace_test_id }}
           INTAKE_EXECUTION_MODE: database
           INTAKE_ENABLED: 'true'
           CELERY_TASK_ALWAYS_EAGER: 'false'

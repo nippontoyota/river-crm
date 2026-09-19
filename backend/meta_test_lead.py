@@ -24,7 +24,7 @@ def main():
     from django.db import connection, transaction
     from intake.mapping import map_entries, sanitize_entries
     from intake.meta import NoRedirect
-    from intake.models import IntakeForm
+    from intake.models import IntakeForm, Submission
     from leads.models import Lead
 
     if connection.vendor != 'postgresql' or not re.fullmatch(r'v[0-9]+\.0', settings.META_GRAPH_VERSION):
@@ -41,8 +41,13 @@ def main():
             raise ValueError('mapping_required')
         token = settings.INTAKE_SECRETS[form.connection.secret_ref]['access_token']
         existing_phone = Lead.objects.filter(phone=PHONE).exists()
+        replace_test_id = os.environ.get('REPLACE_META_TEST_ID', '').strip()
+        if replace_test_id and (not replace_test_id.isascii() or not replace_test_id.isdigit()
+                or not Submission.objects.filter(external_id=replace_test_id, form=form,
+                                                 fetched_at__isnull=False, answers_expired=False).exists()):
+            raise ValueError('replacement_requires_retained_crm_receipt')
 
-    def request(path, params, *, create=False):
+    def request(path, params, *, create=False, delete=False):
         # Fixed Meta host, no redirects, bounded response; secrets stay in headers.
         url = f'https://graph.facebook.com/{settings.META_GRAPH_VERSION}/{path}'
         encoded = urlencode(params)
@@ -50,7 +55,8 @@ def main():
         if create:
             headers['Content-Type'] = 'application/x-www-form-urlencoded'
         req = Request(url if create else url + '?' + encoded,
-                      data=encoded.encode() if create else None, headers=headers)
+                      data=encoded.encode() if create else None, headers=headers,
+                      method='DELETE' if delete else ('POST' if create else 'GET'))
         try:
             with build_opener(NoRedirect).open(req, timeout=30) as response:
                 body = response.read(2 * 1024 * 1024 + 1)
@@ -99,6 +105,12 @@ def main():
     if preview['errors']:
         print('FAIL test mapping; review_fields=' + json.dumps(sorted(preview['errors'])))
         raise ValueError('test_mapping_invalid')
+    if replace_test_id:
+        if [str(test.get('id', '')) for test in tests.get('data', [])] != [replace_test_id]:
+            raise ValueError('replacement_test_id_mismatch')
+        if request(replace_test_id, {}, delete=True).get('success') is not True:
+            raise ValueError('test_deletion_not_confirmed')
+        print(f'PASS replaced Meta test slot lead_id={replace_test_id}; existing CRM receipt retained')
     payload = request(f'{FORM_ID}/test_leads', {'field_data': json.dumps([
         {'name': key, 'values': [value]} for key, value in values.items()
     ])}, create=True)
@@ -117,7 +129,9 @@ if __name__ == '__main__':
         safe_codes = {'invalid_runtime', 'mapping_required', 'response_too_large', 'meta_request_failed',
                       'page_mismatch', 'invalid_test_id',
                       'dummy_phone_already_in_crm', 'form_questions_require_test_mapping',
-                      'test_mapping_invalid', 'test_creation_not_confirmed'}
+                      'test_mapping_invalid', 'test_creation_not_confirmed',
+                      'replacement_requires_retained_crm_receipt', 'replacement_test_id_mismatch',
+                      'test_deletion_not_confirmed'}
         code = str(error) if isinstance(error, ValueError) and str(error) in safe_codes else 'meta_test_failed'
         print('FAIL ' + code + '; details redacted')
         sys.exit(1)
