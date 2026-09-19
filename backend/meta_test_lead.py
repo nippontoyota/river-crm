@@ -40,6 +40,7 @@ def main():
         if not mapping:
             raise ValueError('mapping_required')
         token = settings.INTAKE_SECRETS[form.connection.secret_ref]['access_token']
+        user_token = settings.INTAKE_SECRETS[form.connection.secret_ref].get('user_access_token')
         existing_phone = Lead.objects.filter(phone=PHONE).exists()
         replace_test_id = os.environ.get('REPLACE_META_TEST_ID', '').strip()
         if replace_test_id and (not replace_test_id.isascii() or not replace_test_id.isdigit()
@@ -51,7 +52,7 @@ def main():
         # Fixed Meta host, no redirects, bounded response; secrets stay in headers.
         url = f'https://graph.facebook.com/{settings.META_GRAPH_VERSION}/{path}'
         encoded = urlencode(params)
-        headers = {'Authorization': f'Bearer {token}'}
+        headers = {'Authorization': f'Bearer {user_token if delete and user_token else token}'}
         if create:
             headers['Content-Type'] = 'application/x-www-form-urlencoded'
         req = Request(url if create else url + '?' + encoded,
@@ -69,7 +70,13 @@ def main():
                 code, subcode = detail.get('code'), detail.get('error_subcode')
             except (ValueError, AttributeError):
                 code = subcode = None
+                detail = {}
             print(f'FAIL Meta HTTP={error.code} code={code if isinstance(code, int) else "redacted"} subcode={subcode if isinstance(subcode, int) else "redacted"}')
+            # Only fixed diagnostic words, never Meta's free-text message or values.
+            message = str(detail.get('message', '')).lower()
+            words = ('invalid', 'user', 'id', 'page', 'access', 'token', 'test', 'lead',
+                     'already', 'exists', 'permission', 'application', 'created', 'delete', 'unsupported')
+            print('FAIL error_keywords=' + json.dumps([word for word in words if re.search(r'\b' + word + r'\b', message)]))
             raise ValueError('meta_request_failed') from None
 
     ownership = request(FORM_ID, {'fields': 'id,page,questions'})
@@ -77,6 +84,7 @@ def main():
         raise ValueError('page_mismatch')
     keys = {question.get('key') for question in ownership.get('questions', [])}
     print('PASS form ownership; question_keys=' + json.dumps(sorted(key for key in keys if isinstance(key, str))))
+    print('INFO optional_user_token_configured=' + str(bool(user_token)).lower())
 
     # Reuse our own test on reruns. Existing tests are never deleted.
     tests = request(f'{FORM_ID}/test_leads', {'fields': 'id,field_data', 'limit': 10})

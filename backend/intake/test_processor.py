@@ -11,8 +11,8 @@ from unittest.mock import patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import transaction
-from django.test import TestCase, override_settings
+from django.db import connection as db_connection, transaction
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -26,12 +26,34 @@ from .services import accept
 from .tasks import reconcile_form, reconcile_forms, sweep_receipts
 
 
+@override_settings(INTAKE_ENABLED=True, INTAKE_EXECUTION_MODE='database')
+class ProcessorDatabaseDeadlineTests(TransactionTestCase):
+    def test_deadline_during_query_releases_lease_and_allows_next_run(self):
+        if db_connection.vendor != 'postgresql':
+            self.skipTest('Requires PostgreSQL cancellation behavior')
+        Heartbeat.objects.create(name='retention')
+
+        def slow_query():
+            with transaction.atomic(), db_connection.cursor() as cursor:
+                cursor.execute('SELECT pg_sleep(3)')
+
+        out = io.StringIO()
+        with patch('intake.processor.due_receipts', side_effect=slow_query):
+            call_command('intake_process_pending', max_seconds=1, stdout=out)
+        self.assertIn('Time budget reached', out.getvalue())
+        self.assertIsNone(Heartbeat.objects.get(name='processor').lease_until)
+        self.assertTrue(Heartbeat.objects.filter(name='processor_success').exists())
+        call_command('intake_process_pending', max_seconds=2, stdout=io.StringIO())
+
+
 @override_settings(INTAKE_ENABLED=True, INTAKE_EXECUTION_MODE='database', CELERY_TASK_ALWAYS_EAGER=True,
                    INTAKE_SECRETS={'meta': {'access_token': 'test-token'}}, META_APP_SECRET='test-secret',
                    META_VERIFY_TOKEN='test-verify', META_GRAPH_VERSION='v99.0',
                    PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'])
 class ProcessorTests(TestCase):
     def setUp(self):
+        from feedback.models import FeedbackState
+        FeedbackState.objects.get_or_create(pk=1)
         self.admin = User.objects.create_user(email='processor@example.com', password='test', role='ADMIN')
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
