@@ -42,7 +42,7 @@ export function BulkUploadPage() {
         const next = await getUpload(parsingId);
         if (!cancelled) {
           setBatch(next);
-          if (next.status === "PARSING") timer = setTimeout(poll, 1500);
+          if (next.status === "PARSING") timer = setTimeout(poll, next.processing_mode === 'database' ? 15000 : 1500);
         }
       } catch (error) {
         if (!cancelled) setError(error instanceof Error ? error.message : "Unable to check upload. Use Check import to retry.");
@@ -131,6 +131,7 @@ export function BulkUploadPage() {
     {notice && <p className="uploader-success" role="status"><span aria-hidden="true">✓</span>{notice}</p>}
     {batch && <section ref={reviewRef} className="panel bulk-import-review uploader-review">
       <header><div><p className="eyebrow">{statusLabels[batch.status]}</p><h2>{batch.status === "PARSING" ? "Checking your file…" : batch.status === "FAILED" ? "Correct your spreadsheet" : batch.status === "COMMITTED" ? "Import complete" : "Review before importing"}</h2><p className="subtext">{batch.filename}</p></div><button className="filter" disabled={busy || reviewing} onClick={() => void check()}>Check import</button></header>
+      {batch.status === 'PARSING' && batch.processing_mode === 'database' && <p role="status">Your file is queued. Checking normally starts within five minutes; larger queues may take longer.</p>}
       {batch.status === "READY" && <><p className="uploader-review-counts">{batch.total_rows} rows · {batch.parsed_ok} ready · {batch.pending_duplicates} duplicates need review · {batch.skipped} skipped · {batch.validation_errors_found} invalid</p><p className="subtext">Correct errors in your spreadsheet and upload it again. Approve or reject duplicates below.</p></>}
       {batch.status === "COMMITTED" && <p className="uploader-success">This file has already been imported into CRM.</p>}
       {batch.error_message && <p className="intake-error" role="alert">{batch.error_message}</p>}

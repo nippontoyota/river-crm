@@ -107,26 +107,41 @@ def fetch_lead(receipt):
     return entries, submitted, attribution
 
 
-def form_leads(form, start, end):
+def form_lead_page(form, start, end, cursor=''):
     params = {'fields': 'id,created_time', 'limit': 100,
               'filtering': json.dumps([{'field': 'time_created', 'operator': 'GREATER_THAN', 'value': int(start.timestamp()) - 1}, {'field': 'time_created', 'operator': 'LESS_THAN', 'value': int(end.timestamp()) + 1}])}
-    cursors = set()
-    while True:
-        payload = graph(form.connection, f'{form.external_id}/leads', params)
-        if not isinstance(payload.get('data'), list):
+    if cursor:
+        params['after'] = cursor
+    payload = graph(form.connection, f'{form.external_id}/leads', params)
+    if not isinstance(payload.get('data'), list):
+        raise MetaFailure('meta_invalid_response')
+    leads = []
+    for lead in payload['data']:
+        if not isinstance(lead, dict):
             raise MetaFailure('meta_invalid_response')
-        for lead in payload['data']:
-            submitted = submitted_time(lead.get('created_time'))
-            lead_id = str(lead.get('id', ''))
-            if not lead_id.isascii() or not lead_id.isdigit() or len(lead_id) > 100:
-                raise MetaFailure('meta_invalid_identifier')
-            if start <= submitted <= end:
-                yield lead_id, submitted
-        paging = payload.get('paging', {})
-        if not paging.get('next'):
+        submitted = submitted_time(lead.get('created_time'))
+        lead_id = str(lead.get('id', ''))
+        if not lead_id.isascii() or not lead_id.isdigit() or len(lead_id) > 100:
+            raise MetaFailure('meta_invalid_identifier')
+        if start <= submitted <= end:
+            leads.append((lead_id, submitted))
+    paging = payload.get('paging', {})
+    next_cursor = ''
+    if paging.get('next'):
+        next_cursor = paging.get('cursors', {}).get('after')
+        if not isinstance(next_cursor, str) or not next_cursor or next_cursor == cursor or len(next_cursor) > 4096:
+            raise MetaFailure('meta_invalid_pagination')
+    return leads, next_cursor  # Never follow a payload URL or expose a query-string token.
+
+
+def form_leads(form, start, end):
+    cursors = set()
+    cursor = ''
+    while True:
+        leads, cursor = form_lead_page(form, start, end, cursor)
+        yield from leads
+        if not cursor:
             return
-        cursor = paging.get('cursors', {}).get('after')
-        if not isinstance(cursor, str) or not cursor or cursor in cursors or len(cursor) > 4096:
+        if cursor in cursors:
             raise MetaFailure('meta_invalid_pagination')
         cursors.add(cursor)
-        params['after'] = cursor  # Never follow a payload URL or expose a query-string token.

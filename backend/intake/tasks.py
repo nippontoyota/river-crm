@@ -72,7 +72,10 @@ def process_submission(receipt_id):
                 receipt.fetched_at = timezone.now()
             process_locked(receipt)
             if receipt.state == Submission.State.IMPORTED and receipt.attribution.get('campaign_id'):
-                transaction.on_commit(lambda: publish(enrich_campaign, str(receipt.pk)))
+                if settings.INTAKE_EXECUTION_MODE == 'database':
+                    transaction.on_commit(lambda: enrich_campaign.run(str(receipt.pk)))
+                else:
+                    transaction.on_commit(lambda: publish(enrich_campaign, str(receipt.pk)))
     except Exception as error:
         code = error.code if isinstance(error, MetaFailure) else 'processing_temporarily_unavailable'
         with transaction.atomic():
@@ -94,14 +97,10 @@ def process_submission(receipt_id):
 
 @shared_task(ignore_result=True)
 def sweep_receipts():
+    if settings.INTAKE_EXECUTION_MODE == 'database':
+        return
     if settings.INTAKE_ENABLED:
-        now = timezone.now()
-        due = Submission.objects.filter(connection__enabled=True, connection__paused_reason='', form__enabled=True, answers_expired=False).filter(
-            Q(state=Submission.State.RECEIVED, next_attempt_at__lte=now) |
-            Q(state=Submission.State.PROCESSING, lease_until__lte=now) |
-            Q(state=Submission.State.NEEDS_REVIEW, review_reason='pending_submission', next_attempt_at__lte=now)
-        ).order_by('received_at').values_list('pk', flat=True)[:1000]
-        for receipt_id in due:
+        for receipt_id in due_receipts().values_list('pk', flat=True)[:1000]:
             publish(process_submission, str(receipt_id))
     from uploads.models import UploadBatch
     from uploads.tasks import parse_upload_batch
@@ -109,9 +108,20 @@ def sweep_receipts():
         publish(parse_upload_batch, batch_id)
 
 
+def due_receipts():
+    now = timezone.now()
+    return Submission.objects.filter(connection__enabled=True, connection__paused_reason='', form__enabled=True, answers_expired=False).filter(
+            Q(state=Submission.State.RECEIVED, next_attempt_at__lte=now) |
+            Q(state=Submission.State.PROCESSING, lease_until__lte=now) |
+            Q(state=Submission.State.NEEDS_REVIEW, review_reason='pending_submission', next_attempt_at__lte=now)
+        ).filter(Q(lease_until__isnull=True) | Q(lease_until__lte=now)).filter(
+            Q(blocked_by__isnull=True) | Q(blocked_by__state__in=TERMINAL)
+        ).order_by('received_at', 'id')
+
+
 @shared_task(ignore_result=True)
 def reconcile_forms():
-    if not settings.INTAKE_ENABLED:
+    if not settings.INTAKE_ENABLED or settings.INTAKE_EXECUTION_MODE == 'database':
         return
     for form_id in IntakeForm.objects.filter(enabled=True, connection__enabled=True, connection__paused_reason='', connection__origin='META').values_list('pk', flat=True):
         publish(reconcile_form, form_id)
@@ -119,7 +129,7 @@ def reconcile_forms():
 
 @shared_task(ignore_result=True, soft_time_limit=240)
 def reconcile_form(form_id):
-    if not settings.INTAKE_ENABLED:
+    if not settings.INTAKE_ENABLED or settings.INTAKE_EXECUTION_MODE == 'database':
         return
     with transaction.atomic():
         form = IntakeForm.objects.select_for_update().select_related('connection').get(pk=form_id)
@@ -189,7 +199,9 @@ def purge_expired_answers():
             receipt.save()
             record(receipt, 'answers_expired')
     # Row retention is independent of file deletion (files are deleted after parsing).
-    for batch_id in UploadBatch.objects.filter(created_at__lte=cutoff).exclude(status='COMMITTED').values_list('pk', flat=True).iterator():
+    for batch_id in UploadBatch.objects.filter(created_at__lte=cutoff).exclude(status='COMMITTED').filter(
+        Q(rows__answers_expired=False) | Q(status='PARSING')
+    ).values_list('pk', flat=True).distinct().iterator():
         with transaction.atomic():
             batch = UploadBatch.objects.select_for_update().get(pk=batch_id)
             if batch.status == 'COMMITTED':

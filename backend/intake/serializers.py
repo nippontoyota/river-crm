@@ -65,10 +65,11 @@ class ConnectionSerializer(serializers.ModelSerializer):
 
 class FormSerializer(serializers.ModelSerializer):
     page_id = serializers.CharField(required=False, allow_blank=True, default='', max_length=100)
+    fetch_status = serializers.ReadOnlyField()
     class Meta:
         model = IntakeForm
-        fields = ['id', 'connection', 'name', 'external_id', 'page_id', 'enabled', 'activated_at', 'checkpoint', 'last_reconciled_at', 'reconcile_error']
-        read_only_fields = ['checkpoint', 'last_reconciled_at', 'reconcile_error']
+        fields = ['id', 'connection', 'name', 'external_id', 'page_id', 'enabled', 'activated_at', 'checkpoint', 'last_reconciled_at', 'reconcile_error', 'fetch_requested_at', 'fetch_status']
+        read_only_fields = ['checkpoint', 'last_reconciled_at', 'reconcile_error', 'fetch_requested_at', 'fetch_status']
 
     def validate(self, attrs):
         connection = attrs.get('connection', getattr(self.instance, 'connection', None))
@@ -229,6 +230,7 @@ class HealthConnectionSerializer(ConnectionSerializer):
 
 class HealthSerializer(serializers.Serializer):
     enabled = serializers.BooleanField()
+    execution_mode = serializers.ChoiceField(choices=['celery', 'database'])
     heartbeats = serializers.DictField(child=serializers.DateTimeField())
     connections = HealthConnectionSerializer(many=True)
 

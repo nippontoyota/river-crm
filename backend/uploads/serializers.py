@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db.models import Count, Q
 from rest_framework import serializers
 
@@ -6,6 +7,7 @@ from .tasks import DUPLICATE_ROWS, GROUP_SAMPLE_SIZE, MAX_ROWS
 
 
 class UploadBatchSerializer(serializers.ModelSerializer):
+    processing_mode = serializers.SerializerMethodField()
     validation_errors_found = serializers.IntegerField(read_only=True)
     crm_duplicates_found = serializers.IntegerField(read_only=True)
     file_duplicates_found = serializers.IntegerField(read_only=True)
@@ -15,7 +17,10 @@ class UploadBatchSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UploadBatch
-        fields = ["id", "filename", "status", "total_rows", "parsed_ok", "duplicates_found", "crm_duplicates_found", "file_duplicates_found", "intake_duplicates_found", "removed_duplicates", "pending_duplicates", "skipped", "error_message", "created_at", "committed_at", "mapping_version", "original_deleted_at", "validation_errors_found"]
+        fields = ["id", "filename", "status", "total_rows", "parsed_ok", "duplicates_found", "crm_duplicates_found", "file_duplicates_found", "intake_duplicates_found", "removed_duplicates", "pending_duplicates", "skipped", "error_message", "created_at", "committed_at", "mapping_version", "original_deleted_at", "validation_errors_found", "processing_mode"]
+
+    def get_processing_mode(self, batch) -> str:
+        return settings.INTAKE_EXECUTION_MODE
 
     def to_representation(self, batch):
         counts = batch.rows.aggregate(

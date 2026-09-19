@@ -30,6 +30,8 @@ def payload_fingerprint(payload):
 
 def publish(task, *args):
     # A committed receipt is the queue. Publication errors must not reject it or log answers.
+    if settings.INTAKE_EXECUTION_MODE == 'database':
+        return False  # The scheduled processor reads pending work from the database.
     try:
         task.apply_async(args=args, retry=False)
     except Exception:

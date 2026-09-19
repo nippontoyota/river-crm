@@ -449,7 +449,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
     const poll = async () => {
       try {
         const next = await getUpload(upload.id);
-        if (!cancelled) { setUpload(next); if (next.status === "PARSING") timer = setTimeout(poll, 1500); }
+        if (!cancelled) { setUpload(next); if (next.status === "PARSING") timer = setTimeout(poll, next.processing_mode === 'database' ? 15000 : 1500); }
       } catch (requestError) { if (!cancelled) setError(requestError instanceof Error ? requestError.message : "Unable to check import. Use Check import to retry."); }
     };
     void poll();
@@ -543,6 +543,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
     {officerMode && <section className="lead-toolbar"><label className="search" style={{ flex: 1 }}><span>⌕</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name or mobile..." /></label><button className="button primary" onClick={() => { setError(""); setAddingLead(true); }}>＋ Add lead</button></section>}
     {upload && <section className="panel bulk-import-review" style={{ padding: "1rem", marginBottom: "1rem" }}>
       <h2>{upload.status === "PARSING" ? "Checking your file…" : upload.status === "FAILED" ? "File could not be imported" : "Review import"}</h2>
+      {upload.status === 'PARSING' && upload.processing_mode === 'database' && <p role="status">Your file is queued. Checking normally starts within five minutes; larger queues may take longer.</p>}
       <p className="subtext">Use the sample headings exactly. Phone number identifies each lead and is used to check duplicates.</p>
       {upload.status === "READY" && <p>{upload.total_rows} rows · {upload.parsed_ok} ready · {upload.pending_duplicates} duplicates need review · {upload.skipped} skipped · {upload.validation_errors_found} invalid</p>}
       <div className="intake-actions">

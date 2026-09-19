@@ -36,6 +36,20 @@ class IntakeForm(models.Model):
     last_reconciled_at = models.DateTimeField(null=True, blank=True)
     reconcile_lease_until = models.DateTimeField(null=True, blank=True)
     reconcile_error = models.CharField(max_length=80, blank=True)
+    fetch_requested_at = models.DateTimeField(null=True, blank=True)
+    reconcile_start = models.DateTimeField(null=True, blank=True)
+    reconcile_end = models.DateTimeField(null=True, blank=True)
+    reconcile_cursor = models.TextField(blank=True)
+
+    @property
+    def fetch_status(self) -> str:
+        if self.reconcile_error:
+            return 'error'
+        if self.reconcile_lease_until and self.reconcile_lease_until > timezone.now():
+            return 'running'
+        if self.fetch_requested_at:
+            return 'queued'
+        return 'completed' if self.last_reconciled_at else 'idle'
 
     class Meta:
         constraints = [
@@ -125,3 +139,5 @@ class IntakeAudit(models.Model):
 class Heartbeat(models.Model):
     name = models.CharField(max_length=30, primary_key=True)
     seen_at = models.DateTimeField(default=timezone.now)
+    lease_until = models.DateTimeField(null=True, blank=True)
+    lease_token = models.UUIDField(null=True, blank=True)

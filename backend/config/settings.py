@@ -4,6 +4,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "development-only-change-me")
@@ -104,6 +105,9 @@ WHATSAPP_TEMPLATE_REASSIGNMENT = os.environ.get("WHATSAPP_TEMPLATE_REASSIGNMENT"
 
 # References are persisted; credentials are supplied only through backend secrets.
 INTAKE_ENABLED = os.environ.get("INTAKE_ENABLED", "false").lower() == "true"
+INTAKE_EXECUTION_MODE = os.environ.get("INTAKE_EXECUTION_MODE", "celery").strip().lower()
+if INTAKE_EXECUTION_MODE not in {"celery", "database"}:
+    raise ImproperlyConfigured("INTAKE_EXECUTION_MODE must be celery or database.")
 INTAKE_SECRETS = json.loads(os.environ.get("INTAKE_SECRETS_JSON", "{}"))
 INTAKE_FINGERPRINT_KEY = os.environ.get("INTAKE_FINGERPRINT_KEY", SECRET_KEY)
 INTAKE_MAX_BYTES = 64 * 1024
@@ -116,8 +120,9 @@ META_GRAPH_VERSION = os.environ.get("META_GRAPH_VERSION", "")
 CELERY_BEAT_SCHEDULER = "intake.scheduler:HeartbeatScheduler"
 CELERY_BROKER_CONNECTION_TIMEOUT = 2
 CELERY_TASK_PUBLISH_RETRY = False
-CELERY_BEAT_SCHEDULE.update({
-    "intake-recovery": {"task": "intake.tasks.sweep_receipts", "schedule": 60},
-    "intake-reconciliation": {"task": "intake.tasks.reconcile_forms", "schedule": 900},
-    "intake-retention": {"task": "intake.tasks.purge_expired_answers", "schedule": 3600},
-})
+if INTAKE_EXECUTION_MODE == "celery":
+    CELERY_BEAT_SCHEDULE.update({
+        "intake-recovery": {"task": "intake.tasks.sweep_receipts", "schedule": 60},
+        "intake-reconciliation": {"task": "intake.tasks.reconcile_forms", "schedule": 900},
+        "intake-retention": {"task": "intake.tasks.purge_expired_answers", "schedule": 3600},
+    })

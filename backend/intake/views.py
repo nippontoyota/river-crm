@@ -226,13 +226,34 @@ class ConnectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins
             result.append({**self.get_serializer(connection).data, 'counts': dict(receipts.values('state').annotate(total=Count('pk')).values_list('state', 'total')),
                 'oldest_pending_at': oldest, 'backlog_age_seconds': int((timezone.now() - oldest).total_seconds()) if oldest else 0,
                 'forms': FormSerializer(connection.forms.all(), many=True).data})
-        return Response({'enabled': settings.INTAKE_ENABLED, 'heartbeats': heartbeats, 'connections': result})
+        return Response({'enabled': settings.INTAKE_ENABLED, 'execution_mode': settings.INTAKE_EXECUTION_MODE, 'heartbeats': heartbeats, 'connections': result})
 
 
 class FormViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, AdminViewSet):
     queryset = IntakeForm.objects.select_related('connection').order_by('id')
     serializer_class = FormSerializer
     pagination_class = None
+
+    @extend_schema(request=None, responses={202: FormSerializer, 409: ErrorResponseSerializer})
+    @action(detail=True, methods=['post'])
+    def fetch(self, request, pk=None):
+        if not settings.INTAKE_ENABLED or settings.INTAKE_EXECUTION_MODE != 'database':
+            return Response({'detail': 'Enable scheduled database processing before requesting a Meta fetch.'}, status=409)
+        with transaction.atomic():
+            form = IntakeForm.objects.select_for_update(of=('self',)).select_related('connection').get(pk=self.get_object().pk)
+            if form.connection.origin != 'META' or not form.enabled or not form.connection.enabled or form.connection.paused_reason:
+                return Response({'detail': 'Enable this Meta connection and form, and resolve any paused credentials first.'}, status=409)
+            if not ConnectionSerializer().get_credentials_ready(form.connection):
+                return Response({'detail': 'Configure the Meta credentials before requesting a fetch.'}, status=409)
+            now = timezone.now()
+            if max(form.activated_at, form.connection.activated_at) > now:
+                return Response({'detail': 'This form has not reached its activation time.'}, status=409)
+            if not form.fetch_requested_at:
+                form.fetch_requested_at = now
+                form.reconcile_error = ''
+                form.save(update_fields=['fetch_requested_at', 'reconcile_error'])
+                IntakeAudit.objects.create(connection=form.connection, actor=request.user, action='meta_fetch_requested')
+        return Response(self.get_serializer(form).data, status=202)
 
     def perform_create(self, serializer):
         form = serializer.save()
