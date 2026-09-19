@@ -12,8 +12,9 @@ create a second web service by blindly applying the Blueprint.
 ### 1. Deploy application changes
 
 - In the existing web service, set **Pre-Deploy Command** to
-  `python manage.py migrate --noinput`. The build script only installs dependencies
-  and collects static files. Keep root directory `backend` and build `bash build.sh`.
+  `python manage.py migrate --noinput`. The build script also runs migrations as a
+  fallback for manually configured services with a blank pre-deploy command; the
+  second migration run is a no-op. Keep root directory `backend` and build `bash build.sh`.
 - Use start command
   `gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker --workers 1`.
 - Deploy backend before frontend; the old `include_rows=true` endpoint remains
