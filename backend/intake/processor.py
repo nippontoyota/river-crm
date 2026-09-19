@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from datetime import timedelta
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 
@@ -41,16 +41,30 @@ class ProcessingDeadline(BaseException):
 
 @contextmanager
 def time_limit(seconds):
+    deadline_reached = False
+
     def expired(*_):
+        nonlocal deadline_reached
+        deadline_reached = True
         raise ProcessingDeadline()
 
     previous = signal.signal(signal.SIGALRM, expired)
     signal.setitimer(signal.ITIMER_REAL, seconds)
     try:
         yield
+    except Exception:
+        # An alarm during COMMIT can become a driver error when Django restores
+        # autocommit. It is still a budget yield; durable work resumes next run.
+        if not deadline_reached:
+            raise
+        raise ProcessingDeadline() from None
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
+        if deadline_reached and not connection.in_atomic_block:
+            # Reconnect before updating the lease/heartbeat after an interrupted
+            # transaction. Do not close a caller-owned transaction (e.g. tests).
+            connection.close()
 
 
 def fetch_page(form_id):

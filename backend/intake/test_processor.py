@@ -28,6 +28,24 @@ from .tasks import reconcile_form, reconcile_forms, sweep_receipts
 
 @override_settings(INTAKE_ENABLED=True, INTAKE_EXECUTION_MODE='database')
 class ProcessorDatabaseDeadlineTests(TransactionTestCase):
+    def test_deadline_during_commit_recovers_connection_and_releases_lease(self):
+        if db_connection.vendor != 'postgresql':
+            self.skipTest('Requires PostgreSQL transaction behavior')
+        Heartbeat.objects.create(name='retention')
+        self.addCleanup(db_connection.close)
+
+        def interrupted_commit():
+            with patch.object(db_connection, '_commit', side_effect=lambda: signal.raise_signal(signal.SIGALRM)):
+                with transaction.atomic(), db_connection.cursor() as cursor:
+                    cursor.execute('SELECT 1')
+
+        out = io.StringIO()
+        with patch('intake.processor.due_receipts', side_effect=interrupted_commit):
+            call_command('intake_process_pending', max_seconds=2, stdout=out)
+        self.assertIn('Time budget reached', out.getvalue())
+        self.assertIsNone(Heartbeat.objects.get(name='processor').lease_until)
+        call_command('intake_process_pending', max_seconds=2, stdout=io.StringIO())
+
     def test_deadline_during_query_releases_lease_and_allows_next_run(self):
         if db_connection.vendor != 'postgresql':
             self.skipTest('Requires PostgreSQL cancellation behavior')
