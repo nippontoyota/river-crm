@@ -45,6 +45,8 @@ def outcome_policy(lead, user):
     if sales and can_update:
         for call_status, outcomes in (("Connected", CONNECTED), ("Not Connected", NOT_CONNECTED)):
             for label, state in outcomes.items():
+                if label == "Need SO Call" and user.role == User.Role.SALES_OFFICER:
+                    continue
                 if label == "Need Test Drive" and lead.test_drive_completed_at:
                     continue
                 if label == "Booking Done" and is_booked(lead):

@@ -49,7 +49,7 @@ class OutcomePolicyTests(TestCase):
                     with self.subTest(state=state, completed=completed, call_status=call_status, outcome=outcome):
                         lead = self.lead(state, completed)
                         policy = self.client.get(f"/api/leads/{lead.pk}/").data["outcome_policy"]
-                        allowed = state not in {"WON", "LOST", "UNQUALIFIED"} and not (completed and outcome == "Need Test Drive") and not (state == "WALKIN" and outcome == "Booking Done")
+                        allowed = state not in {"WON", "LOST", "UNQUALIFIED"} and outcome != "Need SO Call" and not (completed and outcome == "Need Test Drive") and not (state == "WALKIN" and outcome == "Booking Done")
                         self.assertEqual(outcome in [item["label"] for item in policy["outcomes"][call_status]], allowed)
                         data = self.payload(call_status, outcome, expected_status not in {"WON", "LOST"})
                         response = self.update(lead, data)
@@ -66,6 +66,22 @@ class OutcomePolicyTests(TestCase):
                             self.assertFalse(lead.call_logs.exists())
                             self.assertFalse(lead.follow_ups.exists())
                         self.assertEqual(bool(lead.test_drive_completed_at), completed)
+
+    def test_need_so_call_is_only_available_to_admin(self):
+        for user in (self.so, self.admin):
+            self.client.force_authenticate(user)
+            for endpoint in ("so-update", "log-call"):
+                with self.subTest(role=user.role, endpoint=endpoint):
+                    lead = self.lead()
+                    policy = self.client.get(f"/api/leads/{lead.pk}/").data["outcome_policy"]
+                    self.assertEqual(
+                        "Need SO Call" in [item["label"] for item in policy["outcomes"]["Connected"]],
+                        user == self.admin,
+                    )
+                    response = self.update(lead, self.payload(outcome="Need SO Call"), endpoint)
+                    self.assertEqual(response.status_code, 200 if user == self.admin else 400, response.data)
+                    self.assertEqual(lead.call_logs.exists(), user == self.admin)
+                    self.assertEqual(lead.follow_ups.exists(), user == self.admin)
 
     def test_wrong_contact_pairings_and_missing_fields_are_atomic(self):
         lead = self.lead("WALKIN", True)
