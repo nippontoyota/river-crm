@@ -2,17 +2,138 @@
 
 Admins review website and selected Meta Instant Form enquiries at `/lead-intake`. Valid submissions create fresh, unassigned leads in the existing assignment pool. Intake never assigns a CE or changes a linked lead's customer details, owners or sales progress.
 
-## Deployment
+## Deployment: existing river-crm
 
-1. Keep `INTAKE_ENABLED=false` and connections/forms disabled. Add the migrations before starting the new web, worker or scheduler processes. The web Render service runs `python manage.py migrate --noinput` in its pre-deploy step; worker and scheduler startup refuse to run with pending migrations. Deploy the web service first, then the worker and scheduler.
-2. Apply `render.yaml`. It provisions an always-running web service, a Redis-compatible queue, a Celery worker and one scheduler. These use paid starter plans. Preserve the existing database URL, Django/JWT signing keys, Supabase credentials and WhatsApp settings when moving them into `revera-runtime`.
-3. Use the same environment group for web, worker and scheduler. Supply `INTAKE_FINGERPRINT_KEY` once and keep it stable. Changing it breaks replay comparison for existing website receipts. Keep `CELERY_TASK_ALWAYS_EAGER=false` in production. Set the shared Redis connection in `REDIS_URL`; Redis has `noeviction` configured. Existing 15-minute follow-up reminders remain scheduled.
-4. Supply backend-only credentials through `INTAKE_SECRETS_JSON`, for example `{"main-site":{"active":"random-secret","retiring":""},"main-meta":{"access_token":"authorized-token"}}`. Give each website connection distinct credentials. Admin APIs never return credentials or secret references. Generate website secrets with at least 32 random bytes. Never put them in `NEXT_PUBLIC_*` variables or browser JavaScript.
-5. Add approved sources, models, branches, activities and their sub-activities in Admin Lists. In Lead Intake, create each connection using its secret reference, configured CRM source and activation time. Add only the selected forms. Meta forms require both Page and Form IDs; website forms require a stable identifier. Identifiers and activation timestamps cannot be edited later.
-6. Save mappings and inspect a sample. Then enable `INTAKE_ENABLED` in the shared environment and enable one connection/form for testing. Verify receipt → imported lead → manual CE assignment, history and notification. Expect valid enquiries within about a minute under healthy conditions.
-7. Enable remaining forms after the test. Monitor worker and scheduler heartbeats separately, receipt/import timestamps, oldest backlog, failures and each form's reconciliation checkpoint.
+The web service currently has 512 MB RAM and uses eager Celery execution. Deploy the
+upload optimizations first; change eager mode only after the queue and worker are
+healthy. Keep the existing web service, URL, database and signing keys. Do not
+create a second web service by blindly applying the Blueprint.
 
-Rollback: set `INTAKE_ENABLED=false` and disable affected connections/forms. Preserve the additive intake tables and existing leads. Restore the worker/scheduler after the outage; startup recovery and the minute sweep use receipts in the database. You can also run `python manage.py intake_recover`.
+### 1. Deploy application changes
+
+- In the existing web service, set **Pre-Deploy Command** to
+  `python manage.py migrate --noinput`. The build script only installs dependencies
+  and collects static files. Keep root directory `backend` and build `bash build.sh`.
+- Use start command
+  `gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker --workers 1`.
+- Deploy backend before frontend; the old `include_rows=true` endpoint remains
+  available up to 1,000 rows during the transition. Do not change eager mode yet.
+- The new upload maximum is 1,000 non-empty lead rows and 10 MB per file. XLSX
+  archives exceeding 25 MB total expanded size are rejected. Existing oversized
+  uncommitted batches must be split and reuploaded; committed history is retained.
+
+### 2. Prepare shared configuration and services
+
+Create the `river-runtime` environment group manually. `render.yaml` references
+this existing group because Render ignores `sync: false` inside environment groups
+([Blueprint documentation](https://render.com/docs/blueprint-spec#environment-groups)).
+Copy existing values without rotating credentials:
+
+- `DATABASE_URL`, `DJANGO_SECRET_KEY`, `JWT_SIGNING_KEY` (if absent, use the existing
+  Django key), and `INTAKE_FINGERPRINT_KEY` (if absent, use the existing Django key).
+- `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (or the existing service-role key), and
+  `SUPABASE_UPLOAD_BUCKET`. Local media files cannot be shared across Render services.
+- `INTAKE_SECRETS_JSON`, `META_APP_SECRET`, `META_VERIFY_TOKEN`, `META_GRAPH_VERSION`,
+  existing `INTAKE_ENABLED`, and all existing WhatsApp settings.
+- `DJANGO_DEBUG=false`, `CELERY_TASK_ALWAYS_EAGER=false`, and the new queue's internal
+  connection string as `REDIS_URL`.
+
+Keep host/CORS/CSRF and analytics `CACHE_URL` settings on the existing web service.
+Create these **paid Starter services**, in the web service's region, from the same
+repository and commit. Review their current prices in Render before provisioning:
+
+| Service | Configuration |
+| --- | --- |
+| `river-queue` | Key Value, `noeviction`, internal connections only |
+| `river-worker` | Background Worker, root `backend`, build `pip install -r requirements.txt` |
+| `river-scheduler` | Background Worker, same root/build, exactly one instance |
+
+Worker start command:
+
+```bash
+python manage.py migrate --check && celery -A config worker --loglevel=warning --concurrency=1 --prefetch-multiplier=1 --max-tasks-per-child=100
+```
+
+Scheduler start command:
+
+```bash
+python manage.py migrate --check && celery -A config beat --loglevel=warning --schedule=/tmp/celerybeat-schedule
+```
+
+Link the group to worker and scheduler first. When linking it to web, leave the
+web's service-level `CELERY_TASK_ALWAYS_EAGER=true` override until cutover. Resolve
+other service-level overrides so all services use the same database, storage and
+intake credentials. The dedicated queue is separate from the analytics cache.
+The Blueprint describes the target state; import the existing web service into
+Blueprint management first if using it, and review the preview for unintended
+resources. Manual setup using this table is sufficient.
+
+### 3. Verify and cut over
+
+1. Confirm migrations passed and the worker and scheduler start without errors.
+   Check their independent heartbeats in Lead Intake health. Restart recovery can
+   process existing pending uploads/receipts, so verify shared configuration first.
+2. Confirm Supabase upload, worker download, and deletion work on the same bucket.
+3. Set the web's `CELERY_TASK_ALWAYS_EAGER=false` and redeploy. Never disable eager
+   mode without a reachable queue and running worker.
+4. Upload a small CSV: the request should return a pending batch quickly, then
+   polling should change it to ready. Approve duplicates and import once.
+5. Send a Meta test lead to an enabled configured form; verify receipt, imported
+   lead, manual assignment, and audit history. If intake was disabled, enable it
+   consistently across web, worker and scheduler after this setup, then test.
+6. Run `python manage.py intake_recover` in the Render web shell to offer pending
+   work to the broker. Retries must not create duplicate leads. Recovery of uploads
+   remains active even when automatic Meta/website intake is disabled.
+
+### 4. Monitor and recover
+
+For 24 hours, watch per-service memory and OOM events, worker/scheduler heartbeats,
+oldest pending receipt, backlog and reconciliation checkpoints. Exercise two
+simultaneous 1,000-row uploads, duplicate review, final import, and Meta delivery.
+Target peaks below 400 MB on each 512 MB instance, without a sustained upward trend.
+Child recycling occurs after tasks; it does not protect against one oversized task.
+
+On failure, temporarily stop new spreadsheet uploads operationally and set
+`INTAKE_ENABLED=false` consistently while repairing infrastructure. Keep pending
+records/files and the queue; do not automatically restore eager mode. Existing
+30-day retention still applies. Restore the same tested app version on all services,
+recheck heartbeats, run recovery, then reopen uploads/intake. Increase instance size
+only if measured workload still requires it.
+
+### Upload review API
+
+`GET /api/uploads/{id}/` returns metadata/counts without rows.
+`GET /api/uploads/{id}/rows/?filter=duplicates&page=1` (or `filter=invalid`, or no
+filter for all rows) returns `{count, next, previous, results}` with 50 rows per page.
+Rows expose `file_rows` (at most 20 examples) and `file_row_count` (whole group).
+Internal duplicate metadata is omitted from customer `data`.
+`POST /api/uploads/{id}/reject-pending/` with `{}` rejects all still-pending valid
+duplicates in that owned batch, across pages, and returns `{rejected}`. Previously
+approved rows are preserved. Existing row-level approval/rejection remains available.
+
+Final import stays atomic and synchronous for capped batches, with fresh phone
+locks/match checks. Row limits apply to both new files and commits of legacy batches.
+No new database tables are required.
+
+### Local verification (2026-09-19)
+
+- 76 upload/intake tests passed against isolated PostgreSQL, including phone-lock
+  concurrency, 1,000/1,001-row CSV/XLSX limits, rollback and legacy-batch handling.
+- Real Redis, one Gunicorn worker, one Celery child and one scheduler passed two
+  rounds of concurrent 1,000-row uploads/imports, a 1,000-row duplicate batch,
+  worker restart and queue-outage recovery. Signed Meta webhooks used simulated
+  Graph responses; storage was local rather than production Supabase.
+- Sampled aggregate RSS peaks: web 134 MB, worker 190 MB, scheduler 94 MB, queue
+  15 MB. These local synthetic results are not a guarantee of Render memory usage.
+- Frontend production build/type checking and Admin/Meta Uploader browser flows
+  passed, including 50-row pagination and batch-wide rejection. The original
+  lead desk already has an unrelated ESLint state-update error and hook warning.
+
+Run the backend regressions using an isolated UTF-8 PostgreSQL test database:
+`backend/.venv/bin/python backend/manage.py test uploads intake --noinput`.
+Set `DATABASE_URL` to that isolated database explicitly; never use production for
+these checks. Browser fixture requirements are in
+`frontend/scripts/bulk-upload-browser.cjs`.
 
 ## Website contract
 

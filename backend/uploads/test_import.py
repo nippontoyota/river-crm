@@ -468,3 +468,121 @@ class BulkImportTests(TestCase):
         SystemConfig.objects.filter(pk=1).update(lists={'sources': ['META'], 'models': ['River Indie']})
         self.assertEqual(self.commit(batch).status_code, 400)
         self.assertEqual(Lead.objects.filter(deleted_at__isnull=True).count(), 0)
+
+    def test_row_limit_rejects_whole_file_for_csv_and_xlsx(self):
+        for extension in ['csv', 'xlsx']:
+            with self.subTest(extension=extension):
+                batch = self.upload([self.customer(phone=str(7000000000 + i)) for i in range(1000)], extension=extension)
+                self.assertEqual(batch.total_rows, 1000)
+                failed = self.upload([self.customer()] * 1001, extension=extension, expected='FAILED')
+                self.assertIn('1,000', failed.error_message)
+                self.assertEqual(failed.rows.count(), 0)
+                self.assertIsNotNone(failed.original_deleted_at)
+        self.assertFalse(Lead.objects.exists())
+
+    def test_expanded_xlsx_limit_checked_before_loading_workbook(self):
+        from zipfile import ZIP_DEFLATED, ZipFile
+        content = io.BytesIO()
+        with ZipFile(content, 'w', ZIP_DEFLATED) as archive:
+            archive.writestr('xl/sharedStrings.xml', b'x' * (25 * 1024 * 1024 + 1))
+        with patch('openpyxl.load_workbook') as load, self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post('/api/uploads/', {'file': SimpleUploadedFile('expanded.xlsx', content.getvalue())}, format='multipart')
+        load.assert_not_called()
+        batch = UploadBatch.objects.get(pk=response.data['id'])
+        self.assertEqual(batch.status, 'FAILED')
+        self.assertIn('25 MB', batch.error_message)
+
+    def test_large_duplicate_group_has_bounded_metadata_and_pages(self):
+        import json
+        batch = self.upload([self.customer()] * 1000)
+        row = batch.rows.first()
+        self.assertEqual(len(row.data['_file_rows']), 20)
+        self.assertEqual(row.data['_file_row_count'], 1000)
+        self.assertLess(len(json.dumps(row.data)), 2000)
+        response = self.client.get(f'/api/uploads/{batch.pk}/rows/?filter=duplicates')
+        self.assertEqual(response.data['count'], 1000)
+        self.assertEqual(len(response.data['results']), 50)
+        self.assertEqual(response.data['results'][0]['file_row_count'], 1000)
+        self.assertNotIn('_file_group', response.data['results'][0]['data'])
+        page2 = self.client.get(response.data['next'])
+        self.assertEqual(page2.data['results'][0]['row_number'], 52)
+        rejected = self.client.post(f'/api/uploads/{batch.pk}/reject-pending/')
+        self.assertEqual(rejected.data, {'rejected': 1000})
+        self.assertEqual(self.commit(batch).data['skipped'], 1000)
+
+    def test_group_change_outside_sample_invalidates_approval(self):
+        batch = self.upload([self.customer()] * 22)
+        chosen = batch.rows.order_by('row_number').first()
+        self.choose(chosen, 'APPROVE')
+        batch.rows.order_by('-row_number').first().delete()
+        self.assertEqual(self.commit(batch).status_code, 409)
+        chosen.refresh_from_db()
+        self.assertEqual(chosen.resolution, 'PENDING')
+        self.assertFalse(chosen.resolution_explicit)
+        self.assertFalse(Lead.objects.exists())
+
+    def test_legacy_group_approval_survives_compaction(self):
+        batch = self.upload([self.customer()] * 22)
+        numbers = list(batch.rows.order_by('row_number').values_list('row_number', flat=True))
+        for row in batch.rows.all():
+            row.data.pop('_file_group')
+            row.data.pop('_file_row_count')
+            row.data['_file_rows'] = numbers
+            row.save(update_fields=['data'])
+        self.choose(batch.rows.first(), 'APPROVE')
+        self.assertEqual(self.commit(batch).data['created'], 1)
+
+    def test_invalid_pagination_counts_and_reject_preserves_approval(self):
+        batch = self.upload([self.customer()] * 52 + [self.customer(phone='invalid')] * 51)
+        self.choose(batch.rows.first(), 'APPROVE')
+        # The approval skips its group; a new independent pending group is rejected.
+        other = self.upload([self.customer(phone='7000000000')] * 2)
+        invalid = self.client.get(f'/api/uploads/{batch.pk}/rows/?filter=invalid')
+        self.assertEqual((invalid.data['count'], len(invalid.data['results'])), (51, 50))
+        self.assertEqual(len(self.client.get(invalid.data['next']).data['results']), 1)
+        self.client.post(f'/api/uploads/{other.pk}/reject-pending/')
+        self.assertEqual(batch.rows.first().resolution, 'IMPORT')
+        summary = self.client.get(f'/api/uploads/{batch.pk}/').data
+        self.assertEqual(summary['validation_errors_found'], 51)
+        self.assertEqual(summary['file_duplicates_found'], 52)
+        self.assertEqual(summary['removed_duplicates'], 51)
+        self.assertNotIn('rows', summary)
+        self.assertEqual(self.client.get(f'/api/uploads/{batch.pk}/rows/?filter=bad').status_code, 400)
+        outsider = User.objects.create_user(email='pagination-outsider@example.com', role='META_UPLOADER')
+        self.client.force_authenticate(outsider)
+        for path, method in [('rows/', 'get'), ('reject-pending/', 'post')]:
+            self.assertEqual(getattr(self.client, method)(f'/api/uploads/{batch.pk}/{path}').status_code, 404)
+
+    def test_oversized_legacy_batch_still_has_paginated_history(self):
+        from .models import UploadRow
+        batch = self.upload([self.customer()])
+        UploadRow.objects.bulk_create([UploadRow(batch=batch, row_number=i + 3, data={}, normalized_phone='') for i in range(1000)])
+        self.assertEqual(self.commit(batch).status_code, 400)
+        self.assertEqual(self.client.get(f'/api/uploads/{batch.pk}/?include_rows=true').status_code, 400)
+        self.assertEqual(self.client.get(f'/api/uploads/{batch.pk}/rows/').data['count'], 1001)
+        batch.status = 'COMMITTED'
+        batch.save(update_fields=['status'])
+        self.assertTrue(self.commit(batch).data['already_committed'])
+
+    def test_import_failure_rolls_back_earlier_lead_and_audit(self):
+        batch = self.upload([self.customer(phone='7000000000'), self.customer(phone='7000000001')])
+        create = Lead.objects.create
+        def fail_second(**values):
+            if values['phone'] == '7000000001':
+                raise RuntimeError('Simulated database failure')
+            return create(**values)
+        with patch('uploads.views.Lead.objects.create', side_effect=fail_second), self.assertRaises(RuntimeError):
+            self.commit(batch)
+        self.assertFalse(Lead.objects.exists())
+        self.assertFalse(LeadAudit.objects.exists())
+        batch.refresh_from_db()
+        self.assertEqual(batch.status, 'READY')
+
+    @override_settings(INTAKE_ENABLED=False)
+    def test_upload_recovery_runs_when_meta_intake_is_disabled(self):
+        from intake.tasks import sweep_receipts
+        from .tasks import parse_upload_batch
+        batch = UploadBatch.objects.create(filename='pending.csv', storage_path='pending.csv', uploaded_by=self.admin)
+        with patch('intake.tasks.publish') as publish:
+            sweep_receipts.run()
+        publish.assert_called_once_with(parse_upload_batch, batch.pk)

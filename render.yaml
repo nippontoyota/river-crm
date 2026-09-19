@@ -1,57 +1,27 @@
-envVarGroups:
-  - name: revera-runtime
-    envVars:
-      - key: DATABASE_URL
-        sync: false
-      - key: DJANGO_SECRET_KEY
-        generateValue: true
-      - key: JWT_SIGNING_KEY
-        generateValue: true
-      - key: DJANGO_DEBUG
-        value: "false"
-      - key: CELERY_TASK_ALWAYS_EAGER
-        value: "false"
-      - key: INTAKE_ENABLED
-        value: "false"
-      - key: INTAKE_FINGERPRINT_KEY
-        generateValue: true
-      - key: INTAKE_SECRETS_JSON
-        sync: false
-      - key: META_APP_SECRET
-        sync: false
-      - key: META_VERIFY_TOKEN
-        sync: false
-      - key: META_GRAPH_VERSION
-        sync: false
-      - key: WHATSAPP_MODE
-        value: "preview"
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SECRET_KEY
-        sync: false
-      - key: SUPABASE_UPLOAD_BUCKET
-        value: crm-imports
+# Existing river-crm: follow backend/intake/README.md before applying.
+# Do not create a second web service or replace existing signing keys.
+# Create river-runtime manually with existing credentials; see the rollout guide.
 services:
   - type: keyvalue
-    name: revera-queue
+    name: river-queue
     plan: starter
     ipAllowList: []
     maxmemoryPolicy: noeviction
   - type: web
-    name: revera-api
+    name: river-crm
     runtime: python
     plan: starter
     rootDir: backend
     buildCommand: bash build.sh
     preDeployCommand: python manage.py migrate --noinput
-    startCommand: gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker
+    startCommand: gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker --workers 1
     healthCheckPath: /api/schema/
     envVars:
-      - fromGroup: revera-runtime
+      - fromGroup: river-runtime
       - key: REDIS_URL
         fromService:
           type: keyvalue
-          name: revera-queue
+          name: river-queue
           property: connectionString
       - key: CACHE_URL
         sync: false
@@ -64,21 +34,21 @@ services:
       - key: CSRF_TRUSTED_ORIGINS
         sync: false
   - type: worker
-    name: revera-worker
+    name: river-worker
     runtime: python
     plan: starter
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: python manage.py migrate --check && celery -A config worker --loglevel=warning --concurrency=2
+    startCommand: python manage.py migrate --check && celery -A config worker --loglevel=warning --concurrency=1 --prefetch-multiplier=1 --max-tasks-per-child=100
     envVars:
-      - fromGroup: revera-runtime
+      - fromGroup: river-runtime
       - key: REDIS_URL
         fromService:
           type: keyvalue
-          name: revera-queue
+          name: river-queue
           property: connectionString
   - type: worker
-    name: revera-scheduler
+    name: river-scheduler
     runtime: python
     plan: starter
     numInstances: 1
@@ -86,9 +56,9 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python manage.py migrate --check && celery -A config beat --loglevel=warning --schedule=/tmp/celerybeat-schedule
     envVars:
-      - fromGroup: revera-runtime
+      - fromGroup: river-runtime
       - key: REDIS_URL
         fromService:
           type: keyvalue
-          name: revera-queue
+          name: river-queue
           property: connectionString

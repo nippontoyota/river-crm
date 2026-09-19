@@ -189,15 +189,18 @@ export function getCurrentUser() {
   return currentUserRequest;
 }
 export const uploadLeads = (file: File) => { const body = new FormData(); body.append("file", file); return api<UploadBatch>("/api/uploads/", { method: "POST", body }); };
-export const getUpload = (id: number, includeRows = false) => api<UploadBatch>(`/api/uploads/${id}/${includeRows ? "?include_rows=true" : ""}`);
+export const getUpload = (id: number) => api<UploadBatch>(`/api/uploads/${id}/`);
 export type UploadSummary = {
   totals: { total_uploads: number; awaiting_import: number; failed_uploads: number; imported_leads: number; updated_leads: number; skipped_rows: number };
   recent: { id: number; filename: string; status: UploadBatch["status"]; total_rows: number; created_at: string; committed_at: string | null; imported_leads: number; updated_leads: number; skipped: number }[];
 };
 export const getUploadSummary = () => api<UploadSummary>("/api/uploads/summary/");
 export const resolveUploadDuplicates = (id: number, rows: { id: number; resolution: "APPROVE" | "SKIP" }[]) => api<{ detail: string; duplicates_found: number }>(`/api/uploads/${id}/resolve-duplicates/`, { method: "POST", body: JSON.stringify({ rows }) });
+export type UploadRowPage = { count: number; next: string | null; previous: string | null; results: UploadRow[] };
+export const getUploadRows = (id: number, filter: 'invalid' | 'duplicates', page = 1) => api<UploadRowPage>(`/api/uploads/${id}/rows/?filter=${filter}&page=${page}`);
+export const rejectPendingUploadRows = (id: number) => api<{ rejected: number }>(`/api/uploads/${id}/reject-pending/`, { method: 'POST', body: '{}' });
 export const commitUpload = (id: number) => api<{ created: number; overwritten: number; skipped: number }>(`/api/uploads/${id}/commit/`, { method: "POST", body: JSON.stringify({}) });
-export type UploadRow = { file_rows: number[]; validation_errors: Record<string, string>; id: number; row_number: number; data: import("./intake").CustomerValues & { source?: string }; normalized_phone: string; validation_error: string; duplicate_of: number | null; existing_name: string; existing_status: string; duplicate_type: "CRM" | "FILE" | "INTAKE" | ""; resolution: "PENDING" | "SKIP" | "OVERWRITE" | "IMPORT" };
+export type UploadRow = { file_row_count: number; file_rows: number[]; validation_errors: Record<string, string>; id: number; row_number: number; data: import("./intake").CustomerValues & { source?: string }; normalized_phone: string; validation_error: string; duplicate_of: number | null; existing_name: string; existing_status: string; duplicate_type: "CRM" | "FILE" | "INTAKE" | ""; resolution: "PENDING" | "SKIP" | "OVERWRITE" | "IMPORT" };
 export type UploadBatch = { filename: string; mapping_version: number | null; original_deleted_at: string | null; validation_errors_found: number; id: number; status: "PARSING" | "READY" | "COMMITTED" | "FAILED"; total_rows: number; parsed_ok: number; duplicates_found: number; crm_duplicates_found: number; file_duplicates_found: number; intake_duplicates_found: number; removed_duplicates: number; pending_duplicates: number; skipped: number; error_message: string; rows?: UploadRow[] };
 
 export type RtoOption = { value: string; label: string };

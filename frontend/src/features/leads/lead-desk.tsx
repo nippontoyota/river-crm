@@ -434,6 +434,9 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
 
   const selectFile = async (file?: File) => {
     if (!file || uploading || importingUpload || reviewingUpload) return;
+    if (!/\.(csv|xlsx)$/i.test(file.name) || file.size > 10 * 1024 * 1024) {
+      setError("Choose a CSV or XLSX file up to 10 MB, with at most 1,000 leads."); return;
+    }
     setUploading(true); setUpload(null); setError(""); setNotice("");
     try { setUpload(await uploadLeads(file)); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Upload failed."); }
@@ -445,7 +448,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const next = await getUpload(upload.id, true);
+        const next = await getUpload(upload.id);
         if (!cancelled) { setUpload(next); if (next.status === "PARSING") timer = setTimeout(poll, 1500); }
       } catch (requestError) { if (!cancelled) setError(requestError instanceof Error ? requestError.message : "Unable to check import. Use Check import to retry."); }
     };
@@ -455,12 +458,12 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
   const checkUpload = async () => {
     if (!upload || checkingUpload) return;
     setCheckingUpload(true); setError("");
-    try { setUpload(await getUpload(upload.id, true)); }
+    try { setUpload(await getUpload(upload.id)); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Unable to check import."); }
     finally { setCheckingUpload(false); }
   };
   const importUpload = async () => {
-    if (!upload || importingUpload || reviewingUpload || upload.pending_duplicates || upload.validation_errors_found || !upload.parsed_ok) return;
+    if (!upload || importingUpload || reviewingUpload || upload.pending_duplicates || upload.validation_errors_found || !upload.total_rows) return;
     setImportingUpload(true); setError("");
     try {
       const result = await commitUpload(upload.id);
@@ -468,7 +471,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
       setLoading(true);
       const pageResult = await getLeadsPage(leadQuery(false, false, effectiveActiveFilters, page, searchFilter, leadView, reassignmentRole));
       setLeads(pageResult.results); setTotalLeads(pageResult.count);
-    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Import failed."); setUpload(await getUpload(upload.id, true).catch(() => upload)); }
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Import failed."); setUpload(await getUpload(upload.id).catch(() => upload)); }
     finally { setImportingUpload(false); setLoading(false); }
   };
   const targetLabel = "CE";
@@ -504,7 +507,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
     <section className="panel admin-filter-band">
       <section className="lead-toolbar admin-filter-toolbar">
         <label className="search"><span>⌕</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name or mobile..." /></label>
-        <label className="button filter bulk-upload-button">{uploading ? "Uploading…" : "Bulk Upload"}<input hidden type="file" accept=".xlsx,.csv" disabled={uploading || importingUpload || reviewingUpload} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; void selectFile(file); }} /></label>
+        <label title="CSV or XLSX, up to 10 MB and 1,000 leads" className="button filter bulk-upload-button">{uploading ? "Uploading…" : "Bulk Upload"}<input hidden type="file" accept=".xlsx,.csv" disabled={uploading || importingUpload || reviewingUpload} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; void selectFile(file); }} /></label>
         <button className="filter sample-download" onClick={() => downloadLeadSample(sourceOptions.find(item => item !== "WALKIN") || "WALKIN")}>Download sample format</button>
       </section>
       <section className="lead-filters admin-lead-filters">
@@ -544,7 +547,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
       {upload.status === "READY" && <p>{upload.total_rows} rows · {upload.parsed_ok} ready · {upload.pending_duplicates} duplicates need review · {upload.skipped} skipped · {upload.validation_errors_found} invalid</p>}
       <div className="intake-actions">
         <button className="filter" disabled={checkingUpload || uploading || importingUpload || reviewingUpload} onClick={() => void checkUpload()}>{checkingUpload ? "Checking…" : "Check import"}</button>
-        {upload.status === "READY" && <button className="button primary" disabled={importingUpload || reviewingUpload || checkingUpload || !!upload.pending_duplicates || !!upload.validation_errors_found || !upload.parsed_ok} onClick={() => void importUpload()}>{importingUpload ? "Importing…" : "Import leads"}</button>}
+        {upload.status === "READY" && <button className="button primary" disabled={importingUpload || reviewingUpload || checkingUpload || !!upload.pending_duplicates || !!upload.validation_errors_found || !upload.total_rows} onClick={() => void importUpload()}>{importingUpload ? "Importing…" : "Import leads"}</button>}
       </div>
       {upload.error_message && <p className="intake-error" role="alert">{upload.error_message}</p>}
       <UploadReview key={upload.id} batch={upload} onChange={setUpload} disabled={importingUpload || checkingUpload} onBusyChange={setReviewingUpload} />

@@ -3,6 +3,7 @@ from pathlib import Path
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -18,7 +19,7 @@ from leads.phone_lock import lock_phones
 from .models import UploadBatch, UploadRow
 from .serializers import ResolveRowsSerializer, UploadBatchSerializer, UploadRowSerializer
 from .storage import upload_bytes
-from .tasks import COLUMNS, classify_rows, parse_upload_batch, refresh_counts, delete_original
+from .tasks import COLUMNS, DUPLICATE_ROWS, MAX_ROWS, ROW_LIMIT_MESSAGE, WRITE_CHUNK, classify_rows, parse_upload_batch, refresh_counts, delete_original
 
 
 class UploadBatchViewSet(viewsets.GenericViewSet):
@@ -71,8 +72,33 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
         batch = self.get_object()
         payload = self.get_serializer(batch).data
         if request.query_params.get('include_rows') == 'true':
+            if batch.rows.count() > MAX_ROWS:
+                raise ValidationError({'detail': 'This batch is too large for a single response. Use the paginated rows endpoint.'})
             payload['rows'] = UploadRowSerializer(batch.rows.select_related('duplicate_of').order_by('row_number'), many=True).data
         return Response(payload)
+
+    @extend_schema(parameters=[OpenApiParameter('filter', str, enum=['invalid', 'duplicates'])], responses=UploadRowSerializer(many=True))
+    @action(detail=True, methods=['get'], serializer_class=UploadRowSerializer)
+    def rows(self, request, pk=None):
+        rows = self.get_object().rows.select_related('duplicate_of').order_by('row_number', 'pk')
+        row_filter = request.query_params.get('filter', '')
+        if row_filter == 'invalid':
+            rows = rows.exclude(validation_error='')
+        elif row_filter == 'duplicates':
+            rows = rows.filter(DUPLICATE_ROWS)
+        elif row_filter:
+            raise ValidationError({'filter': 'Choose invalid or duplicates.'})
+        return self.get_paginated_response(UploadRowSerializer(self.paginate_queryset(rows), many=True).data)
+
+    @action(detail=True, methods=['post'], url_path='reject-pending')
+    @transaction.atomic
+    def reject_pending(self, request, pk=None):
+        batch = self.get_queryset().select_for_update().get(pk=self.get_object().pk)
+        if batch.status != UploadBatch.Status.READY:
+            raise ValidationError({'detail': 'This upload is not ready for review.'})
+        rejected = batch.rows.filter(resolution='PENDING', validation_error='').filter(DUPLICATE_ROWS).update(resolution='SKIP', resolution_explicit=True)
+        refresh_counts(batch)
+        return Response({'rejected': rejected})
 
     @action(detail=True, methods=['post'], url_path='resolve-duplicates')
     @transaction.atomic
@@ -111,6 +137,8 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
             raise ValidationError({'detail': 'This upload is not ready to import.'})
         if batch.mapping_version_id:
             raise ValidationError({'detail': 'This upload used an old mapping template. Upload a file using Download sample format.'})
+        if batch.rows.count() > MAX_ROWS:
+            raise ValidationError({'detail': ROW_LIMIT_MESSAGE})
         rows = list(batch.rows.order_by('row_number'))
         lock_phones(*(row.normalized_phone for row in rows))
         previous = [(row.duplicate_of_id, row.resolution, row.resolution_explicit) for row in rows]
@@ -121,7 +149,9 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
             row.validation_errors = errors
             row.validation_error = ' '.join(errors.values())
         classify_rows(batch, rows, preserve_choices=True)
-        UploadRow.objects.bulk_update(rows, ['data', 'duplicate_of', 'resolution', 'resolution_explicit', 'validation_errors', 'validation_error'])
+        # bulk_update builds expressions for the whole input even with batch_size.
+        for offset in range(0, len(rows), WRITE_CHUNK):
+            UploadRow.objects.bulk_update(rows[offset:offset + WRITE_CHUNK], ['data', 'duplicate_of', 'resolution', 'resolution_explicit', 'validation_errors', 'validation_error'])
         refresh_counts(batch)
         if any(row.validation_error for row in rows):
             return Response({'detail': 'Correct the listed row errors in your spreadsheet and upload it again. No leads were imported.'}, status=400)

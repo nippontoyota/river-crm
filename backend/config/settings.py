@@ -86,6 +86,8 @@ CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", str(DEBUG)
 CELERY_TASK_EAGER_PROPAGATES = CELERY_TASK_ALWAYS_EAGER
 CELERY_TASK_ACKS_LATE = True
 CELERY_TASK_TIME_LIMIT = 300
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
 CELERY_BEAT_SCHEDULE = {"follow-up-reminders": {"task": "notifications.tasks.create_due_follow_up_notifications", "schedule": 900}}
 CELERY_BEAT_SCHEDULE["feedback-reminders"] = {"task": "feedback.tasks.process_feedback_queue", "schedule": 60}
 

@@ -94,16 +94,15 @@ def process_submission(receipt_id):
 
 @shared_task(ignore_result=True)
 def sweep_receipts():
-    if not settings.INTAKE_ENABLED:
-        return
-    now = timezone.now()
-    due = Submission.objects.filter(connection__enabled=True, connection__paused_reason='', form__enabled=True, answers_expired=False).filter(
-        Q(state=Submission.State.RECEIVED, next_attempt_at__lte=now) |
-        Q(state=Submission.State.PROCESSING, lease_until__lte=now) |
-        Q(state=Submission.State.NEEDS_REVIEW, review_reason='pending_submission', next_attempt_at__lte=now)
-    ).order_by('received_at').values_list('pk', flat=True)[:1000]
-    for receipt_id in due:
-        publish(process_submission, str(receipt_id))
+    if settings.INTAKE_ENABLED:
+        now = timezone.now()
+        due = Submission.objects.filter(connection__enabled=True, connection__paused_reason='', form__enabled=True, answers_expired=False).filter(
+            Q(state=Submission.State.RECEIVED, next_attempt_at__lte=now) |
+            Q(state=Submission.State.PROCESSING, lease_until__lte=now) |
+            Q(state=Submission.State.NEEDS_REVIEW, review_reason='pending_submission', next_attempt_at__lte=now)
+        ).order_by('received_at').values_list('pk', flat=True)[:1000]
+        for receipt_id in due:
+            publish(process_submission, str(receipt_id))
     from uploads.models import UploadBatch
     from uploads.tasks import parse_upload_batch
     for batch_id in UploadBatch.objects.filter(status=UploadBatch.Status.PARSING, original_deleted_at__isnull=True).values_list('pk', flat=True)[:100]:

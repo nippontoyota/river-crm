@@ -39,7 +39,7 @@ export function BulkUploadPage() {
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const next = await getUpload(parsingId, true);
+        const next = await getUpload(parsingId);
         if (!cancelled) {
           setBatch(next);
           if (next.status === "PARSING") timer = setTimeout(poll, 1500);
@@ -68,7 +68,7 @@ export function BulkUploadPage() {
     if (!id || busy || reviewing) return;
     setBusy(true); setError("");
     try {
-      setBatch(await getUpload(id, true));
+      setBatch(await getUpload(id));
       requestAnimationFrame(() => reviewRef.current?.scrollIntoView({ block: "start" }));
     } catch (error) { setError(error instanceof Error ? error.message : "Unable to check upload."); }
     finally { setBusy(false); }
@@ -83,7 +83,7 @@ export function BulkUploadPage() {
       setNotice(`${result.created} leads imported. ${result.overwritten} existing leads updated. ${result.skipped} rows skipped. New leads are now in the admin assignment pool.`);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Import failed.");
-      setBatch(await getUpload(batch.id, true).catch(() => batch));
+      setBatch(await getUpload(batch.id).catch(() => batch));
     } finally { setBusy(false); }
   };
 
@@ -115,7 +115,7 @@ export function BulkUploadPage() {
           <strong>{busy ? "Working on your upload…" : parsingId ? "Checking your spreadsheet…" : "Drop your spreadsheet here"}</strong>
           <span>{locked ? "Please wait before choosing another file" : "or click to browse your files"}</span>
           <span className="uploader-choose" aria-hidden="true">Choose file</span>
-          <small>One CSV or XLSX file · Up to 10 MB</small>
+          <small>One CSV or XLSX file · Up to 10 MB · 1,000 leads</small>
         </label>
         <footer><span>Start with the right columns.</span><button className="filter" onClick={() => downloadLeadSample("META")}>↓ Download sample format</button></footer>
       </section>
