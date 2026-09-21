@@ -4,7 +4,7 @@ import logging
 import os
 import subprocess
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as datetime_timezone
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -37,8 +37,10 @@ class PreflightTests(TransactionTestCase):
     def graph(self, connection, path, params):
         if path == '123':
             return {'id': '123', 'page': {'id': '456'}}
+        if path == '456/leadgen_forms':
+            return {'data': [{'id': '123'}]}
         if path == '123/leads':
-            self.assertEqual(params['limit'], 5)
+            self.assertIn(params['limit'], (5, 100))
             return {'data': [{'id': '789', 'created_time': (timezone.now() - timedelta(hours=1)).isoformat()}]}
         return {'id': '789', 'form_id': '123', 'created_time': (timezone.now() - timedelta(hours=1)).isoformat(),
                 'field_data': [{'name': 'full_name', 'values': ['Private Customer']}, {'name': 'phone_number', 'values': ['9876543210']}]}
@@ -102,6 +104,44 @@ class PreflightTests(TransactionTestCase):
             with self.assertRaisesMessage(CommandError, 'sample_retrieval_not_demonstrated'):
                 self.run_check()
         self.assertIn('access succeeded; sample retrieval not yet demonstrated', self.out.getvalue())
+
+    def test_daily_audit_checks_local_midnight_all_pages_and_unconfigured_forms_without_writes(self):
+        now = datetime(2026, 9, 20, 18, 40, tzinfo=datetime_timezone.utc)  # 00:10 IST on September 21.
+        today = now - timedelta(minutes=5)
+        Submission.objects.create(connection=self.connection, form=self.form, external_id='9001',
+                                  identity='9001', source='META', state='IMPORTED', submitted_at=today)
+        models = (Lead, Submission, IntakeAudit, Heartbeat, IntakeForm)
+        before = {model: list(model.objects.values()) for model in models}
+
+        def graph(connection, path, params):
+            if path == '456/leadgen_forms':
+                if params.get('after') == 'forms-two':
+                    return {'data': [{'id': '124'}]}
+                return {'data': [{'id': '123'}], 'paging': {'next': 'https://never-follow.example', 'cursors': {'after': 'forms-two'}}}
+            if path in {'123/leads', '124/leads'} and params['limit'] == 100:
+                filters = json.loads(params['filtering'])
+                self.assertEqual(filters[0]['value'], int(now.replace(minute=30).timestamp()) - 1)
+                self.assertEqual(filters[1]['value'], int(now.timestamp()) + 1)
+                if path == '124/leads':
+                    return {'data': [{'id': '9010', 'created_time': today.isoformat()}]}
+                if params.get('after') == 'leads-two':
+                    return {'data': [{'id': '9002', 'created_time': today.isoformat()}]}
+                return {'data': [{'id': '9001', 'created_time': today.isoformat()},
+                                 {'id': '8999', 'created_time': (now - timedelta(hours=1)).isoformat()}],
+                        'paging': {'next': 'https://never-follow.example', 'cursors': {'after': 'leads-two'}}}
+            return self.graph(connection, path, params)
+
+        with patch('django.utils.timezone.now', return_value=now), patch('intake.meta.graph', side_effect=graph), \
+                patch('intake.management.commands.intake_check_credentials.graph', side_effect=graph):
+            self.run_check()
+        self.assertEqual({model: list(model.objects.values()) for model in models}, before)
+        reports = [json.loads(line.removeprefix('PASS daily comparison ')) for line in self.out.getvalue().splitlines()
+                   if line.startswith('PASS daily comparison ')]
+        self.assertEqual([(row['form'], row['enabled_in_crm'], row['meta_today'], row['missing_receipts']) for row in reports],
+                         [('123', True, 2, 1), ('124', False, 1, 1)])
+        self.assertEqual(reports[0]['receipt_states'], {'IMPORTED': 1})
+        for private in ('9001', '9002', '9010', 'Private Customer', '9876543210', 'private-token'):
+            self.assertNotIn(private, self.out.getvalue())
 
     def test_actions_entrypoint_checks_migrations_and_preserves_optional_key_fallbacks(self):
         from background import main

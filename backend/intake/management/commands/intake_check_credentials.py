@@ -1,4 +1,5 @@
 """Read-only preflight. Never print tokens, answers, mapping values or exception text."""
+import json
 import re
 
 from django.apps import apps
@@ -8,7 +9,7 @@ from django.db import connection, transaction
 from django.utils import timezone
 
 from intake.mapping import map_entries, sanitize_entries
-from intake.meta import MetaFailure, fetch_lead, form_lead_page, graph
+from intake.meta import MetaFailure, fetch_lead, form_lead_page, form_leads, graph
 from intake.models import IntakeForm, Submission
 
 
@@ -104,14 +105,60 @@ class Command(BaseCommand):
                 self.stdout.write('PASS access succeeded; sample retrieval not yet demonstrated.')
                 missing_sample = True
                 continue
-            entries, _, _ = fetched
+            entries, submitted_at, _ = fetched
             mapping = form.mappings.order_by('-version').first()
             rules = mapping.rules if mapping else {}
             retained, _ = sanitize_entries(entries, rules)
             preview = map_entries(retained, rules)
             # JSON encoding prevents remote field labels from becoming log control sequences.
-            import json
             self.stdout.write('PASS sample retrieval; fields=' + json.dumps(sorted({entry['label'] for entry in entries}), ensure_ascii=True))
             self.stdout.write('PASS mapping preview; review_fields=' + json.dumps(sorted(preview['errors']), ensure_ascii=True))
+            self.stdout.write('PASS sample submission time=' + timezone.localtime(submitted_at).isoformat())
+        self.check_today(forms)
         if missing_sample:
             raise CommandError('sample_retrieval_not_demonstrated; activation gate remains closed.')
+
+    def check_today(self, forms):
+        """Compare live Meta IDs with saved receipts without fetching customer answers."""
+        end = timezone.localtime()
+        start = end.replace(hour=0, minute=0, second=0, microsecond=0)
+        self.stdout.write(f'PASS daily audit window={start.isoformat()}..{end.isoformat()}')
+        pages = {(form.connection_id, form.page_id): form.connection for form in forms}
+        for (connection_id, page_id), meta_connection in pages.items():
+            discovered = {form.external_id for form in forms if form.connection_id == connection_id and form.page_id == page_id}
+            cursor, seen = '', set()
+            for _ in range(20):
+                params = {'fields': 'id', 'limit': 100}
+                if cursor:
+                    params['after'] = cursor
+                payload = graph(meta_connection, f'{page_id}/leadgen_forms', params)
+                if not isinstance(payload.get('data'), list):
+                    raise MetaFailure('meta_invalid_response')
+                for item in payload['data']:
+                    form_id = str(item.get('id', '')) if isinstance(item, dict) else ''
+                    if not re.fullmatch(r'[0-9]{1,100}', form_id):
+                        raise MetaFailure('meta_invalid_identifier')
+                    discovered.add(form_id)
+                paging = payload.get('paging', {})
+                if not paging.get('next'):
+                    break
+                cursor = paging.get('cursors', {}).get('after')
+                if not isinstance(cursor, str) or not cursor or len(cursor) > 4096 or cursor in seen:
+                    raise MetaFailure('meta_invalid_pagination')
+                seen.add(cursor)
+            else:
+                raise CommandError('meta_form_inventory_incomplete')
+            self.stdout.write(f'PASS page inventory page={page_id} forms={len(discovered)}')
+            for form_id in sorted(discovered):
+                saved = IntakeForm.objects.filter(connection_id=connection_id, external_id=form_id).first()
+                form = saved or IntakeForm(connection=meta_connection, page_id=page_id, external_id=form_id)
+                leads = dict(form_leads(form, start, end))
+                receipts = Submission.objects.filter(connection_id=connection_id, external_id__in=leads)
+                states = {}
+                for state in receipts.values_list('state', flat=True):
+                    states[state] = states.get(state, 0) + 1
+                report = {'page': page_id, 'form': form_id, 'enabled_in_crm': bool(saved and saved.enabled),
+                          'meta_today': len(leads), 'missing_receipts': len(leads) - sum(states.values()),
+                          'receipt_states': states,
+                          'latest_today': timezone.localtime(max(leads.values())).isoformat() if leads else None}
+                self.stdout.write('PASS daily comparison ' + json.dumps(report, sort_keys=True))
