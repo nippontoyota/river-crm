@@ -2,10 +2,10 @@ import re
 from difflib import SequenceMatcher
 
 
-# Kerala MVD RTO / SRTO office codes, verified 2026-09-10.
-# Source: https://mvd.kerala.gov.in/en/directory
+# Office names match the RTO NAME column in RTO List.csv.
+# Keep stored codes unchanged for existing leads and report filters.
 KERALA_RTO_CHOICES = [
-    ('KL-01', 'Trivandrum'),
+    ('KL-01', 'Thiruvananthapuram'),
     ('KL-02', 'Kollam'),
     ('KL-03', 'Pathanamthitta'),
     ('KL-04', 'Alappuzha'),
@@ -15,19 +15,19 @@ KERALA_RTO_CHOICES = [
     ('KL-08', 'Thrissur'),
     ('KL-09', 'Palakkad'),
     ('KL-10', 'Malappuram'),
-    ('KL-11', 'Kozhikkode'),
+    ('KL-11', 'Kozhikode'),
     ('KL-12', 'Wayanad'),
     ('KL-13', 'Kannur'),
-    ('KL-14', 'Kasaragod'),
-    ('KL-15', 'Nationalised Sector'),
+    ('KL-14', 'Kasargod'),
+    ('KL-15', 'KSRTC'),
     ('KL-16', 'Attingal'),
     ('KL-17', 'Muvattupuzha'),
-    ('KL-18', 'Vadakkara'),
+    ('KL-18', 'Vadakara'),
     ('KL-19', 'Parassala'),
     ('KL-20', 'Neyyattinkara'),
-    ('KL-21', 'Nedumangadu'),
-    ('KL-22', 'Kazhakuttom'),
-    ('KL-23', 'Karunagappally'),
+    ('KL-21', 'Nedumangad'),
+    ('KL-22', 'Kazhakoottam'),
+    ('KL-23', 'Karunagappalli'),
     ('KL-24', 'Kottarakkara'),
     ('KL-25', 'Punalur'),
     ('KL-26', 'Adoor'),
@@ -40,20 +40,20 @@ KERALA_RTO_CHOICES = [
     ('KL-33', 'Changanassery'),
     ('KL-34', 'Kanjirappally'),
     ('KL-35', 'Pala'),
-    ('KL-36', 'Vaikkom'),
+    ('KL-36', 'Vaikom'),
     ('KL-37', 'Vandiperiyar'),
     ('KL-38', 'Thodupuzha'),
-    ('KL-39', 'Tripunithura'),
+    ('KL-39', 'Thripunithura'),
     ('KL-40', 'Perumbavoor'),
     ('KL-41', 'Aluva'),
-    ('KL-42', 'North Paroor'),
+    ('KL-42', 'North Paravur'),
     ('KL-43', 'Mattancherry'),
     ('KL-44', 'Kothamangalam'),
-    ('KL-45', 'Irinjalakkuda'),
-    ('KL-46', 'Guruvayoor'),
-    ('KL-47', 'Kodungallur'),
-    ('KL-48', 'Vadakkancherry'),
-    ('KL-49', 'Alathura'),
+    ('KL-45', 'Irinjalakuda'),
+    ('KL-46', 'Guruvayur'),
+    ('KL-47', 'Kodungalloor'),
+    ('KL-48', 'Wadakkanchery'),
+    ('KL-49', 'Alathur'),
     ('KL-50', 'Mannarkkad'),
     ('KL-51', 'Ottappalam'),
     ('KL-52', 'Pattambi'),
@@ -63,21 +63,21 @@ KERALA_RTO_CHOICES = [
     ('KL-56', 'Koyilandy'),
     ('KL-57', 'Koduvally'),
     ('KL-58', 'Thalassery'),
-    ('KL-59', 'Thaliparamba'),
+    ('KL-59', 'Taliparamba'),
     ('KL-60', 'Kanhangad'),
     ('KL-61', 'Kunnathur'),
     ('KL-62', 'Ranni'),
     ('KL-63', 'Angamaly'),
     ('KL-64', 'Chalakkudy'),
     ('KL-65', 'Tirurangadi'),
-    ('KL-66', 'Kuttanadu'),
+    ('KL-66', 'Kuttanad'),
     ('KL-67', 'Uzhavoor'),
     ('KL-68', 'Devikulam'),
     ('KL-69', 'Udumbanchola'),
     ('KL-70', 'Chittur'),
     ('KL-71', 'Nilambur'),
     ('KL-72', 'Mananthavady'),
-    ('KL-73', 'Sulthanbathery'),
+    ('KL-73', 'Sulthan Bathery'),
     ('KL-74', 'Kattakkada'),
     ('KL-75', 'Thriprayar'),
     ('KL-76', 'Nanmanda'),
@@ -112,7 +112,8 @@ def normalize_rto(value):
     if not name:
         return code
     names = {''.join(c for c in label.casefold() if c.isalnum()): key for key, label in KERALA_RTO_CHOICES}
-    names['thiruvananthapuram'] = 'KL-01'
+    # Preserve previous names that no longer pass conservative spelling matching.
+    names.update({'trivandrum': 'KL-01', 'nationalisedsector': 'KL-15', 'kazhakuttom': 'KL-22', 'northparoor': 'KL-42'})
     match = names.get(name)
     if not match:
         # Short/ambiguous fragments must never guess a customer's RTO.

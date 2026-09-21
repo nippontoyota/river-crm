@@ -409,7 +409,7 @@ class SystemConfigSerializer(serializers.ModelSerializer):
         return SO_LEAD_SOURCES
 
     def get_rto_options(self, obj):
-        return [{"value": code, "label": f"{code} - {name}"} for code, name in KERALA_RTO_CHOICES]
+        return [{"value": code, "label": f"{code.replace('-', '')} - {name}"} for code, name in KERALA_RTO_CHOICES]
 
     def validate_lists(self, value):
         if not isinstance(value, dict):

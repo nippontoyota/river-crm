@@ -110,7 +110,7 @@ class CEOOptionsView(CEOView):
         return Response({"branches": [{"value": key, "label": value} for key, value in sorted(branches.items())] + [{"value": "__unknown__", "label": "Not recorded"}],
             "employees": [{"id": u.id, "name": u.history_display_name, "role": u.role, "branch": u.location.strip().casefold(), "lifecycle": u.lifecycle_status} for u in users],
             "roles": [{"value": value, "label": label} for value, label in User.Role.choices if value in ROLES],
-            "rtos": [{"value": code, "label": f"{code} · {name}"} for code, name in KERALA_RTO_CHOICES],
+            "rtos": [{"value": code, "label": f"{code.replace('-', '')} - {name}"} for code, name in KERALA_RTO_CHOICES],
             "statuses": [{"value": value, "label": label} for value, label in Lead.Status.choices],
             "activities": lists.get("activities", []), "sub_activities": lists.get("subActivities", {}), **options})
 

@@ -230,8 +230,8 @@ class LeadAccessTests(TestCase):
                 self.client.force_authenticate(user)
                 options = self.client.get("/api/system-config/").data["rto_options"]
                 self.assertEqual(len(options), 86)
-                self.assertIn({"value": "KL-07", "label": "KL-07 - Ernakulam"}, options)
-                self.assertIn({"value": "KL-86", "label": "KL-86 - Payyannur"}, options)
+                self.assertIn({"value": "KL-07", "label": "KL07 - Ernakulam"}, options)
+                self.assertIn({"value": "KL-86", "label": "KL86 - Payyannur"}, options)
                 created = self.client.post("/api/leads/", {
                     "name": "RTO enquiry", "phone": "7006682399", "source": Lead.Source.WEBSITE,
                     "rto": "KL-07", "ps_officer_id": self.ps_so.id,

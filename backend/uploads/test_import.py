@@ -37,6 +37,8 @@ class RtoNormalizationTests(SimpleTestCase):
             'Ernakulamm': 'KL-07', 'Kozhikode': 'KL-11', 'Thiruvananthapuram': 'KL-01',
             'Kanjirapally': 'KL-34', 'North Parur': 'KL-42', 'Thalasserri': 'KL-58',
             'Sub Regional Transport Office, Aluva': 'KL-41',
+            'Trivandrum': 'KL-01', 'Nationalised Sector': 'KL-15',
+            'Kazhakuttom': 'KL-22', 'North Paroor': 'KL-42',
         }
         for value, expected in cases.items():
             with self.subTest(value=value):
