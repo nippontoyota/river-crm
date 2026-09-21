@@ -9,9 +9,69 @@ Keep the existing webhook as a second delivery path. Normal operation needs no
 Fetch click. Connections select enabled forms and credential references; Mappings
 control required fields and approved values; Receipts retain reviews and history.
 
+### Free timer using the existing Supabase database
+
+GitHub's scheduled event is best effort and can arrive hours late. The same
+workflow can instead be dispatched every five minutes by Supabase Cron. This
+reuses the existing database and the public repository's standard Actions runner;
+it does not create a paid service or move Meta credentials out of Actions.
+Meta scans become eligible after 15 minutes, with a warning after 30 minutes.
+Allow for the next five-minute tick and up to four minutes of processing; this
+targets the requested 15–30 minute window, not a guarantee during service outages
+or a large recovery backlog.
+
+1. In GitHub, create a fine-grained token for `nippontoyota/river-crm` only, with
+   **Actions: Read and write**. Approve it in the organization if required and
+   record its expiry so it can be replaced before scheduled dispatch stops.
+   Outside collaborators can use a separate expiring classic token with the
+   documented `repo` scope if company policy permits it; authorize SSO if
+   required. A classic token has broader repository access than the preferred
+   fine-grained token.
+2. Save it in the existing Supabase project's Vault as
+   `crm_github_dispatch_token`. Do not put the value in SQL scripts, commits,
+   shell arguments, or logs. Do not reuse a broad personal CLI token.
+3. As the database owner, run [supabase-scheduler.sql](supabase-scheduler.sql).
+   It installs a disabled `crm-background-dispatch` job. Re-running the script
+   preserves the current job's enabled/disabled state. The dispatch function is
+   unavailable to public, anonymous and authenticated API roles.
+4. Deploy the 15-minute scan interval, then call
+   `SELECT crm_scheduler.dispatch_background();` once and commit. Check the
+   returned request ID in `net._http_response`: status `204` means GitHub
+   accepted the dispatch, not that imports have completed. Verify the resulting
+   Actions **process** run and the CRM processor/scan timestamps too.
+5. Enable the timer only after that check:
+
+   ```sql
+   SELECT cron.alter_job(jobid, active := true)
+   FROM cron.job WHERE jobname = 'crm-background-dispatch';
+   ```
+
+6. Confirm two scheduled dispatches five minutes apart, successful Actions runs,
+   and a completed automatic Meta scan. Keep GitHub's existing schedule as a
+   fallback; the workflow concurrency group and database lease prevent duplicate
+   processors. `CRM_BACKGROUND_ENABLED` controls only GitHub's native schedule.
+   Supabase calls the existing manual-dispatch path, which bypasses that gate.
+
+Monitor both `cron.job_run_details` and the corresponding HTTP response: a
+successful SQL job only queues the HTTP request. A missing Vault token fails
+explicitly; an expired or unapproved token results in a GitHub HTTP error. The
+CRM health timestamps remain the check for actual processing, including when a
+dispatch succeeds but Actions fails or queues the job.
+
+To stop this timer without changing CRM records or other Supabase jobs:
+
+```sql
+SELECT cron.alter_job(jobid, active := false)
+FROM cron.job WHERE jobname = 'crm-background-dispatch';
+```
+
+References: [Supabase Cron](https://supabase.com/docs/guides/cron),
+[Vault](https://supabase.com/docs/guides/database/vault),
+[GitHub workflow dispatch](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event).
+
 | Work | Target interval |
 | --- | --- |
-| Discover leads from enabled, unpaused Meta forms | 30 minutes |
+| Discover leads from enabled, unpaused Meta forms | 15 minutes |
 | Process webhook receipts and spreadsheet previews | 5 minutes |
 | Follow-up and feedback reminders | 5 minutes |
 | Existing intake/upload retention | Hourly |
@@ -131,7 +191,7 @@ Health reuses `processor_attempt`, `processor_success` and `processor` heartbeat
 rows. A clean four-minute yield counts as a successful processor run because it
 preserves work for the next run; an unhandled failure does not. Form-scan success
 is separate. The CRM warns after 15 minutes without processor success and after
-60 minutes without a successful scan for an enabled Meta form. Visible lead and
+30 minutes without a successful scan for an enabled Meta form. Visible lead and
 intake lists still refresh every 30 seconds.
 
 ### Production cutover
@@ -284,7 +344,7 @@ Configure `META_APP_SECRET`, `META_VERIFY_TOKEN` and an explicit `META_GRAPH_VER
 
 The importer checks the retrieved form's Page ownership, lead/form IDs and activation boundary before importing. It uses a fixed Graph host, 15-second HTTP timeout, bounded responses and cursor pagination. It does not follow API-provided next-page URLs. Campaign-name retrieval stores a display name on the receipt; it does not rewrite an imported lead.
 
-The Actions processor requests enabled form scans about every 30 minutes, overlaps the previous checkpoint by 30 minutes and clamps the interval to activation. A scan advances its checkpoint only after all IDs in the interval are committed. A failed scan keeps its old checkpoint, so retries can replay IDs safely.
+The Actions processor requests enabled form scans about every 15 minutes, overlaps the previous checkpoint by 30 minutes and clamps the interval to activation. A scan advances its checkpoint only after all IDs in the interval are committed. A failed scan keeps its old checkpoint, so retries can replay IDs safely.
 
 Before launch, verify Business Portfolio/Page/form access, authorized tokens, lead access, Page subscriptions, `leads_retrieval`, `pages_manage_metadata`, supporting advertising permissions, app mode, business verification and App Review requirements for this account. Supply the privacy-policy and data-deletion information required for the app. These checks require the business's account; mocked tests cannot confirm them.
 

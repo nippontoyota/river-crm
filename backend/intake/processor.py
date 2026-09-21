@@ -17,9 +17,9 @@ from .tasks import due_receipts, process_submission, purge_expired_answers
 
 
 PROCESSOR_INTERVAL_SECONDS = 300
-META_SCAN_INTERVAL_SECONDS = 1800
+META_SCAN_INTERVAL_SECONDS = 900
 PROCESSOR_STALE_SECONDS = 900
-META_SCAN_STALE_SECONDS = 3600
+META_SCAN_STALE_SECONDS = 1800
 
 
 def request_due_scans():

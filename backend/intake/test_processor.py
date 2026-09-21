@@ -329,7 +329,10 @@ class ProcessorTests(TestCase):
             self.assertIn('scanned=2', out)
             self.run_processor(automatic_meta=True)
             self.assertEqual(len(calls), 1)
-            IntakeForm.objects.filter(pk=self.form.pk).update(last_reconciled_at=timezone.now() - timedelta(minutes=31))
+            IntakeForm.objects.filter(pk=self.form.pk).update(last_reconciled_at=timezone.now() - timedelta(minutes=14))
+            self.run_processor(automatic_meta=True)
+            self.assertEqual(len(calls), 1)
+            IntakeForm.objects.filter(pk=self.form.pk).update(last_reconciled_at=timezone.now() - timedelta(minutes=16))
             self.run_processor(automatic_meta=True)
             self.assertEqual(json.loads(calls[1]['filtering'])[0]['value'], int((checkpoint - timedelta(minutes=30)).timestamp()) - 1)
             self.assertEqual(Lead.objects.count(), 2)
@@ -445,6 +448,9 @@ class ProcessorTests(TestCase):
         health = self.client.get('/api/intake/connections/health/').data
         self.assertTrue(health['processor_delayed'])
         self.assertFalse(health['connections'][0]['forms'][0]['scan_delayed'])
+        IntakeForm.objects.filter(pk=self.form.pk).update(last_reconciled_at=timezone.now() - timedelta(minutes=31))
+        health = self.client.get('/api/intake/connections/health/').data
+        self.assertTrue(health['connections'][0]['forms'][0]['scan_delayed'])
 
     def test_retention_runs_once_per_hour(self):
         with patch('intake.processor.purge_expired_answers.run') as purge:
