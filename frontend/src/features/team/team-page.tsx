@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, FormEvent } from "react";
-import { createUser, disableUser, enableUser, getOffboardingImpact, getSystemConfig, getUsers, permanentlyDeleteUser, updateUserBranch, type CurrentUser, type OffboardingImpact, type OffboardingRoute } from "@/lib/crm";
+import { useCallback, useEffect, useMemo, useRef, useState, FormEvent } from "react";
+import { cacheCurrentUser, createUser, disableUser, enableUser, getCachedCurrentUser, getOffboardingImpact, getSystemConfig, getUsers, permanentlyDeleteUser, updateUser, updateUserBranch, type CurrentUser, type OffboardingImpact, type OffboardingRoute } from "@/lib/crm";
 
 const roleOptions = [
   { value: "META_UPLOADER", label: "Meta Uploader" },
@@ -33,6 +33,37 @@ export function TeamPage() {
   const [routes, setRoutes] = useState<Partial<Record<string, OffboardingRoute>>>({});
   const [reason, setReason] = useState("");
   const [lifecycleBusy, setLifecycleBusy] = useState("");
+  const [editingUser, setEditingUser] = useState<CurrentUser | null>(null);
+  const [editError, setEditError] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+  const editDialog = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    if (editingUser) editDialog.current?.showModal();
+  }, [editingUser]);
+
+  const saveUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingUser || editBusy) return;
+    const data = new FormData(event.currentTarget);
+    const payload = {
+      first_name: String(data.get("first_name") || "").trim(),
+      last_name: String(data.get("last_name") || "").trim(),
+      email: String(data.get("email") || "").trim().toLowerCase(),
+      phone: String(data.get("phone") || "").trim(),
+      ...(data.has("location") ? { location: String(data.get("location") || "") } : {}),
+    };
+    setEditBusy(true);
+    setEditError("");
+    try {
+      const updated = await updateUser(editingUser.id, payload);
+      setUsers(current => current.map(user => user.id === updated.id ? updated : user));
+      if (getCachedCurrentUser()?.id === updated.id) cacheCurrentUser(updated);
+      setEditingUser(null);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to update user.");
+    } finally { setEditBusy(false); }
+  };
 
   const loadUsers = useCallback(() => {
     getUsers()
@@ -294,10 +325,12 @@ export function TeamPage() {
                     <span>{displayRole(user.role)}</span>
                     {["FEEDBACK", "SERVICE"].includes(user.role) ? <select aria-label={`Branch for ${user.first_name || user.email}`} title={user.role === "SERVICE" ? "Access follows this branch. Existing requests stay in their branch queues." : "Changing branch automatically redistributes open feedback calls."} value={user.location || ""} disabled={Boolean(lifecycleBusy)} onChange={event => void changeFeedbackBranch(user, event.target.value)}>{[...new Set([user.location || "", ...branches])].filter(Boolean).map(branch => <option key={branch} value={branch}>{branch}</option>)}</select> : <span>{branchLabel(user)}</span>}
                     <span className={`team-status ${isActive ? "active" : "disabled"}`}>{isActive ? "Active" : "Disabled"}</span>
-                    {managed ? <div className="team-row-actions">
-                      {isActive ? <button className="filter" disabled={Boolean(lifecycleBusy)} onClick={() => void openOffboarding(user, "DISABLE")}>Disable</button> : <button className="filter team-enable" disabled={Boolean(lifecycleBusy)} onClick={() => void handleEnable(user)}>Enable</button>}
+                    <div className="team-row-actions">
+                      <button className="filter" disabled={Boolean(lifecycleBusy)} onClick={() => { setEditingUser(user); setEditError(""); }}>Edit</button>
+                      {managed && <>{isActive ? <button className="filter" disabled={Boolean(lifecycleBusy)} onClick={() => void openOffboarding(user, "DISABLE")}>Disable</button> : <button className="filter team-enable" disabled={Boolean(lifecycleBusy)} onClick={() => void handleEnable(user)}>Enable</button>}
                       <button className="filter team-delete" disabled={Boolean(lifecycleBusy)} onClick={() => void openOffboarding(user, "DELETE")}>{lifecycleBusy === `DELETE-${user.id}` ? "Loading…" : "Delete"}</button>
-                    </div> : <span className="team-muted">Not available</span>}
+                      </>}
+                    </div>
                   </div>
                 );
               }) : <div className="empty-state">No users match these filters.</div>}
@@ -305,6 +338,30 @@ export function TeamPage() {
           </div>
         </article>
       </div>
+
+      {editingUser && <dialog ref={editDialog} className="team-edit-dialog" aria-labelledby="edit-user-title" onCancel={event => { event.preventDefault(); if (!editBusy) setEditingUser(null); }}>
+        <h2 id="edit-user-title">Edit user</h2>
+        <p className="subtext">{roleOptions.find(role => role.value === editingUser.role)?.label} · {editingUser.is_active === false ? "Disabled" : "Active"}</p>
+        <form className="team-create-form" onSubmit={saveUser}>
+          <div className="team-name-fields">
+            <label>First name<input name="first_name" autoFocus maxLength={150} defaultValue={editingUser.first_name} disabled={editBusy} /></label>
+            <label>Last name<input name="last_name" maxLength={150} defaultValue={editingUser.last_name} disabled={editBusy} /></label>
+          </div>
+          <label>Email / username *<input type="email" name="email" required maxLength={254} defaultValue={editingUser.email} disabled={editBusy} /></label>
+          <label>Phone<input type="tel" name="phone" maxLength={20} defaultValue={editingUser.phone || ""} disabled={editBusy} /></label>
+          {(["SO", "SALES_MANAGER", "FEEDBACK", "SERVICE"].includes(editingUser.role) || editingUser.location) && <label>Branch
+            <select name="location" defaultValue={editingUser.location || ""} required={["SALES_MANAGER", "FEEDBACK", "SERVICE"].includes(editingUser.role)} disabled={editBusy}>
+              <option value="">Select branch...</option>
+              {[...new Set([editingUser.location || "", ...branches])].filter(Boolean).map(branch => <option key={branch} value={branch}>{branch}</option>)}
+            </select>
+          </label>}
+          {editError && <p className="form-error" role="alert">{editError}</p>}
+          <footer className="team-row-actions">
+            <button type="button" className="filter" disabled={editBusy} onClick={() => setEditingUser(null)}>Cancel</button>
+            <button type="submit" className="button primary" disabled={editBusy}>{editBusy ? "Saving…" : "Save changes"}</button>
+          </footer>
+        </form>
+      </dialog>}
 
       {offboarding && <div className="modal-layer" role="presentation"><section className="modal team-offboarding-modal" role="dialog" aria-modal="true" aria-labelledby="offboarding-title">
         <button className="modal-close" onClick={() => setOffboarding(null)} aria-label="Close">×</button>
@@ -489,8 +546,12 @@ export function TeamPage() {
           color: #999da3;
           font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
         }
-        .team-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+        .team-row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
         .team-row-actions .filter { padding: 7px 9px; }
+        .team-edit-dialog { width: min(480px, calc(100% - 32px)); max-height: 90vh; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 24px; background: #fff; color: var(--ink); }
+        .team-edit-dialog::backdrop { background: #17211f80; }
+        .team-edit-dialog h2 { margin: 0; font-size: 20px; }
+        .team-edit-dialog footer { margin-top: 8px; }
         .team-row-actions .team-enable { color: #257453; border-color: #b9dfcf; }
         .team-row-actions .team-delete { color: #ae3f3f; border-color: #eccaca; }
         .team-offboarding-modal { width: min(760px, 100%); max-height: min(90vh, 820px); overflow: auto; padding: 28px; }

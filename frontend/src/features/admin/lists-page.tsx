@@ -4,6 +4,8 @@ import { useEffect, useState, FormEvent } from "react";
 import { getSystemConfig, sourceName, updateSystemConfig, type SystemConfig } from "@/lib/crm";
 
 type ListName = Exclude<keyof SystemConfig["lists"], "subActivities">;
+type ListEdit = { name: keyof SystemConfig["lists"]; item: string; parent?: string };
+const maxLengths = { branches: 100, sources: 100, activities: 160, models: 100, colorVariants: 120, subActivities: 160 };
 const listSections: { title: string; name: ListName; placeholder: string }[] = [
   { title: "Branches", name: "branches", placeholder: "Add branch" },
   { title: "Sources", name: "sources", placeholder: "Add source" },
@@ -19,6 +21,9 @@ export function ListsPage() {
   const [saving, setSaving] = useState(false);
   const [activity, setActivity] = useState("");
   const [subActivity, setSubActivity] = useState("");
+  const [editing, setEditing] = useState<ListEdit | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [editError, setEditError] = useState("");
 
   const saveLists = async (lists: SystemConfig["lists"]) => {
     setSaving(true);
@@ -45,7 +50,7 @@ export function ListsPage() {
     if (currentList.includes(value.trim())) return; // Duplicate
     
     const newLists = { ...config.lists, [listName]: [...currentList, value.trim()] };
-    await saveLists(newLists);
+    return saveLists(newLists);
   };
 
   const handleRemove = async (listName: ListName, value: string) => {
@@ -55,16 +60,70 @@ export function ListsPage() {
     if (listName === "activities") {
       newLists.subActivities = { ...config.lists.subActivities };
       delete newLists.subActivities[value];
-      if (activity === value) setActivity("");
     }
-    await saveLists(newLists);
+    if (await saveLists(newLists)) {
+      if (listName === "activities" && activity === value) setActivity("");
+      setEditing(null);
+    }
   };
 
-  const ListSection = ({ title, name }: { title: string, name: ListName }) => {
+  const handleEdit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!config || !editing || saving) return;
+    const { name, item, parent = "" } = editing;
+    const value = editValue.trim();
+    if (!value) { setEditError("Enter a name."); return; }
+    const items = name === "subActivities" ? config.lists.subActivities?.[parent] || [] : config.lists[name] || [];
+    const key = (text: string) => name === "sources" ? text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "") : text.toLowerCase();
+    if (items.some(other => other !== item && key(other) === key(value))) {
+      setEditError("This name already exists in the list.");
+      return;
+    }
+    if (value === item) { setEditing(null); return; }
+    const renamed = items.map(other => other === item ? value : other);
+    const lists = { ...config.lists };
+    if (name === "subActivities") lists.subActivities = { ...lists.subActivities, [parent]: renamed };
+    else lists[name] = renamed;
+    if (name === "activities" && lists.subActivities && Object.hasOwn(lists.subActivities, item)) {
+      lists.subActivities = { ...lists.subActivities, [value]: lists.subActivities[item] };
+      delete lists.subActivities[item];
+    }
+    if (await saveLists(lists)) {
+      if (name === "activities" && activity === item) setActivity(value);
+      setEditing(null);
+    }
+  };
+
+  const renderItem = (name: ListEdit["name"], item: string, parent?: string) => {
+    const isEditing = editing?.name === name && editing.item === item && editing.parent === parent;
+    const permanent = name === "sources" && item === "WALKIN";
+    return <li key={item}>
+      {isEditing ? <form className="list-edit-form" onSubmit={handleEdit} onKeyDown={event => { if (event.key === "Escape" && !saving) setEditing(null); }}>
+        <input autoFocus aria-label={`Edit ${item}`} required maxLength={maxLengths[name]} value={editValue} disabled={saving} onChange={event => { setEditValue(event.target.value); setEditError(""); }} />
+        <div className="list-row-actions">
+          <button type="submit" className="button primary" disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+          <button type="button" className="filter" disabled={saving} onClick={() => setEditing(null)}>Cancel</button>
+        </div>
+        {editError && <p className="form-error" role="alert">{editError}</p>}
+      </form> : <>
+        <span>{name === "sources" ? sourceName(item) : item}</span>
+        <div className="list-row-actions">
+          {!permanent && <button type="button" className="filter" disabled={saving || Boolean(editing)} onClick={() => { setEditing({ name, item, parent }); setEditValue(item); setEditError(""); setError(""); }}>Edit</button>}
+          <button type="button" className="button" disabled={saving || permanent || Boolean(editing)} onClick={() => {
+            if (name === "subActivities") {
+              if (config && parent) void saveLists({ ...config.lists, subActivities: { ...config.lists.subActivities, [parent]: (config.lists.subActivities?.[parent] || []).filter(child => child !== item) } });
+            } else void handleRemove(name, item);
+          }}>{permanent ? "Permanent" : "Remove"}</button>
+        </div>
+      </>}
+    </li>;
+  };
+
+  const renderListSection = ({ title, name }: { title: string, name: ListName }) => {
     const items = config?.lists?.[name] || [];
     const placeholder = listSections.find(section => section.name === name)?.placeholder || `Add ${title.toLowerCase()}`;
     return (
-      <article className="panel list-manager">
+      <article className="panel list-manager" key={name}>
         <header className="panel-heading list-manager-heading">
           <div>
             <p className="eyebrow">LIST</p>
@@ -73,24 +132,18 @@ export function ListsPage() {
           <b>{items.length}</b>
         </header>
         <form 
-          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+          onSubmit={async (e: FormEvent<HTMLFormElement>) => {
             e.preventDefault();
             const input = e.currentTarget.elements.namedItem("itemValue") as HTMLInputElement;
-            handleAdd(name, input.value);
-            input.value = "";
+            if (await handleAdd(name, input.value)) input.value = "";
           }}
           className="list-add-form"
         >
-          <input name="itemValue" required maxLength={name === "activities" ? 160 : name === "sources" ? 100 : undefined} placeholder={placeholder} disabled={saving} />
-          <button type="submit" className="button primary" disabled={saving}>Add</button>
+          <input name="itemValue" required maxLength={maxLengths[name]} placeholder={placeholder} disabled={saving || Boolean(editing)} />
+          <button type="submit" className="button primary" disabled={saving || Boolean(editing)}>Add</button>
         </form>
         <ul className="list-items">
-          {items.length ? items.map(item => (
-            <li key={item}>
-              <span>{name === "sources" ? sourceName(item) : item}</span>
-              <button type="button" className="button" disabled={saving || (name === "sources" && item === "WALKIN")} onClick={() => handleRemove(name, item)}>{name === "sources" && item === "WALKIN" ? "Permanent" : "Remove"}</button>
-            </li>
-          )) : <li className="list-empty">No items yet.</li>}
+          {items.length ? items.map(item => renderItem(name, item)) : <li className="list-empty">No items yet.</li>}
         </ul>
       </article>
     );
@@ -107,20 +160,20 @@ export function ListsPage() {
         </div>
       </div>
       
-      {error && <div className="empty-state">{error}</div>}
+      {error && <div className="empty-state" role="alert">{error}</div>}
 
       <div className="lists-workspace">
-        {listSections.map(section => <ListSection key={section.name} title={section.title} name={section.name} />)}
+        {listSections.map(renderListSection)}
         <article className="panel list-manager">
           <header className="panel-heading list-manager-heading"><div><p className="eyebrow">LINKED TO ACTIVITY</p><h2>Sub-activities</h2></div></header>
-          <label style={{ padding: "12px 20px" }}>Parent activity<select className="filter" aria-label="Parent activity" value={activity} disabled={saving} onChange={event => { setActivity(event.target.value); setSubActivity(""); }}><option value="">Select activity</option>{config?.lists.activities?.map(item => <option key={item}>{item}</option>)}</select></label>
+          <label style={{ padding: "12px 20px" }}>Parent activity<select className="filter" aria-label="Parent activity" value={activity} disabled={saving || Boolean(editing)} onChange={event => { setActivity(event.target.value); setSubActivity(""); }}><option value="">Select activity</option>{config?.lists.activities?.map(item => <option key={item}>{item}</option>)}</select></label>
           <form className="list-add-form" onSubmit={async event => {
             event.preventDefault();
             if (!config || !activity || !subActivity.trim() || saving) return;
             const children = config.lists.subActivities?.[activity] || [];
             if (await saveLists({ ...config.lists, subActivities: { ...config.lists.subActivities, [activity]: Array.from(new Set([...children, subActivity.trim()])) } })) setSubActivity("");
-          }}><input aria-label="New sub-activity" required maxLength={160} placeholder="e.g. Roadshow at Kochi" value={subActivity} onChange={event => setSubActivity(event.target.value)} disabled={!activity || saving} /><button className="button primary" disabled={!activity || saving}>Add</button></form>
-          <ul className="list-items">{(config?.lists.subActivities?.[activity] || []).map(item => <li key={item}><span>{item}</span><button type="button" className="button" disabled={saving} onClick={() => config && void saveLists({ ...config.lists, subActivities: { ...config.lists.subActivities, [activity]: (config.lists.subActivities?.[activity] || []).filter(child => child !== item) } })}>Remove</button></li>)}</ul>
+          }}><input aria-label="New sub-activity" required maxLength={160} placeholder="e.g. Roadshow at Kochi" value={subActivity} onChange={event => setSubActivity(event.target.value)} disabled={!activity || saving || Boolean(editing)} /><button className="button primary" disabled={!activity || saving || Boolean(editing)}>Add</button></form>
+          <ul className="list-items">{(config?.lists.subActivities?.[activity] || []).map(item => renderItem("subActivities", item, activity))}</ul>
         </article>
       </div>
 
@@ -168,7 +221,8 @@ export function ListsPage() {
           border-bottom: 1px solid var(--line);
           background: #fbfbf8;
         }
-        .list-add-form input {
+        .list-add-form input,
+        .list-edit-form input {
           min-width: 0;
           border: 1px solid #dededb;
           border-radius: 6px;
@@ -186,7 +240,7 @@ export function ListsPage() {
         }
         .list-items li {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 88px;
+          grid-template-columns: minmax(0, 1fr) auto;
           gap: 12px;
           align-items: center;
           padding: 12px 20px;
@@ -199,6 +253,10 @@ export function ListsPage() {
         .list-items .button {
           padding: 10px 12px;
         }
+        .list-row-actions { display: flex; gap: 6px; align-items: center; }
+        .list-row-actions .filter { padding: 9px 12px; }
+        .list-edit-form { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+        .list-edit-form .form-error { grid-column: 1 / -1; margin: 0; }
         .list-empty {
           display: block !important;
           color: #868b91;
@@ -220,6 +278,7 @@ export function ListsPage() {
         }
         @media (max-width: 560px) {
           .list-add-form,
+          .list-edit-form,
           .list-items li {
             grid-template-columns: 1fr;
           }
