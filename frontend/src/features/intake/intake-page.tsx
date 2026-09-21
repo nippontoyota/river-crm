@@ -14,7 +14,7 @@ const emptyEntries: Entry[] = [];
 export function IntakePage() {
   const [checkedAt, setCheckedAt] = useState(0);
   const [tab, setTab] = useState<'receipts' | 'connections' | 'mappings'>('receipts');
-  const [filters, setFilters] = useState({ origin: '', form: '', state: '', reason: '', date_from: '', date_to: '' });
+  const [filters, setFilters] = useState({ origin: '', form: '', state: 'NEEDS_REVIEW', reason: '', date_from: '', date_to: '' });
   const [page, setPage] = useState(1);
   const [receipts, setReceipts] = useState<IntakeReceipt[]>([]);
   const [count, setCount] = useState(0);
@@ -116,9 +116,9 @@ export function IntakePage() {
         <label>State<select value={filters.state} onChange={e => { setPage(1); setFilters({ ...filters, state: e.target.value }); }}><option value="">All states</option>{intakeStates.map(s => <option key={s}>{s}</option>)}</select></label>
         <label>Review reason<select value={filters.reason} onChange={e => { setPage(1); setFilters({ ...filters, reason: e.target.value }); }}><option value="">All reasons</option>{['validation', 'existing_lead', 'pending_submission', 'connection', 'processing', 'expired', 'retry_exhausted'].map(s => <option key={s}>{s}</option>)}</select></label>
         <label>From<input type="date" value={filters.date_from} onChange={e => { setPage(1); setFilters({ ...filters, date_from: e.target.value }); }} /></label><label>To<input type="date" value={filters.date_to} onChange={e => { setPage(1); setFilters({ ...filters, date_to: e.target.value }); }} /></label>
-      </div><div className="intake-table-wrap"><table><thead><tr><th>Select</th><th>Customer</th><th>Origin / form</th><th>State</th><th>Received</th><th>Review</th></tr></thead><tbody>{receipts.map(r => <tr key={r.id}>
-        <td><input type="checkbox" aria-label={`Select receipt ${r.id}`} checked={selected.includes(r.id)} disabled={terminal.includes(r.state)} onChange={e => setSelected(e.target.checked ? [...selected, r.id] : selected.filter(id => id !== r.id))} /></td><td><b>{r.mapped_values.name || 'Needs mapping'}</b><small>{r.mapped_values.phone || 'Phone unavailable'}</small></td><td>{r.origin}<small>{r.form_name}</small></td><td><span className={`intake-state ${r.state.toLowerCase()}`}>{r.state.replaceAll('_', ' ')}</span><small>{r.review_reason.replaceAll('_', ' ')}</small></td><td>{displayTime(r.received_at)}</td><td><button className="button" disabled={busy} onClick={() => open(r.id)}>Review</button></td>
-      </tr>)}</tbody></table>{!receipts.length && <p className="intake-empty">No receipts match these filters.</p>}</div>
+      </div><div className="intake-table-wrap"><table><thead><tr><th>Select</th><th>Customer</th><th>Origin / form</th><th>State</th><th>Received</th><th>Action</th></tr></thead><tbody>{receipts.map(r => <tr key={r.id}>
+        <td><input type="checkbox" aria-label={`Select receipt ${r.id}`} checked={selected.includes(r.id)} disabled={terminal.includes(r.state)} onChange={e => setSelected(e.target.checked ? [...selected, r.id] : selected.filter(id => id !== r.id))} /></td><td><b>{r.mapped_values.name || 'Needs mapping'}</b><small>{r.mapped_values.phone || 'Phone unavailable'}</small></td><td>{r.origin}<small>{r.form_name}</small></td><td><span className={`intake-state ${r.state.toLowerCase()}`}>{r.state.replaceAll('_', ' ')}</span><small>{r.review_reason.replaceAll('_', ' ')}</small></td><td>{displayTime(r.received_at)}</td><td><button className="button" disabled={busy} onClick={() => open(r.id)}>{r.state === 'NEEDS_REVIEW' || r.state === 'FAILED' ? 'Review' : 'View details'}</button></td>
+      </tr>)}</tbody></table>{!receipts.length && <p className="intake-empty">{filters.state === 'NEEDS_REVIEW' ? 'No receipts need review for these filters.' : 'No receipts match these filters.'}</p>}</div>
       <div className="intake-actions"><span>{count} receipts · Page {page} · {selected.length} selected</span><button className="button" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</button><button className="button" disabled={page * 50 >= count} onClick={() => setPage(page + 1)}>Next</button><button className="button" onClick={() => setSelected([])}>Clear selection</button></div></section>
     </>}
     {tab === 'connections' && <>
