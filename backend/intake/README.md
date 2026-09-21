@@ -82,8 +82,9 @@ production secrets. The workflow has read-only repository access, one concurrenc
 group, no cancellation of an active run, a 10-minute job timeout and a four-minute
 processor budget. It checks migrations without applying them.
 
-Scheduling stays **disabled** until the repository variable
-`CRM_BACKGROUND_ENABLED` equals `true`. A manual run defaults to read-only
+GitHub's native schedule stays **disabled** until the repository variable
+`CRM_BACKGROUND_ENABLED` equals `true`. Supabase Cron has its own enable/disable
+switch described above. A manual run defaults to read-only
 `preflight`; choose `storage-check` to upload/download/delete one test file, or
 `process` for a controlled import while scheduling is still disabled.
 
@@ -223,8 +224,9 @@ intake lists still refresh every 30 seconds.
    24 hours. Only then retire unused worker, scheduler or queue services, after
    confirming no other feature needs them. Keep the analytics cache.
 
-If rollback is needed, set `CRM_BACKGROUND_ENABLED=false`, let the active run
-finish, and restore the previously working processor configuration where available.
+If rollback is needed, disable `crm-background-dispatch` in Supabase Cron if
+installed, set `CRM_BACKGROUND_ENABLED=false`, let the active run finish, and
+restore the previously working processor configuration where available.
 Keep database records and checkpoints. Avoid restoring an old database over
 legitimate new CRM activity.
 
