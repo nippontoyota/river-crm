@@ -29,7 +29,7 @@ class UpgradeTests(APITestCase):
         self.admin = self.user("admin", "ADMIN")
         self.manager = self.user("manager", "SALES_MANAGER")
         self.other_manager = self.user("other-manager", "SALES_MANAGER", "Thrissur")
-        self.caller = self.user("caller", "FEEDBACK")
+        self.caller = self.user("caller", "FEEDBACK", "")
         self.other = self.user("other", "FEEDBACK", "Thrissur")
         self.so = self.user("so", "SO")
         self.cre = self.user("cre", "CRE")
@@ -94,7 +94,7 @@ class UpgradeTests(APITestCase):
         self.assertEqual(FeedbackTask.objects.count(), 2)
         self.assertEqual(self.service.events.filter(action="resolve").count(), 2)
 
-    def test_service_staffing_branch_is_independent_of_sales_branch(self):
+    def test_service_callers_are_global_and_manager_scope_uses_service_branch(self):
         self.lead.branch = "Thrissur"
         self.lead.save()
         self.vehicle.related_lead = self.lead
@@ -106,10 +106,10 @@ class UpgradeTests(APITestCase):
         self.caller.save()
         reconcile_assignments()
         task.refresh_from_db()
-        self.assertIsNone(task.assigned_to)
+        self.assertEqual(task.assigned_to, self.other)
         self.assertEqual(task.assignments.count(), 2)
         self.client.force_authenticate(self.manager)
-        self.assertIn("No active", self.client.get(f"/api/feedback/{task.pk}/").data["unassigned_reason"])
+        self.assertEqual(self.client.get(f"/api/feedback/{task.pk}/").data["unassigned_reason"], "")
         self.client.force_authenticate(self.other_manager)
         self.assertEqual(self.client.get(f"/api/feedback/{task.pk}/").status_code, 404)
 
@@ -228,6 +228,8 @@ class UpgradeTests(APITestCase):
         self.assertEqual(self.client.get(f"/api/feedback/{task.pk}/").data["complaint_status"], "RESOLVED")
 
     def test_historical_preview_import_recheck_dates_and_reporting(self):
+        self.lead.branch = ""
+        self.lead.save()
         current = self.now
         self.now -= timedelta(days=10)
         audit = LeadAudit.objects.create(lead=self.lead, event="so_updated", before={"sales_outcome": "PENDING"}, after={"sales_outcome": "BOOKED"})
@@ -238,6 +240,9 @@ class UpgradeTests(APITestCase):
         response = self.client.get("/api/feedback/historical-preview/")
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(len(response.data), 2)
+        sale = next(row for row in response.data if row["key"] == f"sale:{audit.pk}")
+        self.assertEqual(sale["proposed_caller"]["id"], self.caller.pk)
+        self.assertEqual(sale["unassigned_reason"], "")
         self.assertFalse(FeedbackTask.objects.exists())
         selected = {"records": [f"sale:{audit.pk}"], "next_call_at": (self.now + timedelta(days=1)).isoformat()}
         url = "/api/feedback/historical-import/"

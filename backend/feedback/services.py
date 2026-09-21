@@ -21,7 +21,7 @@ def morning_after(moment, days=1):
 
 
 def lock_feedback():
-    # ponytail: one database lock serializes feedback writes; use per-branch locks if volume warrants it.
+    # ponytail: one database lock serializes feedback writes; revisit if call center volume warrants it.
     return FeedbackState.objects.select_for_update().get(pk=1)
 
 
@@ -111,7 +111,7 @@ def save_attempt(task_id, user, data):
     current_user = User.objects.get(pk=user.pk)
     if not current_user.is_active or current_user.deleted_at or current_user.role != "FEEDBACK" or task.assigned_to_id != user.pk or (task.lead_id and task.lead.deleted_at):
         raise PermissionDenied("This feedback task is no longer assigned to you.")
-    if task.status != "OPEN" or task.revision != data["revision"]:
+    if task.status != "OPEN" or task.revision != data["revision"] or task.branch != branch_key(task.source_branch):
         raise ValidationError("This task changed. Refresh before recording a call.")
     now = timezone.now()
     if task.next_call_at > now:

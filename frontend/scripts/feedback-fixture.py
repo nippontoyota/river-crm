@@ -35,11 +35,13 @@ else:
     FeedbackState.objects.filter(pk=1).update(activated_at=now - timedelta(days=3))
     SystemConfig.objects.create(lists={"branches": ["Kochi", "Thrissur"], "models": ["Indie"]})
     users = {}
-    for name, role, branch in [("caller", "FEEDBACK", "Kochi"), ("ceo", "CEO", ""), ("admin", "ADMIN", ""), ("manager", "SALES_MANAGER", "Kochi"), ("so", "SO", "Kochi"), ("service", "SERVICE", "Kochi")]:
+    for name, role, branch in [("caller", "FEEDBACK", ""), ("ceo", "CEO", ""), ("admin", "ADMIN", ""), ("manager", "SALES_MANAGER", "Kochi"), ("so", "SO", "Kochi"), ("service", "SERVICE", "Kochi")]:
         users[name] = User.objects.create_user(f"{name}@feedback-browser.test", "FeedbackBrowser123!", first_name="Asha" if name == "caller" else name.title(), role=role, location=branch)
     with patch("django.utils.timezone.now", return_value=now - timedelta(days=2)):
         lead = Lead.objects.create(name="Anjali Menon", phone="9876500000", branch="Kochi", assigned_ps=users["so"], test_drive_completed_at=now - timedelta(days=2))
         LeadAudit.objects.create(lead=lead, actor=users["so"], event="test_drive_completed", before={"test_drive_completed_at": None}, after={"test_drive_completed_at": lead.test_drive_completed_at.isoformat()})
+        other = Lead.objects.create(name="Rohan Das", phone="9876500003", branch="Thrissur", test_drive_completed_at=timezone.now())
+        LeadAudit.objects.create(lead=other, event="test_drive_completed")
         vehicle = Vehicle.objects.create(chassis_number="FEEDBACKBROWSER01", model="Indie", customer_name="Service Customer", customer_phone="9876500001", created_by=users["service"])
         request = ServiceRequest.objects.create(vehicle=vehicle, branch="Kochi", status="RESOLVED", issue="Brake noise", resolution_notes="Brake adjusted", resolved_at=timezone.now(), customer_snapshot=vehicle.customer(), vehicle_snapshot={"model": "Indie", "chassis_number": vehicle.chassis_number}, created_by=users["service"])
         event = ServiceEvent.objects.create(request=request, actor=users["service"], action="resolve", before={"status": "IN_PROGRESS"}, after={"status": "RESOLVED"}, note="Brake adjusted")

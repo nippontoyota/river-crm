@@ -129,10 +129,11 @@ Verify a successful processor run after migration and deployment. The five runs
 ending at 2026-09-21 10:30 UTC were successful before this upgrade; see run
 35589063447 for the pre-deployment check. This is not post-deployment evidence.
 
-Pilot one staffed branch. Confirm its new service task and manual approval flow,
+Pilot customers from one branch with active call center staff. Confirm the
+service task and manual approval flow,
 review the first completed questionnaires and manager/admin notifications, then
-select historical customers for catch-up. Branches without active callers retain
-unassigned tasks until staffing is available. Actual customer calls and
+select historical customers for catch-up. Calls remain unassigned only when no
+active call center staff are available. Actual customer calls and
 historical customer selection are management activities, not migration steps.
 
 ## Verification
@@ -143,8 +144,9 @@ DATABASE_URL=sqlite:////tmp/crm-feedback-test.sqlite3 backend/.venv/bin/python b
 
 Also run `manage.py test feedback servicing` against isolated PostgreSQL. The
 concurrency tests cover allocation/attempt deduplication, simultaneous service
-resolution, reopening during a call, duplicate manual requests and historical
-imports. They are skipped on SQLite. Writers lock source rows before the shared
+resolution, reopening during a call, duplicate manual requests, historical
+imports and negative feedback racing with a sales update. They are skipped on
+SQLite. Writers lock source rows before the shared
 feedback lock; feedback operations do not acquire source row locks afterward.
 
 Frontend: `npm run typecheck`, `npm run build`, and ESLint on changed feedback

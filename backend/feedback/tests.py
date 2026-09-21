@@ -27,8 +27,8 @@ class FeedbackWorkflowTests(APITestCase):
         self.admin = self.user("admin", "ADMIN")
         self.ceo = self.user("ceo", "CEO")
         self.manager = self.user("manager", "SALES_MANAGER")
-        self.caller = self.user("caller", "FEEDBACK")
-        self.second = self.user("second", "FEEDBACK")
+        self.caller = self.user("caller", "FEEDBACK", "")
+        self.second = self.user("second", "FEEDBACK", "")
         self.other = self.user("other", "FEEDBACK", "Thrissur")
         self.so = self.user("so", "SO")
         self.cre = self.user("cre", "CRE")
@@ -69,7 +69,7 @@ class FeedbackWorkflowTests(APITestCase):
             self.assertEqual((local.day, local.hour), (15 if task.kind == "PSF" else 13, 9))
             record_audit(task.source_audit)
         self.assertEqual(FeedbackTask.objects.count(), 3)
-        self.assertEqual([task.assigned_to_id for task in tasks], [self.caller.id, self.second.id, self.caller.id])
+        self.assertEqual([task.assigned_to_id for task in tasks], [self.caller.id, self.second.id, self.other.id])
         self.lead.status, self.lead.sales_outcome = "LOST", "LOST"
         self.lead.save()
         self.assertEqual(FeedbackTask.objects.filter(status="OPEN").count(), 3)
@@ -137,26 +137,36 @@ class FeedbackWorkflowTests(APITestCase):
         self.client.force_authenticate(self.manager)
         self.assertEqual(self.client.get(f"/api/feedback/{task.pk}/").status_code, 200)
 
-    def test_branch_transfer_staffing_and_missing_branch(self):
+    def test_branch_transfer_retains_caller_and_missing_branch_is_assignable(self):
         task = self.event("TDF")
         self.lead.branch = "Thrissur"
         self.lead.save()
         LeadAudit.objects.create(lead=self.lead, event="details_updated", before={"branch": " Kochi "}, after={"branch": "Thrissur"})
         task.refresh_from_db()
-        self.assertEqual(task.assigned_to, self.other)
-        self.assertFalse(Notification.objects.filter(user=self.caller, feedback_task=task).exists())
+        self.assertEqual(task.assigned_to, self.caller)
+        self.assertEqual(task.branch, "thrissur")
+        self.assertTrue(Notification.objects.filter(user=self.caller, feedback_task=task).exists())
         self.lead.branch = ""
         self.lead.save()
         reconcile_assignments()
         task.refresh_from_db()
-        self.assertIsNone(task.assigned_to)
+        self.assertEqual(task.assigned_to, self.caller)
+        self.assertEqual(task.branch, "")
+        missing_branch = self.event("PBF")
+        self.assertEqual(missing_branch.assigned_to, self.second)
+        self.now = missing_branch.next_call_at
+        self.assertEqual(self.attempt(missing_branch, "COLLECTED", notes="Call without a recorded branch.").status_code, 200)
         self.lead.branch = "New Branch"
         self.lead.save()
         reconcile_assignments()
-        new_caller = self.user("new", "FEEDBACK", "New Branch")
-        reconcile_assignments()
         task.refresh_from_db()
-        self.assertEqual(task.assigned_to, new_caller)
+        self.assertEqual(task.assigned_to, self.caller)
+        self.assertEqual(task.branch, "new branch")
+        self.assertEqual(self.attempt(task, "COLLECTED", notes="Call after a branch change.").status_code, 200)
+        self.client.force_authenticate(self.caller)
+        report = self.client.get("/api/feedback/summary/").data
+        self.assertEqual(report["coverage"], {"leads_with_feedback": 1, "all_leads": 1})
+        self.assertEqual(report["activity"]["attempts"], 1)
 
     def test_offboarding_reassigns_open_preserves_completed(self):
         completed = self.event("TDF")
@@ -172,6 +182,18 @@ class FeedbackWorkflowTests(APITestCase):
         self.assertEqual(completed.assigned_to, self.caller)
         self.assertEqual(completed.attempts.first().caller, self.caller)
         enable_user(self.caller.pk, self.admin)
+
+    def test_unassigned_calls_recover_when_any_call_center_staff_becomes_available(self):
+        User.objects.filter(role="FEEDBACK").update(is_active=False)
+        self.lead.branch = ""
+        self.lead.save()
+        task = self.event("TDF")
+        self.assertIsNone(task.assigned_to)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.get(f"/api/feedback/{task.pk}/").data["unassigned_reason"], "No active feedback caller")
+        enable_user(self.other.pk, self.admin)
+        task.refresh_from_db()
+        self.assertEqual(task.assigned_to, self.other)
 
     def test_notifications_deduplicate_and_reads_do_not_complete(self):
         task = self.event("TDF")
@@ -205,16 +227,29 @@ class FeedbackWorkflowTests(APITestCase):
         self.assertEqual(self.client.get("/api/feedback/?bucket=completed").data["count"], 1)
         self.assertEqual(self.client.get("/api/feedback/summary/?caller=oops").status_code, 400)
 
-    def test_feedback_user_branch_required_and_cross_branch_reassign_denied(self):
+    def test_feedback_user_has_no_branch_and_manager_can_reassign_to_any_caller(self):
         self.client.force_authenticate(self.admin)
-        response = self.client.post("/api/auth/users/", {"email": "bad@test.local", "password": "password", "role": "FEEDBACK"}, format="json")
-        self.assertEqual(response.status_code, 400)
+        response = self.client.post("/api/auth/users/", {"email": "new@test.local", "password": "password", "role": "FEEDBACK"}, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["location"], "")
         task = self.event("TDF")
         self.client.force_authenticate(self.manager)
+        options = self.client.get("/api/feedback/options/").data
+        self.assertEqual(options["branches"], ["kochi"])
+        self.assertIn(self.other.pk, [caller["id"] for caller in options["callers"]])
         response = self.client.post(f"/api/feedback/{task.pk}/reassign/", {"revision": task.revision, "assigned_to": self.other.pk}, format="json")
-        self.assertEqual(response.status_code, 404)
-        response = self.client.post(f"/api/feedback/{task.pk}/reassign/", {"revision": task.revision, "assigned_to": self.second.pk}, format="json")
         self.assertEqual(response.status_code, 200, response.data)
+        self.now = task.next_call_at
+        self.assertEqual(self.attempt(task, "COLLECTED", notes="Call center feedback across branches.").status_code, 200)
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.get("/api/feedback/").data["count"], 1)
+        self.assertEqual(self.client.get("/api/feedback/options/").data["branches"], [])
+        self.assertEqual(self.client.get("/api/feedback/summary/").data["coverage"]["leads_with_feedback"], 1)
+        self.client.force_authenticate(self.manager)
+        other_lead = Lead.objects.create(name="Other branch", phone="9876500001", branch="Thrissur")
+        other_task = self.event("TDF", other_lead)
+        response = self.client.post(f"/api/feedback/{other_task.pk}/reassign/", {"revision": other_task.revision, "assigned_to": self.second.pk}, format="json")
+        self.assertEqual(response.status_code, 404)
 
     def test_trigger_and_task_rollback_together(self):
         try:
@@ -239,19 +274,20 @@ class FeedbackWorkflowTests(APITestCase):
         self.lead.refresh_from_db()
         self.assertEqual((self.lead.assigned_so, self.lead.assigned_ps), (self.cre, self.so))
 
-    def test_caller_move_and_delete_preserve_history(self):
+    def test_caller_location_is_cleared_without_reassignment_and_delete_preserves_history(self):
         task = self.event("TDF")
         self.client.force_authenticate(self.admin)
         response = self.client.patch(f"/api/auth/users/{self.caller.pk}/", {"location": "Thrissur"}, format="json")
         self.assertEqual(response.status_code, 200, response.data)
         task.refresh_from_db()
-        self.assertEqual(task.assigned_to, self.second)
+        self.assertEqual(task.assigned_to, self.caller)
+        self.assertEqual(response.data["location"], "")
         response = self.client.patch(f"/api/auth/users/{self.caller.pk}/", {"location": ""}, format="json")
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200)
         self.now = task.next_call_at
         self.attempt(task, "DECLINED", notes="Customer does not want feedback calls.")
-        preview = offboarding_impact(self.second)
-        offboard_user(self.second.pk, self.admin, "DELETED", preview["version"], [], "Employee left")
+        preview = offboarding_impact(self.caller)
+        offboard_user(self.caller.pk, self.admin, "DELETED", preview["version"], [], "Employee left")
         task.refresh_from_db()
         self.assertEqual(task.status, "DECLINED")
         self.assertIsNotNone(task.attempts.first().caller.deleted_at)
