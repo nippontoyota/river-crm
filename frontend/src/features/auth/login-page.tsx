@@ -48,7 +48,7 @@ export function LoginPage() {
       <section className="login-access">
         <div className="login-card">
           <p className="login-wordmark"><strong>Incheon</strong> Mobility</p>
-          <p className="login-product">Dealer operations CRM</p>
+          <p className="login-product">ITS · Internal Tracking System</p>
           <p className="login-dealer">Authorized River Dealer</p>
           <div className="login-heading">
             <h1>Welcome back.</h1>

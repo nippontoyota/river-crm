@@ -10,6 +10,7 @@ class Notification(models.Model):
         OVERDUE = "OVERDUE", "Overdue"
         FEEDBACK_ASSIGNED = "FEEDBACK_ASSIGNED", "Feedback assigned"
         FEEDBACK_DUE = "FEEDBACK_DUE", "Feedback due"
+        FEEDBACK_ISSUE = "FEEDBACK_ISSUE", "Feedback needs attention"
         FEEDBACK_OVERDUE = "FEEDBACK_OVERDUE", "Feedback overdue"
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")

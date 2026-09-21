@@ -122,6 +122,9 @@ class SalesOfficerViewSet(RoleUserViewSet):
         queryset = super().get_queryset()
         if not self.request.user.is_admin:
             queryset = queryset.filter(is_active=True)
+        if self.request.user.role == get_user_model().Role.RECEPTIONIST:
+            branch = self.request.user.location.strip()
+            queryset = queryset.filter(location__iexact=branch) if branch else queryset.none()
         if location := self.request.query_params.get("location"):
             queryset = queryset.filter(location__iexact=location.strip())
         return queryset

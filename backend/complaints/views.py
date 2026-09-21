@@ -39,6 +39,9 @@ class ComplaintViewSet(ModelViewSet):
         # Intake staff see their own tickets; admins and resolvers share the queue.
         if user.role in {User.Role.CRE, User.Role.RECEPTIONIST}:
             queryset = queryset.filter(logged_by=user)
+        if user.role == User.Role.RECEPTIONIST:
+            branch = user.location.strip()
+            queryset = queryset.filter(branch__iexact=branch) if branch else queryset.none()
 
         # Annotate note count for list performance
         queryset = queryset.annotate(_note_count=Count("notes"))
@@ -118,6 +121,8 @@ class ComplaintViewSet(ModelViewSet):
         complaint.assigned_to = request.user
         complaint.save()
         complaint_event(complaint, request.user, "complaint_updated", before)
+        from feedback.services import resolve_complaint_issue
+        resolve_complaint_issue(complaint, request.user)
         if (
             "resolution_notes" in data
             and data["resolution_notes"].strip()

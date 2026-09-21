@@ -67,7 +67,7 @@ if (![apiBase, webBase].every(url => ['localhost', '127.0.0.1'].includes(new URL
     await page.waitForFunction(() => document.querySelector('.upload-review')?.getAttribute('aria-busy') === 'false');
     const review = await page.$eval('.upload-review', e => e.textContent);
     assert.match(review, /Repeated in this file/);
-    assert.match(review, /Already in CRM/);
+    assert.match(review, /Already in ITS/);
     await page.click('[aria-label="Reject row 2"]');
     await page.waitForFunction(() => document.querySelector('[aria-label="Reject row 2"]')?.disabled && !document.querySelector('[aria-label="Approve row 4"]')?.disabled);
     await page.click('[aria-label="Approve row 4"]');

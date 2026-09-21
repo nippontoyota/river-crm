@@ -14,9 +14,9 @@ import "./service.css";
 import "./uploader.css";
 
 export const metadata: Metadata = {
-  title: "Incheon Mobility CRM",
-  description: "Dealer operations CRM for Incheon Mobility LLP",
-  applicationName: "Incheon Mobility CRM",
+  title: "Incheon Mobility ITS",
+  description: "Internal Tracking System for Incheon Mobility LLP",
+  applicationName: "Incheon Mobility ITS",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

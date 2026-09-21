@@ -75,7 +75,7 @@ function NewRequest({ user, branches, onSaved, onCancel }: { user: CurrentUser; 
 }
 
 function VehicleSummary({ vehicle }: { vehicle: Vehicle }) {
-  return <div className="service-identity"><div><small>CHASSIS</small><strong>{vehicle.chassis_number}</strong><span>{vehicle.model} · {vehicle.registration_number || "Registration pending"}</span></div><div><b>{vehicle.customer_name}</b><span>{vehicle.customer_phone}</span><span>{vehicle.customer_email}</span></div>{vehicle.sale && <div><small>CRM SALE #{vehicle.sale.id}</small><b>{vehicle.sale.sales_outcome}</b><span>{vehicle.sale.branch || "Branch not recorded"}</span></div>}</div>;
+  return <div className="service-identity"><div><small>CHASSIS</small><strong>{vehicle.chassis_number}</strong><span>{vehicle.model} · {vehicle.registration_number || "Registration pending"}</span></div><div><b>{vehicle.customer_name}</b><span>{vehicle.customer_phone}</span><span>{vehicle.customer_email}</span></div>{vehicle.sale && <div><small>ITS SALE #{vehicle.sale.id}</small><b>{vehicle.sale.sales_outcome}</b><span>{vehicle.sale.branch || "Branch not recorded"}</span></div>}</div>;
 }
 
 function VehicleCorrection({ vehicle, onSaved }: { vehicle: Vehicle; onSaved: (vehicle: Vehicle) => void }) {
@@ -90,9 +90,9 @@ function VehicleCorrection({ vehicle, onSaved }: { vehicle: Vehicle; onSaved: (v
     catch (e) { setError(e instanceof Error ? e.message : "Unable to correct vehicle."); }
     finally { setBusy(false); }
   };
-  return <details className="service-correction"><summary>Correct vehicle details or CRM link</summary><SalePicker selected={lead} onSelect={item => { setLead(item); setUnlink(false); }} />
+  return <details className="service-correction"><summary>Correct vehicle details or ITS link</summary><SalePicker selected={lead} onSelect={item => { setLead(item); setUnlink(false); }} />
     <form className="service-form" onSubmit={save}><div className="service-grid"><label>Chassis number<input name="chassis_number" required defaultValue={vehicle.chassis_number} maxLength={64} /></label><label>Model<input name="model" required defaultValue={vehicle.model} maxLength={100} /></label><label>Registration number<input name="registration_number" defaultValue={vehicle.registration_number} maxLength={30} /></label><label>Customer name<input name="customer_name" defaultValue={vehicle.customer_name} required /></label><label>Phone<input name="customer_phone" defaultValue={vehicle.customer_phone} required pattern="[0-9]{10}" maxLength={10} /></label><label>Email<input type="email" name="customer_email" defaultValue={vehicle.customer_email} /></label></div>
-    <label className="service-check"><input type="checkbox" checked={unlink} onChange={e => { setUnlink(e.target.checked); setLead(null); }} />Remove the current CRM link</label><label>Correction reason<textarea name="reason" required maxLength={500} /></label>{error && <p role="alert">{error}</p>}<button className="button primary" disabled={busy}>Save correction</button></form>
+    <label className="service-check"><input type="checkbox" checked={unlink} onChange={e => { setUnlink(e.target.checked); setLead(null); }} />Remove the current ITS link</label><label>Correction reason<textarea name="reason" required maxLength={500} /></label>{error && <p role="alert">{error}</p>}<button className="button primary" disabled={busy}>Save correction</button></form>
     {vehicle.corrections?.map((item, index) => <p key={index}>{formatDateTime(item.created_at)} · {item.reason}</p>)}
   </details>;
 }

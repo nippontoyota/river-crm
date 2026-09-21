@@ -159,7 +159,15 @@ class LeadViewSet(viewsets.ModelViewSet):
             or serializer.validated_data.get("status") == Lead.Status.WALKIN
         )
         if getattr(self.request.user, "role", None) == User.Role.RECEPTIONIST:
-            lead = serializer.save(source=Lead.Source.WALKIN, status=Lead.Status.QUALIFIED)
+            branch = self.request.user.location.strip()
+            if not branch:
+                raise ValidationError({"branch": "Ask your admin to set your branch before adding a lead."})
+            if serializer.validated_data.get("branch", branch).casefold() != branch.casefold():
+                raise ValidationError({"branch": "Walk-ins must be recorded at your assigned branch."})
+            officer = serializer.validated_data.get("assigned_ps")
+            if officer and officer.location.strip().casefold() != branch.casefold():
+                raise ValidationError({"ps_officer_id": "Choose a sales executive from your branch."})
+            lead = serializer.save(source=Lead.Source.WALKIN, status=Lead.Status.QUALIFIED, branch=branch)
         elif is_walkin:
             # Walk-in leads bypass CE – go directly to PS/SO as qualified
             lead = serializer.save(status=Lead.Status.QUALIFIED)

@@ -75,6 +75,14 @@ class ComplaintCreateSerializer(serializers.ModelSerializer):
         return (value or "").strip()
 
     def validate_branch(self, value):
+        user = self.context["request"].user
+        if user.role == "RECEPTIONIST":
+            branch = user.location.strip()
+            if not branch:
+                raise serializers.ValidationError("Ask your admin to set your branch before logging a complaint.")
+            if value.casefold() != branch.casefold():
+                raise serializers.ValidationError("Complaints must be recorded at your assigned branch.")
+            return branch
         return validate_configured_choice(value, "branches", "branch")
 
 

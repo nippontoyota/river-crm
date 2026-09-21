@@ -60,7 +60,7 @@ class VehicleSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"reason": "Explain the correction."})
         lead = attrs.get("related_lead", getattr(self.instance, "related_lead", None))
         if user.role == "SO" and not lead:
-            raise serializers.ValidationError({"related_lead": "Choose an accessible CRM sale."})
+            raise serializers.ValidationError({"related_lead": "Choose an accessible ITS sale."})
         if lead:
             attrs.update(customer_name=lead.name, customer_phone=lead.phone, customer_email=lead.email)
         elif not self.instance and (not attrs.get("customer_name") or not attrs.get("customer_phone")):

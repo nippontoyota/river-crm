@@ -16,7 +16,7 @@ class LeadAccessTests(TestCase):
         self.first_so = User.objects.create_user(email="first@example.com", password="password-12345", role=User.Role.CRE)
         self.second_so = User.objects.create_user(email="second@example.com", password="password-12345", role=User.Role.CRE)
         self.ps_so = User.objects.create_user(email="ps@example.com", password="password-12345", role=User.Role.SALES_OFFICER)
-        self.receptionist = User.objects.create_user(email="frontdesk@example.com", password="password-12345", role=User.Role.RECEPTIONIST)
+        self.receptionist = User.objects.create_user(email="frontdesk@example.com", password="password-12345", role=User.Role.RECEPTIONIST, location="Kochi")
         self.ps_so.location = "Kochi"
         self.ps_so.save(update_fields=["location"])
         self.first_lead = Lead.objects.create(name="Aarav", phone="7305198421", assigned_so=self.first_so)

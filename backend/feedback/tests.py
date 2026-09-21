@@ -10,6 +10,7 @@ from accounts.models import User
 from accounts.offboarding import enable_user, offboard_user, offboarding_impact
 from leads.models import Lead, LeadAudit
 from notifications.models import Notification
+from .questionnaires import QUESTIONNAIRES
 from .models import FeedbackAttempt, FeedbackState, FeedbackTask
 from .services import morning_after, record_audit, reconcile_assignments
 from .tasks import process_feedback_queue
@@ -56,6 +57,8 @@ class FeedbackWorkflowTests(APITestCase):
 
     def attempt(self, task, outcome="NO_ANSWER", **extra):
         task.refresh_from_db()
+        if outcome == "COLLECTED":
+            extra = {"answers": {key: "YES" for key in QUESTIONNAIRES[1][task.kind]}, "satisfaction": None, "further_help": False, **extra}
         self.client.force_authenticate(task.assigned_to)
         return self.client.post(f"/api/feedback/{task.pk}/attempt/", {"revision": task.revision, "outcome": outcome, **extra}, format="json")
 
@@ -291,7 +294,7 @@ class FeedbackConcurrencyTests(TransactionTestCase):
             try:
                 barrier.wait(timeout=10)
                 try:
-                    save_attempt(task.pk, task.assigned_to, {"revision": task.revision, "outcome": "COLLECTED", "notes": "Collected once"})
+                    save_attempt(task.pk, task.assigned_to, {"revision": task.revision, "outcome": "COLLECTED", "notes": "Collected once", "answers": {key: "YES" for key in QUESTIONNAIRES[1][task.kind]}, "satisfaction": None, "further_help": False})
                     return "saved"
                 except ValidationError:
                     return "stale"

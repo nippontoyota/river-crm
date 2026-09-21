@@ -1,5 +1,7 @@
 "use client";
 
+import { FeedbackRequestForm } from "@/features/feedback/feedback-requests";
+
 import { downloadLeadSample } from "@/lib/lead-sample";
 import { UploadReview } from "@/features/intake/upload-review";
 import { TestDriveCompletion } from "@/components/test-drive-completion";
@@ -182,7 +184,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
           setLeads(pool.results); setTotalLeads(pool.count);
         }
       }
-    } catch (requestError) { if (request === listRequest.current) setError(requestError instanceof Error ? requestError.message : "Unable to load CRM data."); }
+    } catch (requestError) { if (request === listRequest.current) setError(requestError instanceof Error ? requestError.message : "Unable to load ITS data."); }
     finally { if (request === listRequest.current) setLoading(false); }
   }, [effectiveActiveFilters, followUpsOnly, leadView, officerMode, page, reassignmentRole, searchFilter]);
 
@@ -384,7 +386,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
   };
 
   const removeActiveLead = async () => {
-    if (!activeLead || deletingLead || !window.confirm(`Delete ${activeLead.name}? This lead will be removed from CRM views.`)) return;
+    if (!activeLead || deletingLead || !window.confirm(`Delete ${activeLead.name}? This lead will be removed from ITS views.`)) return;
     setDeletingLead(true); setError("");
     try {
       const deletedName = activeLead.name;
@@ -478,7 +480,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
   const poolLabel = isAdminAllLeads ? allLeadStatus === "fresh" ? "Fresh leads" : allLeadStatus === "qualified" ? "Qualified leads" : allLeadStatus === "reassignment" ? "Needs reassignment" : "All leads" : "Fresh lead pool";
   const heading = followUpsOnly ? "Follow-ups" : officerMode ? "My queue" : isAdminAllLeads ? "All leads" : "Assignment desk";
   const adminTitle = isAdminAllLeads ? <>All <span>leads.</span></> : <>Lead <span>assignment.</span></>;
-  const adminSubtext = isAdminAllLeads ? "Filter and review every lead in the CRM." : "Assign fresh unassigned leads to CREs.";
+  const adminSubtext = isAdminAllLeads ? "Filter and review every lead in ITS." : "Assign fresh unassigned leads to CREs.";
   const adminMetrics = !officerMode && analytics?.summary ? (
     <section className="admin-leads-metrics">
       <article className="sales-metric blue">
@@ -601,6 +603,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
           )}
 
         </section>
+        {leadDetail && <FeedbackRequestForm key={`feedback-${leadDetail.id}`} lead={leadDetail} />}
         {leadDetail && <VehiclePanel key={`vehicle-${leadDetail.id}`} lead={leadDetail} />}
         {leadDetail?.followUpHistory.some(item => item.reminder_held && !item.resolved_at) && <section className="sales-form-card held-followup-review">
           <header><div><p className="eyebrow">ADMIN REVIEW REQUIRED</p><h3>Held follow-up reminders</h3></div><span>{leadDetail.followUpHistory.filter(item => item.reminder_held && !item.resolved_at).length}</span></header>

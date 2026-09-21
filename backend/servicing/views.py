@@ -20,7 +20,8 @@ class Conflict(APIException):
 
 
 def active_actor(request):
-    actor = User.objects.select_for_update().get(pk=request.user.pk)
+    # Keep account updates serialized while allowing notification FKs to reference it.
+    actor = User.objects.select_for_update(no_key=True).get(pk=request.user.pk)
     if not actor.is_active or actor.deleted_at:
         raise PermissionDenied("Your account is no longer active.")
     return actor
@@ -29,6 +30,8 @@ def active_actor(request):
 def event(row, actor, action_name, note="", before=None):
     item = ServiceEvent.objects.create(request=row, actor=actor, action=action_name, note=note, before=before or {},
         after={"status": row.status, "branch": row.branch, "revision": row.revision})
+    from feedback.services import record_service_event
+    record_service_event(item)
     recipients = set()
     if action_name in {"forward", "transfer", "created"} and row.status != "RECORDED":
         recipients.update(User.objects.filter(role="SERVICE", location__iexact=row.branch, is_active=True, deleted_at__isnull=True).values_list("id", flat=True))

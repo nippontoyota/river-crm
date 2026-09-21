@@ -60,6 +60,7 @@ const formatNoteTime = formatDateTime;
 
 export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: boolean; currentUser?: CurrentUser }) {
   const userRole = currentUser?.role;
+  const receptionistBranch = currentUser?.location?.trim() || "";
   const canCreate = userRole === "CRE" || userRole === "RECEPTIONIST";
   const canResolve = userRole === "COMPLAINTS";
   const canUseAnalytics = adminView || canResolve;
@@ -174,7 +175,9 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
 
   const submitComplaint = async () => {
     if (submitting) return;
-    const { customer_name, customer_phone, category, subject, description, priority, branch } = newComplaint;
+    const { customer_name, customer_phone, category, subject, description, priority } = newComplaint;
+    const branch = userRole === "RECEPTIONIST" ? receptionistBranch : newComplaint.branch;
+    if (userRole === "RECEPTIONIST" && !branch) { setFormError("Ask your admin to assign your branch before logging complaints."); return; }
     if (!customer_name.trim()) { setFormError("Customer name is required."); return; }
     if (!/^\d{10}$/.test(customer_phone)) { setFormError("Enter a valid 10-digit phone number."); return; }
     if (!category) { setFormError("Select a complaint type."); return; }
@@ -184,7 +187,7 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
     if (!branch) { setFormError("Select the complaint branch."); return; }
     setSubmitting(true); setFormError("");
     try {
-      const created = await createComplaint({ ...newComplaint, source: newComplaint.source || (userRole === "RECEPTIONIST" ? "WALKIN" : "PHONE"), customer_name: customer_name.trim(), subject: subject.trim(), description: description.trim() });
+      const created = await createComplaint({ ...newComplaint, branch, source: newComplaint.source || (userRole === "RECEPTIONIST" ? "WALKIN" : "PHONE"), customer_name: customer_name.trim(), subject: subject.trim(), description: description.trim() });
       setComplaints(cur => [created, ...cur]);
       setTotalCount(c => c + 1);
       setAddingComplaint(false);
@@ -440,10 +443,10 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
                 <label>Customer name<input required maxLength={160} value={newComplaint.customer_name} onChange={e => setNewComplaint(c => ({ ...c, customer_name: e.target.value }))} placeholder="Full name" /></label>
                 <label>Phone number<input required inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={newComplaint.customer_phone} onChange={e => setNewComplaint(c => ({ ...c, customer_phone: e.target.value.replace(/\D/g, "") }))} placeholder="10-digit mobile" /></label>
                 <label>Email <small style={{ fontWeight: 400 }}>(optional)</small><input type="email" value={newComplaint.customer_email} onChange={e => setNewComplaint(c => ({ ...c, customer_email: e.target.value }))} placeholder="customer@example.com" /></label>
-                <label>Branch<select required value={newComplaint.branch} onChange={e => setNewComplaint(c => ({ ...c, branch: e.target.value }))} disabled={!branches.length}>
+                <label>Branch{userRole === "RECEPTIONIST" ? <input value={receptionistBranch} readOnly placeholder="Ask your admin to assign your branch" /> : <select required value={newComplaint.branch} onChange={e => setNewComplaint(c => ({ ...c, branch: e.target.value }))} disabled={!branches.length}>
                   <option value="">{branches.length ? "Select branch" : "No branches configured"}</option>
                   {branches.map(branch => <option key={branch} value={branch}>{branch}</option>)}
-                </select></label>
+                </select>}</label>
                 <label>Complaint type<select required name="complaint_type" value={newComplaint.category} onChange={e => setNewComplaint(c => ({ ...c, category: e.target.value, subtype: "" }))}>
                   <option value="">Select complaint type</option>
                   {CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}

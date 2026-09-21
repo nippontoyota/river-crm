@@ -1,103 +1,166 @@
 # Customer feedback calls
 
-`FEEDBACK` users work at `/feedback`. Admins and branch managers can monitor and
-reassign there; the CEO has a read-only report at `/ceo/feedback`. SO/CRE users
-cannot access feedback records, notes, or exports. Sales ownership is unchanged.
+Feedback callers work at `/feedback`. Admins and branch managers monitor and
+reassign there; the CEO has read-only reporting at `/ceo/feedback`. Sales
+ownership is unchanged. CE and PS/SO users can request feedback from their own
+customer detail and see approval status, but cannot read feedback answers.
 
-## Activation and deployment
+## Eligibility and scheduling
 
-Deploy the API, frontend, Celery worker, and the existing single Beat scheduler
-together. Run the normal `python manage.py migrate --noinput` deployment step.
-Migration `feedback.0002_activate_feedback` records the activation timestamp.
-Only qualifying audits recorded after that boundary create tasks; migration does
-not scan historical leads. The activation row must be retained across deployments.
+| Recorded event | Type | Original due time (Asia/Kolkata) |
+| --- | --- | --- |
+| Explicit test-drive completion | TDF | Next calendar day, 09:00 |
+| Explicit Booked transition | PBF | Next calendar day, 09:00 |
+| Explicit Retailed transition | PSF | Third calendar day, 09:00 |
+| Service request resolved | SVC | Next calendar day, 09:00 |
+| Approved management request | GEN | Selected future time |
 
-Create **Feedback Caller** accounts in Admin → Users, selecting a branch. Tasks
-without an eligible caller remain unassigned until staffing is available. Admins
-can also change caller branches in the user directory. Open calls redistribute;
-completed tasks, attempts, and assignment histories retain their original owners.
+Weekends are included. Fresh enquiries, Meta imports, test-drive appointments,
+and missed sales calls do not create feedback. An incomplete record does not
+establish a booking or resolution; use a reasoned manual request instead.
 
-The existing Beat scheduler runs `feedback.tasks.process_feedback_queue` every
-60 seconds. Check worker/Beat logs and the report's unassigned/overdue counts
-after deployment. A missed scheduler run delays alerts, not stored due dates;
-the next successful run catches up without duplicating notifications. This is a
-manual calling workflow, with no telephony or messaging provider integration.
+Sales events retain one task per lead/type. SVC has one task per resolution
+event, including vehicles with no sales lead, and uses the servicing branch.
+Reopening service cancels its open call with a reason; completed calls remain.
+Resolving again creates a new task. Service resolution and feedback generation
+commit or roll back together.
 
-## Scheduling and reporting rules
+Feedback callers are general call center staff and have no employee branch.
+Allocation uses the lowest open workload among all active callers, with user ID
+ties, including calls with no branch recorded. Work stays unassigned only when
+no active caller is available. Staffing reconciliation and manual reassignment
+retain assignment history. Callers can act only on their assigned tasks across
+all branches. Customer branch changes retain the caller; managers still monitor
+only their branch's tasks and can reassign them to any active feedback caller.
 
-- Explicit test-drive completion → TDF at 09:00 next calendar day.
-- Explicit `sales_outcome=BOOKED` transition → PBF at 09:00 next calendar day.
-- Explicit `sales_outcome=RETAILED` transition → PSF at 09:00 on the third day.
-- All timestamps use Asia/Kolkata, including weekends. A walk-in appointment
-  does not trigger PBF; retail does not invent a missing booking event.
-- One task per lead/type. Lost/cancelled sales and later milestones do not
-  remove earlier feedback obligations. Deleted leads are excluded from queues.
-- Allocation uses the lowest open workload in the branch, with user ID ties.
-  A database row lock serializes allocation, attempts, and manual reassignment.
-- Unanswered/busy/switched-off attempts retry the next day at 09:00. The third
-  unsuccessful attempt closes as unreachable. Customer-requested callbacks use
-  a future chosen time and do not consume that limit. Completed, declined, and
-  invalid-number outcomes require notes. Each write requires the current task
-  revision to reject duplicate/stale submissions.
-- Reports use original due date; retries never change that cohort. Completion
-  rate is completed/generated tasks. On-time completion is by the end of the
-  original due day. Current backlog ignores the date filter. Activity uses the
-  attempt date, caller, and branch. Coverage is distinct leads with feedback
-  since activation divided by all leads in the selected branch scope; caller
-  workspaces show their own coverage numerator. Type totals can overlap by lead.
-- Each notification links to its task. Reading alerts does not resolve work.
-  Assignment changes remove old alerts; access is checked again on every read.
-- Questionnaires are deferred. V1 records call outcomes and notes only.
+Unanswered/busy/switched-off attempts retry the next day at 09:00. The third
+unsuccessful attempt closes as unreachable. Requested callbacks use a future
+chosen time without consuming that limit. Collected/declined/invalid-number
+outcomes require notes. Revisions reject stale submissions.
 
-## Interfaces
+## Questionnaires, issues and complaints
 
-`GET /api/feedback/`, `GET /api/feedback/{id}/`,
-`GET /api/feedback/summary/`, `GET /api/feedback/options/`, and
-`GET /api/feedback/export/` share role/branch access rules. Lists are paginated.
-Filters: `kind`, `bucket`, `q`, `caller` (ID or `unassigned`), repeatable `branch`,
-and CEO date filters `range`, `date_from`, `date_to`. `backlog=true` makes the list
-and export ignore date limits, matching the current-backlog buttons.
+New tasks use fixed questionnaire version 1, defined in `questionnaires.py`.
+Published versions must remain immutable; add a new version for changed wording.
+Collected calls require every stage answer (YES, NO, NOT_DISCUSSED), satisfaction
+1–5 or null (Not provided), `further_help`, and details if help is needed. Legacy
+tasks retain a null version and may still be completed with notes only.
 
-`POST /api/feedback/{id}/attempt/` accepts `revision`, `outcome`, `notes`, and
-`callback_at` for a requested callback. Only the assigned active caller may submit.
-`POST /api/feedback/{id}/reassign/` accepts `revision` and `assigned_to`; admin or
-the current branch manager may choose an active caller in that lead's branch.
+A rating of 1–2, further help, or an unresolved service issue opens a separate
+feedback issue. Completing the call does not resolve that issue. Active branch
+managers receive an in-app notification immediately; admins receive one when
+there is no active manager or acknowledgement is overdue by 24 hours. Each
+recipient is notified once per issue. Managers/admins acknowledge or resolve
+with notes; reviewer, timestamps and issue events are retained.
 
-`GET /api/ceo/feedback/` and `GET /api/ceo/export/feedback/` provide report aliases.
-Notifications now include `feedback_task` and `feedback_kind`. Use
-`GET /api/notifications/unread_count/?feedback=true`, `feedback_kind=TDF` to
-filter alerts, and `POST /api/notifications/{id}/read/` to read one alert.
+The caller can explicitly raise a complaint after collecting feedback, selecting
+a category/subtype and confirming the description. One linked complaint per
+feedback issue prevents duplicate submissions. Complaints remain owned by the
+Complaints department. Resolving/closing its ticket resolves the feedback issue
+in the same transaction. Feedback users see the ticket number/status and issue
+history, without gaining access to the wider Complaints or Service workspaces.
+
+## Requests and historical catch-up
+
+Sales staff submit a reason and future preferred time for their own assigned
+lead. Managers approve only their branch; admins approve across branches.
+Rejection requires notes. Direct management requests are approved immediately.
+A lead cannot have another pending request or open GEN task. A later request is
+allowed after closure. A preferred time that elapsed while waiting for approval
+must be replaced with a future time.
+
+Admin historical preview scans only verified events in the last 30 days and
+creates nothing. It shows event/original due dates, customer, branch, proposed
+caller and exclusion or staffing reasons. Saving up to 200 selected events
+rechecks eligibility under source/feedback locks. Repeated saves return existing
+tasks. Historical event/due dates are retained; `next_call_at` is the selected
+future time, origin is HISTORICAL, and on-time performance is null.
+
+Reports use original due dates. Rating averages exclude null ratings. Service,
+requested and historical totals remain separate from automatic sales-lead
+coverage; origin filters and origin summaries allow separate comparisons.
+Current backlog and unresolved-issue count cover all due dates. Activity uses
+attempt dates. Customer counts use lead or service vehicle identity, never phone
+matching. Contact history remains limited to feedback records visible to the user.
+
+## API
+
+Existing list/detail/options/summary/export endpoints remain available:
+
+- `GET /api/feedback/`, `GET /api/feedback/{id}/`
+- `GET /api/feedback/options/`, `GET /api/feedback/summary/`
+- `GET /api/feedback/export/` (CSV, including structured answers and issue status)
+- `GET /api/ceo/feedback/`, `GET /api/ceo/export/feedback/`
+
+Filters: `kind`, `origin`, `bucket` (including `issues` and `cancelled`), `q`,
+`caller` (ID or `unassigned`), repeatable `branch`, `range`, `date_from`, `date_to`.
+`backlog=true` ignores date limits for the task list/export. Lists are paginated.
+
+Writes:
+
+- `POST /api/feedback/{id}/attempt/`: `revision`, `outcome`, `notes`, optional
+  `callback_at`; collected calls add `answers`, `satisfaction`, `further_help`,
+  `help_details`. The server fixes the questionnaire version per task.
+- `POST /api/feedback/{id}/reassign/`: `revision`, `assigned_to`.
+- `POST /api/feedback/{id}/issue/`: `revision`, `status` (ACKNOWLEDGED/RESOLVED),
+  `notes`. Linked unresolved complaints must be resolved by Complaints first.
+- `POST /api/feedback/{id}/complaint/`: `revision`, `category`, `subtype`,
+  `description`, `confirmed=true`. Retrying returns the original ticket.
+- `GET/POST /api/feedback-requests/`: creation accepts `lead`, `reason`,
+  `preferred_at`; listing accepts `lead` and `status`.
+- `GET /api/feedback-requests/customers/?q=…`: scoped customer search.
+- `POST /api/feedback-requests/{id}/review/`: `revision`, `decision`
+  (APPROVED/REJECTED), `review_notes`, optional replacement `preferred_at`.
+- `GET /api/feedback/historical-preview/`: admin only.
+- `POST /api/feedback/historical-import/`: admin only, `records` (preview keys),
+  `next_call_at`.
+
+## Deployment and pilot
+
+Run the normal additive migrations, then deploy backend and frontend together.
+Migration `feedback.0003` preserves existing tasks and the activation timestamp
+from `feedback.0002`. Do not reset that row or automatically import history.
+
+The existing `crm-background.yml` processor calls `process_feedback_queue`;
+there is no additional scheduler. It reconciles assignments, generates due-call
+alerts and checks unacknowledged issues. The legacy Celery Beat schedule also
+calls the same function; use the scheduler already active in the deployment.
+Verify a successful processor run after migration and deployment. The five runs
+ending at 2026-09-21 10:30 UTC were successful before this upgrade; see run
+35589063447 for the pre-deployment check. This is not post-deployment evidence.
+
+Pilot one staffed branch. Confirm its new service task and manual approval flow,
+review the first completed questionnaires and manager/admin notifications, then
+select historical customers for catch-up. Branches without active callers retain
+unassigned tasks until staffing is available. Actual customer calls and
+historical customer selection are management activities, not migration steps.
 
 ## Verification
 
-From the repository root, using isolated local data:
-
 ```sh
-DATABASE_URL=sqlite:////tmp/crm-feedback-test.sqlite3 backend/.venv/bin/python backend/manage.py test feedback accounts leads ceo notifications --noinput
+DATABASE_URL=sqlite:////tmp/crm-feedback-test.sqlite3 backend/.venv/bin/python backend/manage.py test feedback servicing complaints accounts leads ceo notifications --noinput
 ```
 
-Run `manage.py test feedback` against a local PostgreSQL database as well: the
-concurrency test exercises real row locks and is skipped on SQLite. It verifies
-that simultaneous events balance correctly and only one duplicate call attempt
-is committed. No production connection is needed for these tests.
+Also run `manage.py test feedback servicing` against isolated PostgreSQL. The
+concurrency tests cover allocation/attempt deduplication, simultaneous service
+resolution, reopening during a call, duplicate manual requests and historical
+imports. They are skipped on SQLite. Writers lock source rows before the shared
+feedback lock; feedback operations do not acquire source row locks afterward.
 
-Frontend checks: `npm run typecheck`, `npm run build`, and ESLint for the feedback
-components. `frontend/scripts/feedback-browser.cjs` checks the login destination,
-tiles, notification filters, successful call recording, denied lead access,
-mobile overflow, CEO read-only details, CSV export, admin account creation, and
-manager branch scope. Supply `PUPPETEER_MODULE`
-and `BROWSER_EXECUTABLE` if Puppeteer/Chromium are installed outside the project.
-It defaults to frontend port 3039 and API port 8039. The test API must allow
-`http://127.0.0.1:3039` in both `CORS_ALLOWED_ORIGINS` and
-`CSRF_TRUSTED_ORIGINS`; build the frontend with
-`NEXT_PUBLIC_API_URL=http://127.0.0.1:8039`.
+Frontend: `npm run typecheck`, `npm run build`, and ESLint on changed feedback
+files. Browser checks use only an isolated local fixture:
 
-For that browser fixture, use a fresh isolated database and seed an active
-`caller@feedback-browser.test` FEEDBACK user named Asha in Kochi and a
-`ceo@feedback-browser.test` CEO user. Also seed `admin@feedback-browser.test` as
-ADMIN and `manager@feedback-browser.test` as SALES_MANAGER in Kochi. All four
-use password `FeedbackBrowser123!`; configure Kochi in `SystemConfig.lists.branches`.
-Set the isolated activation timestamp before the test event. Create a Kochi lead
-named Anjali Menon and audit an explicit test-drive completion two days ago so
-its TDF is already due; run `process_feedback_queue()` to create its alerts.
-Additional PBF/PSF leads are optional. Never seed these fixtures in production.
+```sh
+backend/.venv/bin/python frontend/scripts/feedback-fixture.py
+backend/.venv/bin/python frontend/scripts/feedback-fixture.py serve
+# In a separate frontend checkout/copy, build or run with:
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8039 npm run dev -- --hostname 127.0.0.1 --port 3038
+node frontend/scripts/feedback-browser.cjs
+```
+
+The fixture hardcodes a temporary SQLite database and refuses a second seed.
+Supply `PUPPETEER_MODULE` and `BROWSER_EXECUTABLE` when installed outside the
+project. The browser script checks questionnaires, service-only calls, optional
+complaints, approval and historical actions, issue acknowledgement, desktop/mobile
+overflow, exports, notification filtering, branch permissions and CEO read-only
+behavior. It stores screenshots under `/tmp/crm-feedback-*.png`.

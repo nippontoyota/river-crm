@@ -11,7 +11,7 @@ from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, Ou
 from accounts.models import User, UserLifecycleEvent
 from ceo.models import FinancialEntry, Milestone, OperationEvent, SaleAccount, SalesTarget, TargetRevision
 from complaints.models import Complaint, ComplaintNote
-from feedback.models import FeedbackAssignment, FeedbackAttempt, FeedbackTask
+from feedback.models import FeedbackAssignment, FeedbackAttempt, FeedbackIssue, FeedbackIssueEvent, FeedbackRequest, FeedbackTask
 from intake.models import Connection, Heartbeat, IntakeAudit, IntakeForm, MappingVersion, Submission
 from leads.models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from notifications.models import Notification, WhatsAppContact, WhatsAppMessage
@@ -30,13 +30,16 @@ DELETE_MODELS = [
     UserLifecycleEvent,
     ComplaintNote,
     Notification,
+    FeedbackAssignment,
+    FeedbackAttempt,
+    FeedbackIssueEvent,
+    FeedbackIssue,
+    FeedbackTask,
+    FeedbackRequest,
     ServiceEvent,
     ServiceRequest,
     VehicleEvent,
     Vehicle,
-    FeedbackAssignment,
-    FeedbackAttempt,
-    FeedbackTask,
     WhatsAppMessage,
     WhatsAppContact,
     IntakeAudit,

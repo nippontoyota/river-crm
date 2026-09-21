@@ -67,7 +67,7 @@ class SalesManagerAnalyticsTests(TestCase):
         with self.assertNumQueries(4):
             personal = self.client.get("/api/analytics/me/?range=mtd")
 
-        receptionist = User.objects.create_user(email="reception@example.com", password="password-12345", role=User.Role.RECEPTIONIST)
+        receptionist = User.objects.create_user(email="reception@example.com", password="password-12345", role=User.Role.RECEPTIONIST, location="Kochi")
         self.client.force_authenticate(receptionist)
         with self.assertNumQueries(2):
             reception = self.client.get("/api/analytics/receptionist/")

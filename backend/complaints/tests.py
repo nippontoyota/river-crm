@@ -21,7 +21,7 @@ class ComplaintAccessTests(TestCase):
         self.other_resolver = User.objects.create_user(email="other-resolver@example.com", password="password", role=User.Role.COMPLAINTS, first_name="Other Resolver")
         self.admin = User.objects.create_user(email="admin@example.com", password="password", role=User.Role.ADMIN)
         self.so = User.objects.create_user(email="so@example.com", password="password", role=User.Role.SALES_OFFICER)
-        self.receptionist = User.objects.create_user(email="receptionist@example.com", password="password", role=User.Role.RECEPTIONIST)
+        self.receptionist = User.objects.create_user(email="receptionist@example.com", password="password", role=User.Role.RECEPTIONIST, location="Kochi")
         SystemConfig.objects.create(id=1, lists={"branches": ["Kochi"]})
 
     def payload(self, phone="9876543210"):

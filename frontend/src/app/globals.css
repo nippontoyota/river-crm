@@ -104,6 +104,9 @@
 .whatsapp-agreement { display: flex !important; align-items: flex-start; gap: .65rem; cursor: pointer; }
 .whatsapp-agreement input[type="checkbox"] { width: 1.1rem; height: 1.1rem; min-width: 1.1rem; margin: .2rem 0 0; padding: 0; accent-color: var(--primary, #166534); }
 .whatsapp-consent-controls { display: grid; justify-items: start; gap: .6rem; margin-top: .8rem; }
+.sidebar-product { display: block; margin-top: 4px; font-size: 11px; font-weight: 600; letter-spacing: .12em; }
+.mobile-product { display: none; }
+
 .whatsapp-message-list { display: grid; gap: .75rem; margin-top: 1rem; }
 .whatsapp-message-list details { padding: .85rem; border: 1px solid var(--border, #dce3df); border-radius: .6rem; }
 .whatsapp-message-list summary { cursor: pointer; overflow-wrap: anywhere; }

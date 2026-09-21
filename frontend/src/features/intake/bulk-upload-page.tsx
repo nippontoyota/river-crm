@@ -89,14 +89,14 @@ export function BulkUploadPage() {
 
   const totals = summary?.totals;
   const tiles = [
-    { label: "Leads imported", value: totals?.imported_leads, note: "New leads added to CRM", icon: "↗", className: "imported" },
+    { label: "Leads imported", value: totals?.imported_leads, note: "New leads added to ITS", icon: "↗", className: "imported" },
     { label: "Existing leads updated", value: totals?.updated_leads, note: "Approved duplicate updates", icon: "↻", className: "updated" },
     { label: "Awaiting import", value: totals?.awaiting_import, note: "Files to check and import", icon: "◷", className: "pending" },
     { label: "Files uploaded", value: totals?.total_uploads, note: totals?.failed_uploads ? `${totals.failed_uploads} ${totals.failed_uploads === 1 ? "file needs" : "files need"} correction` : "All your spreadsheet uploads", icon: "▤", className: "files" },
   ];
 
   return <section className="page intake-page uploader-page">
-    <header className="uploader-heading"><div><p className="eyebrow">META UPLOADER · YOUR UPLOADS</p><h1>Bring your leads <span>into CRM.</span></h1><p className="subtext">Upload, review, and send company enquiries to the admin assignment pool.</p></div><button className="filter" disabled={refreshing || locked} onClick={() => { setRefreshing(true); void refreshSummary(); }}>{refreshing ? "Refreshing…" : "↻ Refresh totals"}</button></header>
+    <header className="uploader-heading"><div><p className="eyebrow">META UPLOADER · YOUR UPLOADS</p><h1>Bring your leads <span>into ITS.</span></h1><p className="subtext">Upload, review, and send company enquiries to the admin assignment pool.</p></div><button className="filter" disabled={refreshing || locked} onClick={() => { setRefreshing(true); void refreshSummary(); }}>{refreshing ? "Refreshing…" : "↻ Refresh totals"}</button></header>
     {summaryError && <p className="intake-error" role="alert">{summaryError}</p>}
     <section className="uploader-metrics" aria-label="Your upload analytics, all time" aria-busy={refreshing}>
       {tiles.map(tile => <article className={`uploader-metric ${tile.className}`} key={tile.label}><div><p>{tile.label}</p><span aria-hidden="true">{tile.icon}</span></div><strong>{tile.value === undefined ? "—" : tile.value.toLocaleString("en-IN")}</strong><small>{tile.note}</small></article>)}
@@ -124,7 +124,7 @@ export function BulkUploadPage() {
         <p className="subtext">Keep these seven column headings exactly as shown in the sample.</p>
         <div className="uploader-columns">{["name", "phone", "email", "source", "enquiry date", "city", "pincode"].map(field => <code key={field}>{field}</code>)}</div>
         <dl><div><dt>City</dt><dd>Up to 100 characters. Leave blank if unknown.</dd></div><div><dt>Pincode</dt><dd>Six digits, starting with 1–9. Leave blank if unknown.</dd></div><div><dt>Phone</dt><dd>Used to find repeated and existing leads.</dd></div><div><dt>Source</dt><dd>Use a configured source, such as META.</dd></div><div><dt>Enquiry date</dt><dd>DD/MM/YYYY, for example 17/09/2026.</dd></div></dl>
-        <div className="uploader-handoff"><span aria-hidden="true">✓</span><p><b>Connected to your CRM</b>After you select Import leads, new leads appear in the admin pool. Existing assignment and reporting rules apply.</p></div>
+        <div className="uploader-handoff"><span aria-hidden="true">✓</span><p><b>Connected to ITS</b>After you select Import leads, new leads appear in the admin pool. Existing assignment and reporting rules apply.</p></div>
       </aside>
     </div>
     {error && <p className="intake-error uploader-message" role="alert">{error}</p>}
@@ -133,7 +133,7 @@ export function BulkUploadPage() {
       <header><div><p className="eyebrow">{statusLabels[batch.status]}</p><h2>{batch.status === "PARSING" ? "Checking your file…" : batch.status === "FAILED" ? "Correct your spreadsheet" : batch.status === "COMMITTED" ? "Import complete" : "Review before importing"}</h2><p className="subtext">{batch.filename}</p></div><button className="filter" disabled={busy || reviewing} onClick={() => void check()}>Check import</button></header>
       {batch.status === 'PARSING' && batch.processing_mode === 'database' && <p role="status">Your file is queued. Checking normally starts within five minutes; larger queues may take longer.</p>}
       {batch.status === "READY" && <><p className="uploader-review-counts">{batch.total_rows} rows · {batch.parsed_ok} ready · {batch.pending_duplicates} duplicates need review · {batch.skipped} skipped · {batch.validation_errors_found} invalid</p><p className="subtext">Correct errors in your spreadsheet and upload it again. Approve or reject duplicates below.</p></>}
-      {batch.status === "COMMITTED" && <p className="uploader-success">This file has already been imported into CRM.</p>}
+      {batch.status === "COMMITTED" && <p className="uploader-success">This file has already been imported into ITS.</p>}
       {batch.error_message && <p className="intake-error" role="alert">{batch.error_message}</p>}
       <UploadReview key={batch.id} batch={batch} onChange={setBatch} disabled={busy} onBusyChange={setReviewing} />
       {batch.status === "READY" && <footer><p>New leads will be available to Admin for assignment.</p><button className="button primary" disabled={busy || reviewing || !!batch.pending_duplicates || !!batch.validation_errors_found || !batch.total_rows} onClick={() => void importLeads()}>{busy ? "Importing…" : "Import leads"}</button></footer>}

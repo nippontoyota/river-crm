@@ -77,7 +77,7 @@ export function TeamPage() {
       .catch(err => setError(err instanceof Error ? err.message : "Failed to load users."));
   }, []);
 
-  const changeFeedbackBranch = async (user: CurrentUser, location: string) => {
+  const changeServiceBranch = async (user: CurrentUser, location: string) => {
     setLifecycleBusy(`BRANCH-${user.id}`); setError("");
     try { await updateUserBranch(user.id, location); loadUsers(); }
     catch (error) { setError(error instanceof Error ? error.message : "Unable to change branch."); }
@@ -118,7 +118,7 @@ export function TeamPage() {
       is_active: true
     };
     
-    if (["SO", "SALES_MANAGER", "FEEDBACK", "SERVICE"].includes(backendRole)) {
+    if (["SO", "SALES_MANAGER", "SERVICE", "RECEPTIONIST"].includes(backendRole)) {
       payload.location = formData.get("branch") as string;
     }
 
@@ -196,12 +196,12 @@ export function TeamPage() {
     return "Administrator";
   };
 
-  const branchLabel = (user: CurrentUser) => user.location?.trim() || "No branch";
-  const branchOptions = useMemo(() => Array.from(new Set([...branches, ...users.map(user => user.location?.trim()).filter(Boolean) as string[]])).sort(), [branches, users]);
+  const branchLabel = (user: CurrentUser) => user.role === "FEEDBACK" ? "Call center" : user.location?.trim() || "No branch";
+  const branchOptions = useMemo(() => Array.from(new Set([...branches, ...users.filter(user => user.role !== "FEEDBACK").map(user => user.location?.trim()).filter(Boolean) as string[]])).sort(), [branches, users]);
   const filteredUsers = users.filter(user => {
     const isActive = user.is_active !== false;
-    const branch = user.location?.trim();
-    const text = `${user.first_name} ${user.last_name} ${user.email} ${displayRole(user.role)} ${branch || "No branch"}`.toLowerCase();
+    const branch = user.role === "FEEDBACK" ? "" : user.location?.trim();
+    const text = `${user.first_name} ${user.last_name} ${user.email} ${displayRole(user.role)} ${branchLabel(user)}`.toLowerCase();
     if (statusFilter === "ACTIVE" && !isActive) return false;
     if (statusFilter === "DISABLED" && isActive) return false;
     if (roleFilter !== "ALL" && user.role !== roleFilter) return false;
@@ -257,7 +257,7 @@ export function TeamPage() {
                 </select>
               </label>
             </div>
-            {["PS/SO", "Sales Manager", "Feedback Caller", "Service Department"].includes(selectedRole) && (
+            {["PS/SO", "Sales Manager", "Service Department", "Receptionist"].includes(selectedRole) && (
               <label>Branch *
                 <select name="branch" required>
                   <option value="">Select branch...</option>
@@ -329,7 +329,7 @@ export function TeamPage() {
                       <small>@{user.email.split("@")[0]} · {user.email}</small>
                     </div>
                     <span>{displayRole(user.role)}</span>
-                    {["FEEDBACK", "SERVICE"].includes(user.role) ? <select aria-label={`Branch for ${user.first_name || user.email}`} title={user.role === "SERVICE" ? "Access follows this branch. Existing requests stay in their branch queues." : "Changing branch automatically redistributes open feedback calls."} value={user.location || ""} disabled={Boolean(lifecycleBusy)} onChange={event => void changeFeedbackBranch(user, event.target.value)}>{[...new Set([user.location || "", ...branches])].filter(Boolean).map(branch => <option key={branch} value={branch}>{branch}</option>)}</select> : <span>{branchLabel(user)}</span>}
+                    {user.role === "SERVICE" ? <select aria-label={`Branch for ${user.first_name || user.email}`} title="Access follows this branch. Existing requests stay in their branch queues." value={user.location || ""} disabled={Boolean(lifecycleBusy)} onChange={event => void changeServiceBranch(user, event.target.value)}>{[...new Set([user.location || "", ...branches])].filter(Boolean).map(branch => <option key={branch} value={branch}>{branch}</option>)}</select> : <span>{branchLabel(user)}</span>}
                     <span className={`team-status ${isActive ? "active" : "disabled"}`}>{isActive ? "Active" : "Disabled"}</span>
                     <div className="team-row-actions">
                       <button className="filter" disabled={Boolean(lifecycleBusy)} onClick={() => { setEditingUser(user); setEditError(""); }}>Edit</button>
@@ -355,8 +355,8 @@ export function TeamPage() {
           </div>
           <label>Email / username *<input type="email" name="email" required maxLength={254} defaultValue={editingUser.email} disabled={editBusy} /></label>
           <label>Phone<input type="tel" name="phone" maxLength={20} defaultValue={editingUser.phone || ""} disabled={editBusy} /></label>
-          {(["SO", "SALES_MANAGER", "FEEDBACK", "SERVICE"].includes(editingUser.role) || editingUser.location) && <label>Branch
-            <select name="location" defaultValue={editingUser.location || ""} required={["SALES_MANAGER", "FEEDBACK", "SERVICE"].includes(editingUser.role)} disabled={editBusy}>
+          {editingUser.role !== "FEEDBACK" && (["SO", "SALES_MANAGER", "SERVICE", "RECEPTIONIST"].includes(editingUser.role) || editingUser.location) && <label>Branch
+            <select name="location" defaultValue={editingUser.location || ""} required={["SALES_MANAGER", "SERVICE", "RECEPTIONIST"].includes(editingUser.role)} disabled={editBusy}>
               <option value="">Select branch...</option>
               {[...new Set([editingUser.location || "", ...branches])].filter(Boolean).map(branch => <option key={branch} value={branch}>{branch}</option>)}
             </select>
@@ -378,7 +378,7 @@ export function TeamPage() {
         <button className="modal-close" onClick={() => setOffboarding(null)} aria-label="Close">×</button>
         <p className="eyebrow">{offboarding.action === "DELETE" ? "PERMANENT ACCOUNT REMOVAL" : "TEMPORARY ACCESS PAUSE"}</p>
         <h2 id="offboarding-title">{offboarding.action === "DELETE" ? "Delete" : "Disable"} {`${offboarding.user.first_name} ${offboarding.user.last_name}`.trim() || offboarding.user.email}</h2>
-        <p className="team-offboarding-copy">{offboarding.user.role === "META_UPLOADER" ? "This account loses upload access. Imported leads and upload history are retained." : offboarding.user.role === "SERVICE" ? "Service requests remain in the shared branch queue. This account loses access; its history is retained." : offboarding.user.role === "FEEDBACK" ? "Open feedback calls will be automatically reassigned within their branches. Completed feedback stays with this caller." : "Lead stages and history stay unchanged. Decide where each active status group goes before access is removed."}</p>
+        <p className="team-offboarding-copy">{offboarding.user.role === "META_UPLOADER" ? "This account loses upload access. Imported leads and upload history are retained." : offboarding.user.role === "SERVICE" ? "Service requests remain in the shared branch queue. This account loses access; its history is retained." : offboarding.user.role === "FEEDBACK" ? "Open feedback calls will be automatically reassigned to available call center staff. Completed feedback stays with this caller." : "Lead stages and history stay unchanged. Decide where each active status group goes before access is removed."}</p>
         {!["SERVICE", "META_UPLOADER"].includes(offboarding.user.role) && <div className="team-impact-strip">
           <span><b>{offboarding.impact.actionable_count}</b> {offboarding.user.role === "FEEDBACK" ? "open feedback calls" : "active leads"}</span>
           <span><b>{offboarding.impact.closed_count}</b> closed retained</span>
@@ -404,7 +404,7 @@ export function TeamPage() {
               {route?.destination === "DISTRIBUTE" && offboarding.impact.assignment_role === "SO" && <p className="team-route-note">Only branch-matched PS/SO employees receive leads; unmatched branches stay in the pool.</p>}
             </article>;
           })}
-          {!offboarding.impact.lead_groups.length && <div className="team-no-work">{offboarding.user.role === "META_UPLOADER" ? "No leads need reassignment. Uploaded leads remain in the CRM." : offboarding.user.role === "SERVICE" ? "No individual requests need reassignment. The branch queue remains available to other service staff." : offboarding.user.role === "FEEDBACK" ? "Branch assignment is automatic. Calls without an available caller remain in the unassigned queue." : "No active leads need routing. Closed history remains attached to this employee."}</div>}
+          {!offboarding.impact.lead_groups.length && <div className="team-no-work">{offboarding.user.role === "META_UPLOADER" ? "No leads need reassignment. Uploaded leads remain in ITS." : offboarding.user.role === "SERVICE" ? "No individual requests need reassignment. The branch queue remains available to other service staff." : offboarding.user.role === "FEEDBACK" ? "Call assignment is automatic. Calls without an available caller remain in the unassigned queue." : "No active leads need routing. Closed history remains attached to this employee."}</div>}
         </div>
         {offboarding.action === "DELETE" && <label className="team-delete-reason">Reason for permanent deletion *<textarea maxLength={500} value={reason} onChange={event => setReason(event.target.value)} placeholder="Record why this account is being permanently removed" /></label>}
         {error && <p className="form-error" role="alert">{error}</p>}

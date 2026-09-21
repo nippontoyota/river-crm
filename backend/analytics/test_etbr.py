@@ -15,7 +15,7 @@ class EtbrTests(TestCase):
         self.so = User.objects.create_user(email="etbr-so@example.com", role=User.Role.SALES_OFFICER, location="Kochi")
         self.cre = User.objects.create_user(email="etbr-cre@example.com", role=User.Role.CRE)
         self.manager = User.objects.create_user(email="etbr-manager@example.com", role=User.Role.SALES_MANAGER, location="Kochi")
-        self.receptionist = User.objects.create_user(email="etbr-front@example.com", role=User.Role.RECEPTIONIST)
+        self.receptionist = User.objects.create_user(email="etbr-front@example.com", role=User.Role.RECEPTIONIST, location="Kochi")
         self.lead = Lead.objects.create(name="ETBR enquiry", phone="9876543210", branch="Kochi", enquiry_date=timezone.localdate(), assigned_ps=self.so, assigned_so=self.cre, source=Lead.Source.WALKIN, status=Lead.Status.QUALIFIED)
         LeadQualification.objects.create(lead=self.lead, test_drive="Requested")
         CallLog.objects.create(lead=self.lead, so=self.so, status=Lead.Status.PENDING, outcome="Need Test Drive")
@@ -79,7 +79,7 @@ class EtbrTests(TestCase):
             ("Yesterday", Lead.Source.WALKIN, self.receptionist, True, False),
             ("Deleted", Lead.Source.WALKIN, self.receptionist, False, True),
         ]:
-            lead = Lead.objects.create(name=name, phone="9876543210", source=source, assigned_ps=self.so, deleted_at=timezone.now() if deleted else None)
+            lead = Lead.objects.create(name=name, phone="9876543210", source=source, branch="Kochi", assigned_ps=self.so, deleted_at=timezone.now() if deleted else None)
             audit = LeadAudit.objects.create(lead=lead, actor=actor, event="created")
             if old:
                 LeadAudit.objects.filter(pk=audit.pk).update(created_at=timezone.now() - timedelta(days=1))

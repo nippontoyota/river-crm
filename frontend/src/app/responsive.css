@@ -509,6 +509,10 @@ input[type="radio"] {
 }
 
 @media (max-width: 767px) {
+  .mobile-product {
+    display: inline;
+  }
+
   .sidebar,
   .sales-shell .sidebar {
     inset: auto 0 0;

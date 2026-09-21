@@ -437,6 +437,8 @@ class ReceptionistAnalyticsView(APIView):
         # Find leads created by this receptionist today
         created_lead_ids = LeadAudit.objects.filter(actor=request.user, event="created", created_at__date=today).values_list("lead_id", flat=True)
         queryset = Lead.objects.filter(id__in=created_lead_ids, deleted_at__isnull=True, source=Lead.Source.WALKIN)
+        branch = request.user.location.strip()
+        queryset = queryset.filter(branch__iexact=branch) if branch else queryset.none()
         summary = queryset.aggregate(**etbr_aggregates(), total=Count("id"), walkin=Count("id", filter=Q(source=Lead.Source.WALKIN)))
         total = summary["total"]
         walkins = summary["walkin"]

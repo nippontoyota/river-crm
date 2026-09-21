@@ -4,7 +4,7 @@ import { ActivityFields } from "@/components/activity-fields";
 import { RtoField } from "@/components/rto-field";
 
 import { useEffect, useState, FormEvent } from "react";
-import { createLead, getSystemConfig, getOfficers, toOfficer, type Officer, type SystemConfig } from "@/lib/crm";
+import { createLead, getCurrentUser, getSystemConfig, getOfficers, toOfficer, type Officer, type SystemConfig } from "@/lib/crm";
 
 export default function CaptureLeadPage() {
   const [loading, setLoading] = useState(false);
@@ -13,6 +13,7 @@ export default function CaptureLeadPage() {
 
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [officers, setOfficers] = useState<Officer[]>([]);
+  const [branch, setBranch] = useState("");
 
   const [formData, setFormData] = useState({
     activity: "", sub_activity: "",
@@ -27,7 +28,13 @@ export default function CaptureLeadPage() {
 
   useEffect(() => {
     getSystemConfig().then(setConfig).catch(() => setError("Unable to load enquiry options. Refresh the page to retry."));
-    getOfficers().then(apiOfficers => setOfficers(apiOfficers.map(o => toOfficer(o)))).catch(console.error);
+    getCurrentUser().then(async ({ user }) => {
+      const location = user.location?.trim() || "";
+      setBranch(location);
+      if (!location) return;
+      const apiOfficers = await getOfficers(location);
+      setOfficers(apiOfficers.map(o => toOfficer(o)));
+    }).catch(() => setError("Unable to load your branch and sales executives. Refresh the page to retry."));
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -52,6 +59,7 @@ export default function CaptureLeadPage() {
     setSuccess(false);
 
     try {
+      if (!branch) throw new Error("Ask your admin to assign your branch before capturing leads.");
       if (!formData.model_interest) throw new Error("Select a vehicle model from Admin Lists.");
       const payload = {
         name: formData.name,
@@ -119,6 +127,7 @@ export default function CaptureLeadPage() {
 
 
         <div className="capture-form-grid">
+            <label>Branch<input value={branch} readOnly placeholder="Ask your admin to assign your branch" /></label>
             <RtoField options={rtoOptions} value={formData.rto} onChange={value => setFormData(current => ({ ...current, rto: value }))} />
         </div>
 
@@ -145,8 +154,8 @@ export default function CaptureLeadPage() {
             </label>
             <label>
               Assign to Sales Executive (PS) *
-              <select name="assigned_ps_id" value={formData.assigned_ps_id} onChange={handleChange} required>
-                <option value="">Select Executive</option>
+              <select name="assigned_ps_id" value={formData.assigned_ps_id} onChange={handleChange} required disabled={!officers.length}>
+                <option value="">{officers.length ? "Select Executive" : "No sales executives available for your branch"}</option>
                 {officers.map(o => (
                   <option key={o.id} value={o.id}>{o.name} ({o.location})</option>
                 ))}
@@ -158,7 +167,7 @@ export default function CaptureLeadPage() {
             <button className="button secondary" type="button" onClick={handleClear} disabled={loading}>
               Clear Form
             </button>
-            <button className="button primary" type="submit" disabled={loading}>
+            <button className="button primary" type="submit" disabled={loading || !branch || !officers.length}>
               {loading ? "Submitting..." : "Submit Lead"}
             </button>
         </footer>

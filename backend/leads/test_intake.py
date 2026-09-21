@@ -11,7 +11,7 @@ class ActivityIntakeTests(TestCase):
         self.client = APIClient()
         self.admin = User.objects.create_user(email="intake-admin@example.com", role=User.Role.ADMIN)
         self.so = User.objects.create_user(email="intake-so@example.com", role=User.Role.SALES_OFFICER, location="Kochi")
-        self.receptionist = User.objects.create_user(email="intake-front@example.com", role=User.Role.RECEPTIONIST)
+        self.receptionist = User.objects.create_user(email="intake-front@example.com", role=User.Role.RECEPTIONIST, location="Kochi")
         self.config = SystemConfig.objects.create(id=1, lists={"sources": ["WEBSITE"], "activities": ["Roadshow", "Exhibition"], "subActivities": {"Roadshow": ["Kochi"], "Exhibition": ["Thrissur"]}})
         self.client.force_authenticate(self.admin)
 
