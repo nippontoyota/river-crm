@@ -118,7 +118,7 @@ export function TeamPage() {
       is_active: true
     };
     
-    if (["SO", "SALES_MANAGER", "SERVICE", "RECEPTIONIST"].includes(backendRole)) {
+    if (["SO", "SALES_MANAGER", "SERVICE", "RECEPTIONIST", "COMPLAINTS"].includes(backendRole)) {
       payload.location = formData.get("branch") as string;
     }
 
@@ -257,7 +257,7 @@ export function TeamPage() {
                 </select>
               </label>
             </div>
-            {["PS/SO", "Sales Manager", "Service Department", "Receptionist"].includes(selectedRole) && (
+            {["PS/SO", "Sales Manager", "Service Department", "Receptionist", "Complaints department"].includes(selectedRole) && (
               <label>Branch *
                 <select name="branch" required>
                   <option value="">Select branch...</option>
@@ -355,8 +355,8 @@ export function TeamPage() {
           </div>
           <label>Email / username *<input type="email" name="email" required maxLength={254} defaultValue={editingUser.email} disabled={editBusy} /></label>
           <label>Phone<input type="tel" name="phone" maxLength={20} defaultValue={editingUser.phone || ""} disabled={editBusy} /></label>
-          {editingUser.role !== "FEEDBACK" && (["SO", "SALES_MANAGER", "SERVICE", "RECEPTIONIST"].includes(editingUser.role) || editingUser.location) && <label>Branch
-            <select name="location" defaultValue={editingUser.location || ""} required={["SALES_MANAGER", "SERVICE", "RECEPTIONIST"].includes(editingUser.role)} disabled={editBusy}>
+          {editingUser.role !== "FEEDBACK" && (["SO", "SALES_MANAGER", "SERVICE", "RECEPTIONIST", "COMPLAINTS"].includes(editingUser.role) || editingUser.location) && <label>Branch
+            <select name="location" defaultValue={editingUser.location || ""} required={["SALES_MANAGER", "SERVICE", "RECEPTIONIST", "COMPLAINTS"].includes(editingUser.role)} disabled={editBusy}>
               <option value="">Select branch...</option>
               {[...new Set([editingUser.location || "", ...branches])].filter(Boolean).map(branch => <option key={branch} value={branch}>{branch}</option>)}
             </select>

@@ -17,12 +17,12 @@ class ComplaintAccessTests(TestCase):
         self.client = APIClient()
         self.cre = User.objects.create_user(email="cre@example.com", password="password", role=User.Role.CRE, first_name="CRE")
         self.other_cre = User.objects.create_user(email="other-cre@example.com", password="password", role=User.Role.CRE, first_name="Other")
-        self.resolver = User.objects.create_user(email="resolver@example.com", password="password", role=User.Role.COMPLAINTS, first_name="Resolver")
-        self.other_resolver = User.objects.create_user(email="other-resolver@example.com", password="password", role=User.Role.COMPLAINTS, first_name="Other Resolver")
+        self.resolver = User.objects.create_user(email="resolver@example.com", password="password", role=User.Role.COMPLAINTS, first_name="Resolver", location="Kochi")
+        self.other_resolver = User.objects.create_user(email="other-resolver@example.com", password="password", role=User.Role.COMPLAINTS, first_name="Other Resolver", location="Thrissur")
         self.admin = User.objects.create_user(email="admin@example.com", password="password", role=User.Role.ADMIN)
         self.so = User.objects.create_user(email="so@example.com", password="password", role=User.Role.SALES_OFFICER)
         self.receptionist = User.objects.create_user(email="receptionist@example.com", password="password", role=User.Role.RECEPTIONIST, location="Kochi")
-        SystemConfig.objects.create(id=1, lists={"branches": ["Kochi"]})
+        SystemConfig.objects.create(id=1, lists={"branches": ["Kochi", "Thrissur"]})
 
     def payload(self, phone="9876543210"):
         return {
@@ -104,7 +104,7 @@ class ComplaintAccessTests(TestCase):
         self.assertEqual(complaint.resolution_notes, "")
         self.assertIsNone(complaint.assigned_to)
 
-    def test_complaints_department_can_view_all_add_notes_and_resolve(self):
+    def test_complaints_department_shares_branch_queue_and_can_resolve(self):
         own = self.complaint(logged_by=self.cre)
         other = self.complaint(phone="9876543211", logged_by=self.other_cre)
         self.client.force_authenticate(self.resolver)
@@ -142,12 +142,109 @@ class ComplaintAccessTests(TestCase):
         self.assertEqual(admin_detail.status_code, 200)
         self.assertEqual([item["content"] for item in admin_detail.data["notes"]], ["Vehicle delivered.", "Customer updated."])
 
+    def test_resolver_scope_covers_list_detail_writes_and_all_analytics(self):
+        own = self.complaint(branch="kochi", assigned_to=self.other_resolver)
+        other = self.complaint(branch="Thrissur", assigned_to=self.resolver, category=Complaint.Category.OTHER,
+                               priority=Complaint.Priority.CRITICAL, status=Complaint.Status.ESCALATED)
+        branchless = self.complaint(branch="")
+        self.resolver.location = " Kochi "
+        self.resolver.save(update_fields=["location"])
+        self.client.force_authenticate(self.resolver)
+
+        for query in ("", "?branch=Thrissur", "?assigned_to=" + str(self.resolver.pk)):
+            response = self.client.get("/api/complaints/" + query)
+            self.assertEqual([row["id"] for row in response.data["results"]], [own.pk])
+        self.assertEqual(self.client.get("/api/complaints/?q=Thrissur").data["count"], 0)
+        self.assertEqual(self.client.get(f"/api/complaints/{own.pk}/").status_code, 200)
+        for complaint in (other, branchless):
+            path = f"/api/complaints/{complaint.pk}/"
+            for method, suffix, data in (
+                ("get", "", None),
+                ("put", "", {"status": "IN_PROGRESS"}),
+                ("patch", "", {"status": "RESOLVED", "resolution_notes": "Done"}),
+                ("post", "add-note/", {"content": "Remark"}),
+            ):
+                with self.subTest(complaint=complaint.pk, method=method):
+                    response = getattr(self.client, method)(path + suffix, data, format="json")
+                    self.assertEqual(response.status_code, 404, response.data)
+            complaint.refresh_from_db()
+            self.assertIsNone(complaint.resolved_at)
+            self.assertFalse(complaint.notes.exists())
+
+        for date_range in ("all", "today", "week", "mtd"):
+            analytics = self.client.get(f"/api/complaints/analytics/?range={date_range}&branch=Thrissur").data
+            self.assertEqual(analytics["summary"]["total"], 1)
+            self.assertEqual(analytics["summary"]["escalated"], 0)
+            self.assertEqual(analytics["by_category"], [{"category": own.category, "count": 1}])
+            self.assertEqual(analytics["by_priority"], [{"priority": own.priority, "count": 1}])
+            self.assertEqual(analytics["by_status"], [{"status": own.status, "count": 1}])
+            self.assertEqual(sum(row["opened"] for row in analytics["trend"]), 1)
+
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.get("/api/complaints/").data["count"], 3)
+        self.assertEqual(self.client.get("/api/complaints/analytics/?range=all").data["summary"]["total"], 3)
+
+    @override_settings(CACHE_TTL_SECONDS=10)
+    def test_branch_change_and_missing_branch_cannot_reuse_old_access_or_analytics(self):
+        cache.clear()
+        own = self.complaint(assigned_to=self.resolver)
+        other = self.complaint(branch="Thrissur", status=Complaint.Status.ESCALATED)
+        self.complaint(branch="Thrissur")
+        self.complaint(branch="")
+        self.client.force_authenticate(self.resolver)
+        self.assertEqual(self.client.get("/api/complaints/analytics/?range=all").data["summary"]["total"], 1)
+
+        self.client.force_authenticate(self.admin)
+        changed = self.client.patch(f"/api/auth/users/{self.resolver.pk}/", {"location": "Thrissur"}, format="json")
+        self.assertEqual(changed.status_code, 200, changed.data)
+        self.resolver.refresh_from_db()
+        self.client.force_authenticate(self.resolver)
+        response = self.client.get("/api/complaints/analytics/?range=all")
+        self.assertEqual(response["X-Cache"], "MISS")
+        self.assertEqual(response.data["summary"]["total"], 2)
+        self.assertEqual(response.data["summary"]["escalated"], 1)
+        self.assertEqual(self.client.get("/api/complaints/").data["count"], 2)
+        self.assertEqual(self.client.get(f"/api/complaints/{own.pk}/").status_code, 404)
+        self.assertEqual(self.client.get(f"/api/complaints/{other.pk}/").status_code, 200)
+        own.refresh_from_db()
+        self.assertEqual(own.branch, "Kochi")
+        self.assertEqual(own.assigned_to, self.resolver)
+
+        for location in ("", "   "):
+            self.resolver.location = location
+            self.resolver.save(update_fields=["location"])
+            self.assertEqual(self.client.get("/api/complaints/").data["count"], 0)
+            self.assertEqual(self.client.get("/api/complaints/analytics/?range=all").data["summary"]["total"], 0)
+            self.assertEqual(self.client.get(f"/api/complaints/{other.pk}/").status_code, 404)
+            self.assertEqual(self.client.patch(f"/api/complaints/{other.pk}/", {"status": "IN_PROGRESS"}, format="json").status_code, 404)
+            self.assertEqual(self.client.post(f"/api/complaints/{other.pk}/add-note/", {"content": "Remark"}, format="json").status_code, 404)
+
+    def test_admin_must_assign_complaints_staff_a_configured_branch(self):
+        self.client.force_authenticate(self.admin)
+        payload = {"email": "new-resolver@example.com", "role": "COMPLAINTS", "password": "password"}
+        for fields in ({}, {"location": ""}, {"location": "   "}, {"location": "Unknown"}):
+            response = self.client.post("/api/auth/users/", {**payload, **fields}, format="json")
+            self.assertEqual(response.status_code, 400, response.data)
+            self.assertIn("location", response.data)
+        response = self.client.post("/api/auth/users/", {**payload, "location": " kochi "}, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["location"], "Kochi")
+        path = f'/api/auth/users/{response.data["id"]}/'
+        for location in ("", "   ", "Unknown"):
+            self.assertEqual(self.client.patch(path, {"location": location}, format="json").status_code, 400)
+        self.assertEqual(self.client.patch(path, {"location": "Thrissur"}, format="json").data["location"], "Thrissur")
+        legacy = User.objects.create_user("legacy-resolver@example.com", role="COMPLAINTS")
+        response = self.client.patch(f"/api/auth/users/{legacy.pk}/", {"location": "Kochi"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.client.force_authenticate(self.resolver)
+        self.assertEqual(self.client.patch(f"/api/auth/users/{self.resolver.pk}/", {"location": "Thrissur"}, format="json").status_code, 403)
+
     def test_admin_can_view_and_analyze_but_not_resolve(self):
         resolved = self.complaint(assigned_to=self.resolver, status=Complaint.Status.RESOLVED, resolved_at=timezone.now())
         resolved.created_at = timezone.now() - timedelta(hours=2)
         resolved.save(update_fields=["created_at"])
         self.complaint(phone="9876543211", assigned_to=self.resolver, status=Complaint.Status.IN_PROGRESS)
-        self.complaint(phone="9876543212", assigned_to=self.other_resolver, status=Complaint.Status.ESCALATED)
+        self.complaint(phone="9876543212", assigned_to=self.other_resolver, branch="Thrissur", status=Complaint.Status.ESCALATED)
 
         self.client.force_authenticate(self.admin)
         self.assertEqual(self.client.get("/api/complaints/").status_code, 200)
@@ -171,7 +268,7 @@ class ComplaintAccessTests(TestCase):
         self.client.force_authenticate(self.resolver)
         resolver_analytics = self.client.get("/api/complaints/analytics/?range=all")
         self.assertEqual(resolver_analytics.status_code, 200)
-        self.assertEqual(resolver_analytics.data["summary"]["total"], 3)
+        self.assertEqual(resolver_analytics.data["summary"]["total"], 2)
         self.assertNotIn("by_resolution_team", resolver_analytics.data)
 
     def test_sales_role_has_no_complaint_access(self):

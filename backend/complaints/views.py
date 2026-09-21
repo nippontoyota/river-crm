@@ -13,7 +13,7 @@ from rest_framework.viewsets import ModelViewSet
 from accounts.models import User
 from analytics.cache import cache_analytics
 from .models import Complaint, ComplaintNote
-from .permissions import ComplaintAnalyticsPermission, ComplaintPermission
+from .permissions import ComplaintAnalyticsPermission, ComplaintPermission, visible_complaints
 from .serializers import (
     ComplaintCreateSerializer,
     ComplaintDetailSerializer,
@@ -33,15 +33,7 @@ class ComplaintViewSet(ModelViewSet):
     permission_classes = [ComplaintPermission]
 
     def get_queryset(self):
-        user = self.request.user
-        queryset = Complaint.objects.select_related("logged_by", "assigned_to")
-
-        # Intake staff see their own tickets; admins and resolvers share the queue.
-        if user.role in {User.Role.CRE, User.Role.RECEPTIONIST}:
-            queryset = queryset.filter(logged_by=user)
-        if user.role == User.Role.RECEPTIONIST:
-            branch = user.location.strip()
-            queryset = queryset.filter(branch__iexact=branch) if branch else queryset.none()
+        queryset = visible_complaints(self.request.user).select_related("logged_by", "assigned_to")
 
         # Annotate note count for list performance
         queryset = queryset.annotate(_note_count=Count("notes"))
@@ -157,9 +149,9 @@ class ComplaintViewSet(ModelViewSet):
 class ComplaintAnalyticsView(APIView):
     permission_classes = [ComplaintAnalyticsPermission]
 
-    @cache_analytics("complaints")
+    @cache_analytics("complaints:branch")
     def get(self, request):
-        queryset = Complaint.objects.all()
+        queryset = visible_complaints(request.user)
 
         # Date range filter
         date_range = request.query_params.get("range", "mtd")

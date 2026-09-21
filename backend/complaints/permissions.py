@@ -1,6 +1,17 @@
 from rest_framework.permissions import BasePermission
 
 from accounts.models import User
+from .models import Complaint
+
+
+def visible_complaints(user):
+    queryset = Complaint.objects.all()
+    if user.role in {User.Role.CRE, User.Role.RECEPTIONIST}:
+        queryset = queryset.filter(logged_by=user)
+    if user.role in {User.Role.RECEPTIONIST, User.Role.COMPLAINTS}:
+        branch = user.location.strip()
+        queryset = queryset.filter(branch__iexact=branch) if branch else queryset.none()
+    return queryset
 
 
 class ComplaintPermission(BasePermission):

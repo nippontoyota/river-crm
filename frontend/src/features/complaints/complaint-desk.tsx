@@ -60,7 +60,7 @@ const formatNoteTime = formatDateTime;
 
 export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: boolean; currentUser?: CurrentUser }) {
   const userRole = currentUser?.role;
-  const receptionistBranch = currentUser?.location?.trim() || "";
+  const assignedBranch = currentUser?.location?.trim() || "";
   const canCreate = userRole === "CRE" || userRole === "RECEPTIONIST";
   const canResolve = userRole === "COMPLAINTS";
   const canUseAnalytics = adminView || canResolve;
@@ -72,9 +72,11 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
     }
     : canResolve
       ? {
-        eyebrow: "RESOLUTION QUEUE",
+        eyebrow: assignedBranch ? `RESOLUTION QUEUE · ${assignedBranch}` : "RESOLUTION QUEUE",
         title: <>Resolve every <span>complaint.</span></>,
-        subtext: "Work the shared complaints department queue and keep customer updates moving.",
+        subtext: assignedBranch
+          ? `Resolve complaints for ${assignedBranch} and keep customer updates moving.`
+          : "Ask your admin to assign your branch before handling complaints.",
       }
       : {
         eyebrow: "COMPLAINT INTAKE",
@@ -176,7 +178,7 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
   const submitComplaint = async () => {
     if (submitting) return;
     const { customer_name, customer_phone, category, subject, description, priority } = newComplaint;
-    const branch = userRole === "RECEPTIONIST" ? receptionistBranch : newComplaint.branch;
+    const branch = userRole === "RECEPTIONIST" ? assignedBranch : newComplaint.branch;
     if (userRole === "RECEPTIONIST" && !branch) { setFormError("Ask your admin to assign your branch before logging complaints."); return; }
     if (!customer_name.trim()) { setFormError("Customer name is required."); return; }
     if (!/^\d{10}$/.test(customer_phone)) { setFormError("Enter a valid 10-digit phone number."); return; }
@@ -443,7 +445,7 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
                 <label>Customer name<input required maxLength={160} value={newComplaint.customer_name} onChange={e => setNewComplaint(c => ({ ...c, customer_name: e.target.value }))} placeholder="Full name" /></label>
                 <label>Phone number<input required inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={newComplaint.customer_phone} onChange={e => setNewComplaint(c => ({ ...c, customer_phone: e.target.value.replace(/\D/g, "") }))} placeholder="10-digit mobile" /></label>
                 <label>Email <small style={{ fontWeight: 400 }}>(optional)</small><input type="email" value={newComplaint.customer_email} onChange={e => setNewComplaint(c => ({ ...c, customer_email: e.target.value }))} placeholder="customer@example.com" /></label>
-                <label>Branch{userRole === "RECEPTIONIST" ? <input value={receptionistBranch} readOnly placeholder="Ask your admin to assign your branch" /> : <select required value={newComplaint.branch} onChange={e => setNewComplaint(c => ({ ...c, branch: e.target.value }))} disabled={!branches.length}>
+                <label>Branch{userRole === "RECEPTIONIST" ? <input value={assignedBranch} readOnly placeholder="Ask your admin to assign your branch" /> : <select required value={newComplaint.branch} onChange={e => setNewComplaint(c => ({ ...c, branch: e.target.value }))} disabled={!branches.length}>
                   <option value="">{branches.length ? "Select branch" : "No branches configured"}</option>
                   {branches.map(branch => <option key={branch} value={branch}>{branch}</option>)}
                 </select>}</label>

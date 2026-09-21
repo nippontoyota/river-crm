@@ -52,9 +52,9 @@ class TeamMemberSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"role": "Create a new account instead of changing an employee's role."})
         if role == User.Role.FEEDBACK:
             attrs["location"] = ""
-        if role in {User.Role.SALES_MANAGER, User.Role.SERVICE, User.Role.RECEPTIONIST} and not attrs.get("location", getattr(self.instance, "location", "")).strip():
+        if role in {User.Role.SALES_MANAGER, User.Role.SERVICE, User.Role.RECEPTIONIST, User.Role.COMPLAINTS} and not attrs.get("location", getattr(self.instance, "location", "")).strip():
             raise serializers.ValidationError({"location": "Choose the employee branch."})
-        if role == User.Role.RECEPTIONIST and (not self.instance or attrs.get("location", self.instance.location) != self.instance.location):
+        if role in {User.Role.RECEPTIONIST, User.Role.COMPLAINTS} and (not self.instance or attrs.get("location", self.instance.location) != self.instance.location):
             from servicing.serializers import configured_branch
             try:
                 attrs["location"] = configured_branch(attrs.get("location", ""))

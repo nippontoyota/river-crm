@@ -35,8 +35,12 @@ as completed.
 
 Complaints require a type and a matching subtype for new tickets. Existing
 tickets without a subtype display "Not specified". CE and receptionists can log
-and view their own tickets; the complaints department handles resolution and
-admins retain oversight. Receptionist complaints default to Walk-in.
+and view their own tickets; complaints staff share their assigned branch's queue
+and analytics, while admins retain oversight across branches. Complaints accounts
+require a branch in Users; existing accounts without one have no complaint access
+until an admin assigns it. Changing an employee's branch changes their access,
+while existing tickets stay in their original branch. Receptionist complaints
+default to Walk-in.
 
 Receptionist enquiry capture asks for a model and omits color and purchase
 timeline. The model seed adds **River Indie** without replacing existing model
