@@ -118,6 +118,7 @@ if (![apiBase, webBase].every(url => ['127.0.0.1', 'localhost'].includes(new URL
     for (const member of members) {
       await openUser(member.email);
       assert.equal(await page.$eval('.team-edit-dialog [name=email]', node => node.value), member.email);
+      assert.equal(await page.$eval('.team-edit-dialog [name=password]', node => node.value), '');
       await fill('.team-edit-dialog [name=first_name]', `${member.role} Corrected`);
       await fill('.team-edit-dialog [name=last_name]', 'Name');
       await fill('.team-edit-dialog [name=phone]', '9876543210');
@@ -151,6 +152,23 @@ if (![apiBase, webBase].every(url => ['127.0.0.1', 'localhost'].includes(new URL
     await page.screenshot({ path: '/tmp/crm-admin-edit-users-mobile.png', fullPage: true });
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.querySelector('.team-edit-dialog'));
+    const uploader = members.find(member => member.role === 'META_UPLOADER');
+    await openUser(uploader.email);
+    await fill('.team-edit-dialog [name=password]', 'short');
+    await fill('.team-edit-dialog [name=confirmPassword]', 'short');
+    assert.equal(await page.$eval('.team-edit-dialog [name=password]', node => node.checkValidity()), false);
+    await fill('.team-edit-dialog [name=password]', 'Replacement123!');
+    await fill('.team-edit-dialog [name=confirmPassword]', 'Different123!');
+    await click('.team-edit-dialog button', 'Save changes');
+    await page.waitForFunction(() => document.querySelector('.team-edit-dialog [role=alert]')?.textContent.includes('Passwords do not match'));
+    await fill('.team-edit-dialog [name=confirmPassword]', 'Replacement123!');
+    await click('.team-edit-dialog button', 'Save changes');
+    await page.waitForFunction(() => !document.querySelector('.team-edit-dialog'));
+    await openUser(uploader.email);
+    assert.equal(await page.$eval('.team-edit-dialog [name=password]', node => node.value), '', 'Password must not be returned or retained');
+    await fill('.team-edit-dialog [name=password]', 'Cancelled123!');
+    await fill('.team-edit-dialog [name=confirmPassword]', 'Cancelled123!');
+    await click('.team-edit-dialog button', 'Cancel');
     const disabled = members.find(member => member.role === 'CRE');
     const impact = (await api(`/api/auth/users/${disabled.id}/offboarding-impact/`)).data;
     assert.equal((await api(`/api/auth/users/${disabled.id}/disable/`, 'POST', { impact_version: impact.version, routes: [] })).status, 200);
@@ -167,7 +185,10 @@ if (![apiBase, webBase].every(url => ['127.0.0.1', 'localhost'].includes(new URL
     assert.equal((await api(`/api/auth/users/${disabled.id}/`)).data.is_active, false);
     assert.ok(await page.evaluate(() => document.querySelector('.team-users-scroll').textContent.includes('Enable')));
     assert.equal((await api('/api/auth/login/', 'POST', { email: `corrected-${stamp}@example.com`, password: 'Unchanged123!' })).status, 200, 'Original password must still work');
+    for (const [password, expected] of [['Unchanged123!', 400], ['Cancelled123!', 400], ['Replacement123!', 200]]) {
+      assert.equal((await api('/api/auth/login/', 'POST', { email: uploader.email, password })).status, expected, 'Password reset/cancel login check');
+    }
     assert.deepEqual(errors, []);
-    console.log('PASS: all six editable lists, all ten user roles, linked sub-activities, duplicate/blank validation, cancel/Escape, failed-save retry, persistence, unchanged credentials, add/remove and desktop/mobile layout.');
+    console.log('PASS: all six editable lists, all ten user roles, linked sub-activities, validation, cancel/Escape, failed-save retry, persistence, optional password reset and login, add/remove and desktop/mobile layout.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

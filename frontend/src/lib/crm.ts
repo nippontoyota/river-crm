@@ -215,7 +215,7 @@ export async function updateSystemConfig(lists: SystemConfig["lists"]) {
 }
 export const getUsers = async () => { const data = await api<any>("/api/auth/users/"); return (data.results || data) as CurrentUser[]; };
 export const createUser = (payload: any) => api<CurrentUser>("/api/auth/users/", { method: "POST", body: JSON.stringify(payload) });
-export const updateUser = (userId: number, payload: Partial<Pick<CurrentUser, "first_name" | "last_name" | "email" | "phone" | "location">>) => api<CurrentUser>(`/api/auth/users/${userId}/`, { method: "PATCH", body: JSON.stringify(payload) });
+export const updateUser = (userId: number, payload: Partial<Pick<CurrentUser, "first_name" | "last_name" | "email" | "phone" | "location">> & { password?: string }) => api<CurrentUser>(`/api/auth/users/${userId}/`, { method: "PATCH", body: JSON.stringify(payload) });
 export const updateUserBranch = (userId: number, location: string) => updateUser(userId, { location });
 export const getOffboardingImpact = (userId: number) => api<OffboardingImpact>(`/api/auth/users/${userId}/offboarding-impact/`);
 export const getUserLifecycleHistory = (userId: number) => api<{ id: number; name: string; lifecycle_status: "ACTIVE" | "DISABLED" | "DELETED"; account_history: LifecycleEvent[] }>(`/api/auth/users/${userId}/lifecycle-history/`);

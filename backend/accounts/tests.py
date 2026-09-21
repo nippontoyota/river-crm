@@ -17,6 +17,49 @@ from uploads.models import UploadBatch, UploadRow
 from .models import User, UserLifecycleEvent
 
 
+class UserPasswordEditTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user("password-admin@example.com", "Original123!", role=User.Role.ADMIN)
+        self.worker = User.objects.create_user("password-worker@example.com", "Original123!", role=User.Role.META_UPLOADER)
+        self.client.force_authenticate(self.admin)
+        self.url = f"/api/auth/users/{self.worker.pk}/"
+
+    def test_admin_changes_password_without_exposing_it_or_changing_account(self):
+        password = " New password123! "
+        response = self.client.patch(self.url, {"password": password}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertNotIn("password", response.data)
+        self.worker.refresh_from_db()
+        self.assertTrue(self.worker.check_password(password))
+        self.assertFalse(self.worker.check_password("Original123!"))
+        self.assertNotEqual(self.worker.password, password)
+        self.assertEqual(self.worker.role, User.Role.META_UPLOADER)
+        self.assertTrue(self.worker.is_active)
+        self.client.force_authenticate(None)
+        for value, expected in [("Original123!", 400), (password, 200)]:
+            login = self.client.post("/api/auth/login/", {"email": self.worker.email, "password": value}, format="json")
+            self.assertEqual(login.status_code, expected, login.data)
+
+    def test_profile_edit_preserves_password_and_invalid_password_changes_nothing(self):
+        original = self.worker.password
+        response = self.client.patch(self.url, {"first_name": "Corrected"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        for value in ["", "short"]:
+            response = self.client.patch(self.url, {"first_name": "Unsaved", "password": value}, format="json")
+            self.assertEqual(response.status_code, 400, response.data)
+        self.worker.refresh_from_db()
+        self.assertEqual(self.worker.password, original)
+        self.assertEqual(self.worker.first_name, "Corrected")
+
+    def test_non_admin_cannot_change_password(self):
+        self.client.force_authenticate(self.worker)
+        response = self.client.patch(self.url, {"password": "Changed123!"}, format="json")
+        self.assertEqual(response.status_code, 403, response.data)
+        self.worker.refresh_from_db()
+        self.assertTrue(self.worker.check_password("Original123!"))
+
+
 class ResetProductionDataTests(TestCase):
     def setUp(self):
         self.admin = User.objects.create_superuser("admin@river.test", "unchanged-password")

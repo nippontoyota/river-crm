@@ -26,7 +26,7 @@ class LoginSerializer(serializers.Serializer):
 
 
 class TeamMemberSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=False, min_length=6)
+    password = serializers.CharField(write_only=True, required=False, min_length=6, trim_whitespace=False)
     lifecycle_status = serializers.CharField(read_only=True)
 
     class Meta:

@@ -46,12 +46,18 @@ export function TeamPage() {
     event.preventDefault();
     if (!editingUser || editBusy) return;
     const data = new FormData(event.currentTarget);
+    const password = String(data.get("password") || "");
+    if (password !== String(data.get("confirmPassword") || "")) {
+      setEditError("Passwords do not match.");
+      return;
+    }
     const payload = {
       first_name: String(data.get("first_name") || "").trim(),
       last_name: String(data.get("last_name") || "").trim(),
       email: String(data.get("email") || "").trim().toLowerCase(),
       phone: String(data.get("phone") || "").trim(),
       ...(data.has("location") ? { location: String(data.get("location") || "") } : {}),
+      ...(password ? { password } : {}),
     };
     setEditBusy(true);
     setEditError("");
@@ -355,6 +361,11 @@ export function TeamPage() {
               {[...new Set([editingUser.location || "", ...branches])].filter(Boolean).map(branch => <option key={branch} value={branch}>{branch}</option>)}
             </select>
           </label>}
+          <div className="team-name-fields">
+            <label>New password<input type="password" name="password" minLength={6} autoComplete="new-password" aria-describedby="edit-password-help" disabled={editBusy} /></label>
+            <label>Confirm new password<input type="password" name="confirmPassword" autoComplete="new-password" disabled={editBusy} /></label>
+          </div>
+          <p id="edit-password-help" className="team-password-hint">Leave blank to keep the current password. Minimum 6 characters.</p>
           {editError && <p className="form-error" role="alert">{editError}</p>}
           <footer className="team-row-actions">
             <button type="button" className="filter" disabled={editBusy} onClick={() => setEditingUser(null)}>Cancel</button>
@@ -552,6 +563,7 @@ export function TeamPage() {
         .team-edit-dialog::backdrop { background: #17211f80; }
         .team-edit-dialog h2 { margin: 0; font-size: 20px; }
         .team-edit-dialog footer { margin-top: 8px; }
+        .team-password-hint { margin: 0; color: var(--muted); font-size: 11px; }
         .team-row-actions .team-enable { color: #257453; border-color: #b9dfcf; }
         .team-row-actions .team-delete { color: #ae3f3f; border-color: #eccaca; }
         .team-offboarding-modal { width: min(760px, 100%); max-height: min(90vh, 820px); overflow: auto; padding: 28px; }
