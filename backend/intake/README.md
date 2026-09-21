@@ -382,7 +382,7 @@ Admin actions:
 - **Correct and reprocess** applies allowed customer corrections and reruns validation and duplicate checks.
 - **Retry** resets the retry budget. Fix a paused connection's credentials, then use Resume to allow its receipts to process again.
 
-New mapping versions apply to future receipts. To update pending receipts, select them and invoke Reprocess on the chosen version. Resolved, expired, actively processing or other-form receipts are skipped. Imported leads stay unchanged. A pending same-phone receipt waits behind the earliest matching receipt. Existing CRM leads require review. PostgreSQL phone locks also cover manual creation, customer-phone changes and Excel commit; manual capture directs phones with intake enquiries to admin review.
+New mapping versions apply to future receipts. To update a pending receipt, open it from Receipts, choose “Map this form’s answers”, then use “Reprocess this enquiry” on the chosen version. Resolved, expired, actively processing or other-form receipts are skipped. Imported leads stay unchanged. A pending same-phone receipt waits behind the earliest matching receipt. Existing CRM leads require review. PostgreSQL phone locks also cover manual creation, customer-phone changes and Excel commit; manual capture directs phones with intake enquiries to admin review.
 
 ## Uploads and retention
 

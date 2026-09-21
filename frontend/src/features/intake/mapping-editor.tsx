@@ -30,7 +30,7 @@ export function MappingEditor({ entries, form = null, mapping, excel = false, on
   };
   return <section className="intake-mapping">
     <h3>{mapping ? `Mapping version ${mapping.version}` : 'New mapping'}</h3>
-    <p className="subtext">Choose where each answer belongs. A new version applies to future submissions. Select pending receipts separately to reprocess them.</p>
+    <p className="subtext">Choose where each answer belongs. A new version applies to future submissions. To reprocess a pending enquiry, open it from Receipts and choose “Map this form’s answers”.</p>
     {excel && <label>Template name<input required value={name} onChange={e => setName(e.target.value)} /></label>}
     <div className="intake-table-wrap"><table><thead><tr><th>Incoming label</th><th>Sample</th><th>Destination</th><th>Primary</th></tr></thead><tbody>
       {(preview?.entries || entries.map(e => ({ ...e, sample: String(e.value || ''), destination: '' }))).map(entry => <tr key={entry.id}>

@@ -59,6 +59,20 @@ if (![apiBase, webBase].every(url => ['127.0.0.1', 'localhost'].includes(new URL
       await input.click({ clickCount: 3 }); await input.press('Backspace'); await input.type(value);
     };
     await page.goto(webBase + '/lead-intake');
+    await page.waitForSelector('.intake-table-wrap table');
+    assert.equal(await page.$$eval('.intake-table-wrap input[type="checkbox"]', elements => elements.length), 0);
+    assert.equal(await page.$$eval('.intake-table-wrap th', elements => elements.some(e => e.textContent.trim() === 'Select')), false);
+    await page.waitForFunction(name => document.querySelector('tbody')?.textContent.includes(name), {}, 'Browser Correct ' + stamp);
+    assert.equal(await page.$eval('tbody', (body, name) => body.textContent.includes(name), 'Browser Valid ' + stamp), false, 'imported receipt appears in default review queue');
+    const stateFilter = (await page.evaluateHandle(() => [...document.querySelectorAll('.intake-filters label')].find(e => e.childNodes[0]?.textContent.trim() === 'State').querySelector('select'))).asElement();
+    await stateFilter.select('IMPORTED');
+    await open('Browser Valid ' + stamp);
+    assert.equal(await page.$$eval('tbody button', buttons => buttons.every(button => button.textContent.trim() === 'View details')), true);
+    assert.match(await page.$eval('.intake-dialog', e => e.textContent), /No review is needed/);
+    assert.equal(await page.$$eval('.intake-dialog input', inputs => inputs.every(input => input.disabled)), true);
+    assert.doesNotMatch(await page.$eval('.intake-dialog', e => e.textContent), /Save corrections|Duplicate review|Dismiss enquiry|Create separately/);
+    await click('Close');
+    await stateFilter.select('NEEDS_REVIEW');
     await open('Browser Correct ' + stamp);
     await fillLabel('.intake-dialog', 'email', 'corrected@example.com');
     // Polling must preserve a draft; visibility events exercise the resume path.
@@ -67,15 +81,15 @@ if (![apiBase, webBase].every(url => ['127.0.0.1', 'localhost'].includes(new URL
     await click('Save corrections and reprocess');
     await page.waitForFunction(() => document.querySelector('.intake-dialog')?.textContent.includes('IMPORTED'));
     await click('Close');
-    await page.click(`input[aria-label="Select receipt ${mapId}"]`);
+    await page.waitForFunction(name => !document.querySelector('tbody')?.textContent.includes(name), {}, 'Browser Correct ' + stamp);
     await open('Browser Map ' + stamp);
     await click('Map this form’s answers');
     await page.waitForSelector('select[aria-label="Map Contact"]');
     await page.select('select[aria-label="Map Contact"]', 'phone');
     await click('Save new version');
     await page.waitForFunction(() => document.body.textContent.includes('Mapping version 1 saved.'));
-    await click('Reprocess 1 selected pending receipts');
-    await page.waitForFunction(() => document.body.textContent.includes('1 pending receipts queued'));
+    await click('Reprocess this enquiry');
+    await page.waitForFunction(() => document.body.textContent.includes('Enquiry queued with mapping version 1.'));
     assert.equal((await admin(`/api/intake/submissions/${mapId}/`)).data.state, 'IMPORTED');
     await click('Receipts');
     await open('Browser Duplicate ' + stamp);
@@ -86,7 +100,9 @@ if (![apiBase, webBase].every(url => ['127.0.0.1', 'localhost'].includes(new URL
     assert.equal((await admin(`/api/intake/submissions/${duplicateId}/`)).data.lead, first.data.lead);
     assert.equal((await admin(`/api/intake/submissions/${badId}/`)).data.state, 'IMPORTED');
     await page.screenshot({ path: '/tmp/crm-intake-desktop.png', fullPage: true });
-    await page.goto(webBase + '/leads');
+    const pool = await admin('/api/leads/?unassigned=true');
+    assert.ok(pool.data.results.some(lead => lead.id === first.data.lead), 'imported lead missing from assignment pool');
+    await page.goto(webBase + '/all-leads');
     await page.waitForFunction(name => document.body.textContent.includes(name), {}, 'Browser Valid ' + stamp);
     const headers = 'name,phone,email,source,enquiry date,city,pincode\n';
     await page.waitForSelector('input[type=file]');
@@ -108,6 +124,6 @@ if (![apiBase, webBase].every(url => ['127.0.0.1', 'localhost'].includes(new URL
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2), 'mobile page overflows');
     await page.screenshot({ path: '/tmp/crm-intake-mobile.png', fullPage: true });
     assert.deepEqual(errors, []);
-    console.log('PASS: receipt correction, mapping preview/version/reprocess, duplicate link, assignment pool, upload error/correction/commit, desktop and mobile views.');
+    console.log('PASS: no selection column, imported receipts excluded from review and read-only in history, receipt correction, mapping preview/version/reprocess, duplicate link, assignment pool, upload error/correction/commit, desktop and mobile views.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
