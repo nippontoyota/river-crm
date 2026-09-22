@@ -411,7 +411,7 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
                 <small className="complaint-age">{formatDateTime(c.created_at)}</small>
                 {c.note_count > 0 && <small className="complaint-notes-count">✎ {c.note_count}</small>}
               </div>
-              <button className="row-action" id={`open-complaint-${c.id}`} onClick={() => void openComplaint(c)}>Open →</button>
+              <button type="button" className="button primary complaint-open" id={`open-complaint-${c.id}`} aria-label={`Open complaint ${c.ticket_number} for ${c.customer_name}`} onClick={() => void openComplaint(c)}>Open →</button>
             </div>
           ))}
         </div>
