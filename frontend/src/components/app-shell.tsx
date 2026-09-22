@@ -64,8 +64,8 @@ const complaintLinks = [
   ["/complaints", "Complaints", "⚑"],
 ] as const;
 const receptionistLinks = [
-  ["/capture", "Capture Lead", "＋"],
   ["/receptionist-dashboard", "Dashboard", "◱"],
+  ["/capture", "Capture Lead", "＋"],
   ["/complaints", "Complaints", "⚑"],
 ] as const;
 
@@ -110,7 +110,7 @@ export function AppShell({ children, role }: AppShellProps) {
 
   if (sessionConflict) {
     const actualRole = sessionConflict.role === "META_UPLOADER" ? "Meta Uploader" : sessionConflict.role === "SERVICE" ? "Service Department" : sessionConflict.role === "FEEDBACK" ? "Feedback Caller" : sessionConflict.role === "CEO" ? "CEO" : sessionConflict.role === "ADMIN" ? "Admin" : sessionConflict.role === "SALES_MANAGER" ? "Sales Manager" : sessionConflict.role === "RECEPTIONIST" ? "Receptionist" : sessionConflict.role === "CRE" ? "CE" : sessionConflict.role === "COMPLAINTS" ? "Complaints department" : "PS/SO";
-    const actualHome = sessionConflict.role === "META_UPLOADER" ? "/bulk-upload" : sessionConflict.role === "SERVICE" ? "/services" : sessionConflict.role === "FEEDBACK" ? "/feedback" : sessionConflict.role === "CEO" ? "/ceo" : sessionConflict.role === "ADMIN" ? "/leads" : sessionConflict.role === "SALES_MANAGER" ? "/manager/analytics" : sessionConflict.role === "RECEPTIONIST" ? "/capture" : sessionConflict.role === "COMPLAINTS" ? "/complaints" : "/my-leads";
+    const actualHome = sessionConflict.role === "META_UPLOADER" ? "/bulk-upload" : sessionConflict.role === "SERVICE" ? "/services" : sessionConflict.role === "FEEDBACK" ? "/feedback" : sessionConflict.role === "CEO" ? "/ceo" : sessionConflict.role === "ADMIN" ? "/leads" : sessionConflict.role === "SALES_MANAGER" ? "/manager/analytics" : sessionConflict.role === "RECEPTIONIST" ? "/receptionist-dashboard" : sessionConflict.role === "COMPLAINTS" ? "/complaints" : "/my-leads";
     const actualName = `${sessionConflict.first_name} ${sessionConflict.last_name}`.trim() || sessionConflict.email;
     return (
       <main className="page" style={{ maxWidth: "32rem", margin: "6rem auto", textAlign: "center" }}>
@@ -130,7 +130,7 @@ export function AppShell({ children, role }: AppShellProps) {
     );
   }
 
-  const homeHref = role === "Meta Uploader" ? "/bulk-upload" : role === "Service Department" ? "/services" : role === "Feedback Caller" ? "/feedback" : role === "CEO" ? "/ceo" : role === "Admin" ? "/leads" : role === "Sales manager" ? "/manager/analytics" : role === "Receptionist" ? "/capture" : user?.role === "COMPLAINTS" ? "/complaints" : "/my-leads";
+  const homeHref = role === "Meta Uploader" ? "/bulk-upload" : role === "Service Department" ? "/services" : role === "Feedback Caller" ? "/feedback" : role === "CEO" ? "/ceo" : role === "Admin" ? "/leads" : role === "Sales manager" ? "/manager/analytics" : role === "Receptionist" ? "/receptionist-dashboard" : user?.role === "COMPLAINTS" ? "/complaints" : "/my-leads";
 
   return <div className={`app-shell ${["Sales officer", "Sales manager"].includes(role) ? "sales-shell" : ""} ${shellRoleClass}`}>
     <aside className="sidebar">

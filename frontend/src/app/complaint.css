@@ -63,6 +63,7 @@
 
 /* ── Complaint List ───────────────────────────────────────────────────────── */
 .complaint-list-panel{padding:0;overflow:hidden}
+.complaint-list-panel>.panel-heading{justify-content:center;text-align:center;padding:20px;border-bottom:1px solid var(--line)}
 .complaint-list{display:grid}
 .complaint-row{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto auto auto;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid #f0efec;transition:background .15s}
 .complaint-row:hover{background:#fff8f4}
