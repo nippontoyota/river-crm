@@ -68,6 +68,7 @@ def audit_value(value):
 
 class LeadViewSet(viewsets.ModelViewSet):
     serializer_class = LeadSerializer
+    shared_call_center = False
 
     def get_queryset(self):
         queryset = Lead.objects.filter(deleted_at__isnull=True).select_related("assigned_so", "assigned_ps", "qualification").annotate(
@@ -107,11 +108,26 @@ class LeadViewSet(viewsets.ModelViewSet):
         from intake.mapping import normalize_phone
         from intake.services import matching_leads
 
-        phone = normalize_phone(request.query_params.get("phone"))
-        if not phone:
-            raise ValidationError({"phone": "Enter a complete 10-digit customer phone number, optionally with +91 or a leading 0."})
+        mode = request.query_params.get("search_by", "phone")
+        query = request.query_params.get("query", request.query_params.get("phone", "")).strip()
+        if mode == "phone":
+            phone = normalize_phone(query)
+            if not phone:
+                raise ValidationError({"phone": "Enter a complete 10-digit customer phone number, optionally with +91 or a leading 0."})
+            leads = matching_leads(phone)
+        elif mode == "name":
+            if len(query) < 3 or len(query) > 160:
+                raise ValidationError({"query": "Enter between 3 and 160 characters of the customer name."})
+            leads = Lead.objects.filter(deleted_at__isnull=True, name__icontains=query)
+        elif mode == "lead_id":
+            value = query.lstrip("#")
+            if not value.isascii() or not value.isdigit() or len(value) > 18:
+                raise ValidationError({"query": "Enter a numeric lead ID."})
+            leads = Lead.objects.filter(deleted_at__isnull=True, pk=int(value))
+        else:
+            raise ValidationError({"search_by": "Choose phone, name, or lead_id."})
         # Deliberately bypass queue filters; the explicit serializer limits team visibility.
-        leads = matching_leads(phone).select_related("assigned_so", "assigned_ps").order_by("-enquiry_date", "-id")
+        leads = leads.select_related("assigned_so", "assigned_ps").order_by("-enquiry_date", "-id")
         page = self.paginate_queryset(leads)
         serializer = CustomerLookupSerializer(page if page is not None else leads, many=True, context={"request": request})
         return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
@@ -252,7 +268,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         is_cre = request.user.role == User.Role.CRE
         owner_filter = {"assigned_so": request.user} if is_cre else {"assigned_ps": request.user}
         queryset = Lead.objects.filter(deleted_at__isnull=True, **owner_filter)
-        open_followup = Q(follow_ups__id__isnull=False, follow_ups__resolved_at__isnull=True)
+        open_followup = Q(follow_ups__id__isnull=False, follow_ups__resolved_at__isnull=True, follow_ups__origin="OUTBOUND")
         due_followup = open_followup & Q(follow_ups__scheduled_for__date__lte=today)
         missed_followup = open_followup & Q(follow_ups__scheduled_for__date__lt=today)
         followup_filter = due_followup
@@ -341,9 +357,9 @@ class LeadViewSet(viewsets.ModelViewSet):
         lead = self.get_object()
         lead_updated_at = lead.updated_at
         user_field = "assigned_so_id" if request.user.role == User.Role.CRE else "assigned_ps_id"
-        if not request.user.is_admin and getattr(lead, user_field) != request.user.id:
+        if not self.shared_call_center and not request.user.is_admin and getattr(lead, user_field) != request.user.id:
             return Response({"detail": "This lead is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = SOLeadUpdateSerializer(data=request.data, context={"lead": lead, "user": request.user, "current_source": lead.source})
+        serializer = SOLeadUpdateSerializer(data=request.data, context={"lead": lead, "user": request.user, "current_source": lead.source, "call_center": self.shared_call_center})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         sales_call = request.user.role == User.Role.SALES_OFFICER or (request.user.is_admin and (data.get("call_status") or data.get("call_outcome") in PS_CALL_OUTCOME_STATUS_OPTIONS))
@@ -408,25 +424,23 @@ class LeadViewSet(viewsets.ModelViewSet):
             if "phone" in data and data["phone"] != lead.phone:
                 lock_phones(lead.phone, data["phone"])
                 guard_manual_phone(data["phone"], lead.pk)
-            if not request.user.is_admin or "whatsapp_agreed" in data:
-                actor = User.objects.select_for_update().filter(
-                    pk=request.user.pk,
-                    is_active=True,
-                    deleted_at__isnull=True,
-                ).first()
+            check_actor = not request.user.is_admin or "whatsapp_agreed" in data
+            check_ps = bool(ps_officer and (request.user.role == User.Role.CRE or self.shared_call_center))
+            user_ids = ({request.user.pk} if check_actor else set()) | ({ps_officer.pk} if check_ps else set())
+            # Shared assistance and personal qualification must lock accounts in the same order.
+            locked_users = {user.pk: user for user in User.objects.select_for_update(no_key=True).filter(
+                pk__in=user_ids, is_active=True, deleted_at__isnull=True,
+            ).order_by("pk")}
+            if check_actor:
+                actor = locked_users.get(request.user.pk)
                 if not actor:
                     return Response(
                         {"detail": "Your account is no longer active. Refresh the page."},
                         status=status.HTTP_409_CONFLICT,
                     )
-            if ps_officer and request.user.role == User.Role.CRE:
-                ps_officer = User.objects.select_for_update().filter(
-                    pk=ps_officer.pk,
-                    role=User.Role.SALES_OFFICER,
-                    is_active=True,
-                    deleted_at__isnull=True,
-                ).first()
-                if not ps_officer:
+            if check_ps:
+                ps_officer = locked_users.get(ps_officer.pk)
+                if not ps_officer or ps_officer.role != User.Role.SALES_OFFICER:
                     return Response(
                         {"detail": "That PS/SO is no longer active. Refresh and choose again."},
                         status=status.HTTP_409_CONFLICT,
@@ -437,7 +451,7 @@ class LeadViewSet(viewsets.ModelViewSet):
                     {"detail": "This lead changed while you were editing it. Refresh and try again."},
                     status=status.HTTP_409_CONFLICT,
                 )
-            if not request.user.is_admin and getattr(lead, user_field) != request.user.id:
+            if not self.shared_call_center and not request.user.is_admin and getattr(lead, user_field) != request.user.id:
                 return Response(
                     {"detail": "This lead is no longer assigned to you. Refresh the page."},
                     status=status.HTTP_409_CONFLICT,
@@ -449,7 +463,7 @@ class LeadViewSet(viewsets.ModelViewSet):
                 if field in data:
                     setattr(lead, field, data[field])
             update_fields = ["status", "category", "sales_outcome", *[field for field in editable_fields if field in data], "updated_at"]
-            if ps_officer and request.user.role == User.Role.CRE:
+            if ps_officer and (request.user.role == User.Role.CRE or self.shared_call_center):
                 lead.assigned_ps = ps_officer
                 update_fields.append("assigned_ps")
             lead.save(update_fields=update_fields)
@@ -464,14 +478,14 @@ class LeadViewSet(viewsets.ModelViewSet):
                 record.save()
                 if qualification_before != qualification:
                     LeadAudit.objects.create(lead=lead, actor=request.user, event="qualification_updated", before=qualification_before, after=qualification)
-            if any(field in data for field in ("status", "sales_outcome", "remarks", "call_status", "call_outcome", "follow_up_at")):
-                FollowUp.objects.filter(lead=lead, resolved_at__isnull=True).update(resolved_at=timezone.now())
+            if not self.shared_call_center and any(field in data for field in ("status", "sales_outcome", "remarks", "call_status", "call_outcome", "follow_up_at")):
+                FollowUp.objects.filter(lead=lead, resolved_at__isnull=True, origin="OUTBOUND").update(resolved_at=timezone.now())
                 CallLog.objects.create(lead=lead, so=request.user, status=next_status, call_status=data.get("call_status", ""), outcome=data.get("call_outcome", ""), remarks=data.get("remarks", ""))
                 if follow_up_at := data.get("follow_up_at"):
                     FollowUp.objects.create(lead=lead, so=request.user, scheduled_for=follow_up_at)
             after = {field: audit_value(getattr(lead, field)) for field in ("status", "category", "sales_outcome", *editable_fields)}
             LeadAudit.objects.create(lead=lead, actor=request.user, event="so_updated", before=before, after=after)
-            if ps_officer and request.user.role == User.Role.CRE:
+            if ps_officer and (request.user.role == User.Role.CRE or self.shared_call_center):
                 LeadAudit.objects.create(lead=lead, actor=request.user, event="assigned_ps", after={"assigned_ps": ps_officer.id})
                 Notification.objects.create(user=ps_officer, lead=lead, kind=Notification.Kind.ASSIGNMENT, message=f"You have a qualified lead: {lead.name}.")
         return Response(LeadDetailSerializer(self.get_object(), context={"request": request}).data)
@@ -780,7 +794,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             lead.sales_outcome = serializer.validated_data["sales_outcome"]
             lead.save(update_fields=["status", "sales_outcome", "updated_at"])
             CallLog.objects.create(lead=lead, so=request.user, status=next_status, call_status=serializer.validated_data.get("call_status", ""), outcome=serializer.validated_data.get("call_outcome", ""), remarks=serializer.validated_data.get("remarks", ""))
-            FollowUp.objects.filter(lead=lead, resolved_at__isnull=True).update(resolved_at=timezone.now())
+            FollowUp.objects.filter(lead=lead, resolved_at__isnull=True, origin="OUTBOUND").update(resolved_at=timezone.now())
             if follow_up_at := serializer.validated_data.get("follow_up_at"):
                 FollowUp.objects.create(lead=lead, so=request.user, scheduled_for=follow_up_at)
             LeadAudit.objects.create(lead=lead, actor=request.user, event="status_changed", before={"status": previous, "sales_outcome": previous_sales_outcome}, after={"status": next_status, "sales_outcome": lead.sales_outcome})

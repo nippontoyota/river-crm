@@ -1107,3 +1107,24 @@
 @media (max-width: 620px) {
   .ownership-grid, .lookup-facts { grid-template-columns: 1fr; gap: 16px; }
 }
+
+.call-center-workspace .call-center-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; margin: 20px 0; }
+.call-center-workspace .call-center-heading h2 { margin: 0; }
+.call-center-action-bar { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.call-center-action-bar [aria-pressed="true"] { background: #00332e; color: white; }
+.call-center-notice { border-left: 3px solid #0b8c6b; background: #edf6f1; padding: 14px 16px; line-height: 1.6; }
+.call-center-form { display: grid; gap: 14px; margin-top: 18px; }
+.call-center-form label { display: grid; gap: 6px; }
+.call-center-form .call-center-check { display: flex; align-items: start; gap: 10px; font-size: 14px; font-weight: normal; line-height: 1.5; }
+.call-center-form .call-center-check input { width: 18px; height: 18px; flex: 0 0 18px; margin-top: 2px; }
+.call-center-form footer { display: flex; flex-wrap: wrap; justify-content: end; gap: 10px; }
+.call-center-task { display: flex; gap: 16px; justify-content: space-between; align-items: start; border-top: 1px solid var(--line); padding: 14px 0; }
+.call-center-history { border-top: 1px solid var(--line); padding: 16px 0; overflow-wrap: anywhere; }
+.call-center-history h4 { margin: 0 0 10px; }
+.call-center-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+.call-center-workspace summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+.call-center-callbacks { margin: 20px 0; }
+@media (max-width: 620px) {
+  .call-center-workspace .call-center-heading, .call-center-task { flex-direction: column; }
+  .call-center-workspace .sales-hero-actions > *, .call-center-form footer > * { flex: 1; }
+}

@@ -31,6 +31,7 @@ const ceoLinks = [
 ] as const;
 const feedbackLinks = [["/feedback", "Feedback calls", "◷"]] as const;
 const adminLinks = [
+  ["/call-center", "Call center review", "☎"],
   ["/services", "Services", "⚒"],
   ["/feedback", "Feedback", "◷"],
   ["/business-controls", "Targets & finance", "◫"],
@@ -55,7 +56,8 @@ const managerLinks = [
 ] as const;
 const creLinks = [
   ["/services", "Services", "⚒"],
-  ["/my-leads", "My queue", "◫"],
+  ["/my-leads", "My assigned leads", "◫"],
+  ["/call-center", "Call center / All customers", "☎"],
   ["/follow-ups", "Follow-ups", "◷"],
   ["/complaints", "Complaints", "⚑"],
   ["/my-analytics", "My results", "◔"],

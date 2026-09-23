@@ -4,10 +4,12 @@ from rest_framework.test import APIClient
 from accounts.models import User
 from complaints.catalogue import COMPLAINT_SUBTYPES
 from complaints.models import Complaint
+from leads.models import SystemConfig
 
 
 class ComplaintSubtypeTests(TestCase):
     def setUp(self):
+        SystemConfig.objects.create(id=1, lists={"branches": ["Kochi"]})
         self.client = APIClient()
         self.cre = User.objects.create_user(email="subtype-cre@example.com", role=User.Role.CRE)
         self.client.force_authenticate(self.cre)

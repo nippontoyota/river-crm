@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -20,6 +21,8 @@ class CustomerLookupTests(TestCase):
         SystemConfig.objects.create(id=1, lists={"branches": ["Kochi", "Central"], "models": ["Indie"], "colorVariants": ["Blue"]})
 
     def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
         self.client = APIClient()
         self.client.force_authenticate(self.ce)
 
@@ -64,7 +67,7 @@ class CustomerLookupTests(TestCase):
                     user.save(update_fields=["is_active", "deleted_at"])
                     self.assertEqual(self.lookup().status_code, 403)
 
-    def test_team_response_is_limited_and_full_access_does_not_expand(self):
+    def test_search_summary_is_limited_and_personal_endpoints_stay_scoped(self):
         LeadQualification.objects.create(lead=self.other, notes="Private qualification")
         CallLog.objects.create(lead=self.other, so=self.other_ce, status="FRESH", remarks="Private call")
         rows = self.lookup().data["results"]
@@ -74,7 +77,7 @@ class CustomerLookupTests(TestCase):
             self.assertEqual(set(row["ownership"]), {"assigned_ps", "needs_so_reassignment", "branch", "manager_branch", "managers"})
             self.assertEqual(set(row["ownership"]["assigned_ps"]), {"id", "name", "phone", "branch", "lifecycle_status"})
         self.assertTrue(rows[0]["can_open"])
-        self.assertFalse(rows[1]["can_open"])
+        self.assertTrue(rows[1]["can_open"])
         self.assertEqual(rows[1]["assigned_ce"]["name"], "Other CE")
         self.assertEqual(self.client.get(f"/api/leads/{self.other.id}/").status_code, 404)
         self.assertEqual(self.client.patch(f"/api/leads/{self.other.id}/", {"name": "Changed"}, format="json").status_code, 404)
@@ -132,7 +135,7 @@ class CustomerLookupTests(TestCase):
         self.assertEqual(self.detail()["ownership"]["assigned_ps"]["name"], "New PS")
         self.assertEqual(self.lookup().data["results"][0]["ownership"]["assigned_ps"]["phone"], replacement.phone)
         Lead.objects.filter(pk=self.lead.pk).update(assigned_so=self.other_ce)
-        self.assertFalse(self.lookup().data["results"][0]["can_open"])
+        self.assertTrue(self.lookup().data["results"][0]["can_open"])
         self.assertEqual(self.client.get(f"/api/leads/{self.lead.id}/").status_code, 404)
 
     def test_unassigned_reassignment_inactive_deleted_and_missing_phones(self):

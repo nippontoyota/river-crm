@@ -251,7 +251,7 @@ class CustomerLookupSerializer(serializers.ModelSerializer):
 
     def get_can_open(self, obj):
         user = self.context["request"].user
-        return user.role == User.Role.CRE and obj.assigned_so_id == user.id
+        return user.role in {User.Role.CRE, User.Role.ADMIN} and user.is_active and not user.deleted_at
 
     class Meta:
         model = Lead
@@ -287,7 +287,11 @@ class LeadDetailSerializer(LeadSerializer):
 
     def get_outcome_policy(self, obj):
         request = self.context.get("request")
-        return outcome_policy(obj, request.user if request else None)
+        policy = outcome_policy(obj, request.user if request else None)
+        if self.context.get("call_center") and request and request.user.role in {"CRE", "ADMIN"}:
+            from .outcomes import is_closed
+            policy["can_update"] = request.user.is_active and not request.user.deleted_at and not is_closed(obj)
+        return policy
 
     call_history = serializers.SerializerMethodField()
     follow_up_history = serializers.SerializerMethodField()
@@ -396,7 +400,9 @@ class SOLeadUpdateSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"follow_up_at": "Follow-up cannot be scheduled more than 3 days in advance."})
         follow_up_statuses = [Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.WALKIN]
         if next_status in [Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.WALKIN] and not follow_up_at:
-            raise serializers.ValidationError({"follow_up_at": "This status requires a follow-up time."})
+            lead = self.context.get("lead")
+            if not (self.context.get("call_center") and lead and lead.follow_ups.filter(resolved_at__isnull=True, scheduled_for__gt=timezone.now(), so__is_active=True, so__deleted_at__isnull=True, reminder_held=False).exists()):
+                raise serializers.ValidationError({"follow_up_at": "Schedule a callback before selecting this status." if self.context.get("call_center") else "This status requires a follow-up time."})
         if follow_up_at and next_status not in [None, Lead.Status.FRESH, *follow_up_statuses]:
             raise serializers.ValidationError({"follow_up_at": "Only callbacks and walk-ins can have an appointment."})
         return attrs

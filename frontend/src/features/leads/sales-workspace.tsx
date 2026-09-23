@@ -14,7 +14,7 @@ import { ActivityFields } from "@/components/activity-fields";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLead, getCurrentUser, getLeadDetail, getMyDashboard, getOfficers, sourceName, toOfficer, updateMyLead, type CurrentUser, type LeadDetail, type LeadInput, type SystemConfig, type LeadQualification, type Officer, type SalesDashboard, type SalesLead, getSystemConfig } from "@/lib/crm";
-import { CustomerLookup } from "./customer-lookup";
+import { InboundCallbacks } from "./call-center-actions";
 import { LeadOwnershipPanel, ownerState } from "./lead-ownership";
 import { SOLeadForm } from "@/features/leads/so-lead-form";
 import { DateInput } from "@/components/date-input";
@@ -155,7 +155,6 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [completingDrive, setCompletingDrive] = useState(false);
-  const [lookupOpen, setLookupOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [editingLead, setEditingLead] = useState(false);
   const [leadFields, setLeadFields] = useState<LeadFields | null>(null);
@@ -395,7 +394,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const leadSearch = <label className="sales-search followup-lead-search">⌕<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name or mobile..." /></label>;
 
   return <section className="page sales-workspace">
-    <div className="sales-hero"><div>{!isPs && <p className="eyebrow">CE WORKSPACE</p>}<h1>{isPs ? followUpsOnly ? "Today's follow-ups" : allLeadsOnly ? "All leads" : "Fresh leads" : "My queue"}</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions">{user?.role === "CRE" && <button className="filter" onClick={() => setLookupOpen(true)}>Customer lookup</button>}<button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{isPs ? <button className="button primary" onClick={() => setAddingSoLead(true)}>＋ Add my lead</button> : <button className="button primary" onClick={() => { setAddLeadError(""); setConfigLoading(true); setConfigError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
+    <div className="sales-hero"><div>{!isPs && <p className="eyebrow">CE WORKSPACE</p>}<h1>{isPs ? followUpsOnly ? "Today's follow-ups" : allLeadsOnly ? "All leads" : "Fresh leads" : "My assigned leads"}</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions">{user?.role === "CRE" && <Link className="filter" href="/call-center">Call center / All customers</Link>}<button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{isPs ? <button className="button primary" onClick={() => setAddingSoLead(true)}>＋ Add my lead</button> : <button className="button primary" onClick={() => { setAddLeadError(""); setConfigLoading(true); setConfigError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
     {isPs && followUpsOnly ? <div className="followup-overview"><section className="sales-metrics compact">{metricCards}</section><div className="followup-search-pane">{leadSearch}</div></div> : <section className="sales-overview-grid" aria-label="Lead overview">{!followUpsOnly && <EtbrTiles data={summary} embedded exclude={isPs ? ["etbr_booked", "etbr_retailed"] : undefined} actions={!isPs ? { etbr_test_drive_completed: () => selectMetric("test_drive_completed") } : undefined} active={section === "test_drive_completed" ? "etbr_test_drive_completed" : undefined} />}{metricCards}</section>}
     
     {isPs ? (
@@ -425,7 +424,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
     )}
 
     {error && !detail && <p className="form-error" role="alert">{error}</p>}
-    {lookupOpen && <CustomerLookup onClose={() => setLookupOpen(false)} onOpenLead={lead => { setLookupOpen(false); void openLead(lead); }} />}
+    {followUpsOnly && user && <InboundCallbacks />}
     {editingLead && leadFields && <LeadEditPanel fields={leadFields} config={config} loading={configLoading} error={configError} onChange={setLeadFields} onClose={() => setEditingLead(false)} onSave={() => void saveLeadFields()} saving={saving} />}
     {notice && <div className="toast" role="status">{notice}<button aria-label="Dismiss" onClick={() => setNotice("")}>×</button></div>}
     {detailLoading && <div className="modal-layer"><section className="modal sales-loading-modal"><span className="sales-spinner" /><p>Opening lead history…</p></section></div>}

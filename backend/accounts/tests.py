@@ -78,6 +78,10 @@ class ResetProductionDataTests(TestCase):
         VehicleEvent.objects.create(vehicle=vehicle, actor=self.worker, reason="registered")
         complaint = Complaint.objects.create(customer_name="Demo", customer_phone="7000000000", category=Complaint.Category.OTHER, subject="Demo", description="Demo", logged_by=self.worker, related_lead=self.lead)
         ComplaintNote.objects.create(complaint=complaint, author=self.worker, content="Demo")
+        from uuid import uuid4
+        from leads.models import InboundInteraction
+        inbound = InboundInteraction.objects.create(submission_id=uuid4(), fingerprint="fixture", kind="COMPLAINT", lead=self.lead, handled_by=self.worker, complaint=complaint, service_request=service, notes="Customer request")
+        InboundInteraction.objects.create(submission_id=uuid4(), fingerprint="review", kind="REVIEW", lead=self.lead, handled_by=self.admin, review_of=inbound, notes="Reviewed")
         batch = UploadBatch.objects.create(filename="demo.xlsx", storage_path="imports/demo.xlsx", uploaded_by=self.admin)
         UploadRow.objects.create(batch=batch, row_number=1, duplicate_of=self.lead)
         SystemConfig.objects.create(id=1, lists={"branches": ["Kochi"], "colorVariants": ["Blue"]})

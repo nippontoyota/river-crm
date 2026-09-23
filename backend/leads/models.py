@@ -112,6 +112,7 @@ class FollowUp(models.Model):
     resolved_at = models.DateTimeField(null=True, blank=True)
     notified_at = models.DateTimeField(null=True, blank=True)
     reminder_held = models.BooleanField(default=False, db_index=True)
+    origin = models.CharField(max_length=8, default="OUTBOUND", choices=[("OUTBOUND", "Outbound"), ("INBOUND", "Inbound")], db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
 
@@ -152,3 +153,33 @@ class LeadAudit(models.Model):
 class SystemConfig(models.Model):
     lists = models.JSONField(default=dict, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class InboundInteraction(models.Model):
+    class State(models.TextChoices):
+        RECORDED = "RECORDED", "Recorded"
+        UNMATCHED = "UNMATCHED", "Unmatched customer"
+        AWAITING_ROUTING = "AWAITING_ROUTING", "Awaiting routing"
+        RESOLVED = "RESOLVED", "Reviewed"
+
+    submission_id = models.UUIDField(unique=True)
+    fingerprint = models.CharField(max_length=64)
+    kind = models.CharField(max_length=24)
+    lead = models.ForeignKey(Lead, null=True, blank=True, on_delete=models.PROTECT, related_name="inbound_interactions")
+    handled_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="inbound_interactions")
+    caller_name = models.CharField(max_length=160, blank=True)
+    caller_phone = models.CharField(max_length=10, blank=True)
+    reason = models.CharField(max_length=160, blank=True)
+    notes = models.TextField()
+    state = models.CharField(max_length=20, choices=State.choices, default=State.RECORDED, db_index=True)
+    callback_at = models.DateTimeField(null=True, blank=True)
+    follow_up = models.ForeignKey(FollowUp, null=True, blank=True, on_delete=models.PROTECT, related_name="inbound_interactions")
+    complaint = models.ForeignKey("complaints.Complaint", null=True, blank=True, on_delete=models.PROTECT)
+    service_request = models.ForeignKey("servicing.ServiceRequest", null=True, blank=True, on_delete=models.PROTECT)
+    owner_snapshot = models.JSONField(default=dict)
+    review_of = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="reviews")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]

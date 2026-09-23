@@ -90,6 +90,7 @@ class ComplaintViewSet(ModelViewSet):
     @transaction.atomic
     def update(self, request, *args, **kwargs):
         complaint = self.get_object()
+        complaint = Complaint.objects.select_for_update().get(pk=complaint.pk)
         before = {"status": complaint.status, "priority": complaint.priority, "assigned_to_id": complaint.assigned_to_id}
         previous_resolution_notes = complaint.resolution_notes
         serializer = ComplaintUpdateSerializer(

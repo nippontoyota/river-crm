@@ -72,3 +72,33 @@ DATABASE_URL=sqlite:///:memory: backend/.venv/bin/python backend/manage.py test 
 ```
 
 From `frontend`, run `npm run typecheck`, `npm run lint`, and `npm run build`.
+
+
+## Shared call-center assistance
+
+CE and Admin accounts use **Call center / All customers** to find enquiries across
+branches by complete normalized phone, partial name (at least 3 characters), or
+lead ID. Results are paginated; the caller's enquiry must be selected and confirmed.
+**My assigned leads** keeps its existing ownership scope. Shared reads and updates
+use `/api/call-center/leads/{id}/`; personal lead API permissions are unchanged.
+
+Inbound records identify the answering employee separately from assigned CE/PS.
+They keep the actual caller number without replacing the registered customer phone,
+and do not add outbound call attempts or automatically clear existing reminders.
+Callbacks route to the assigned CE before handoff and the assigned PS afterwards.
+Missing or inactive owners, incomplete requests, and unmatched callers appear in
+Admin's review queue. Inbound callbacks stay available on Follow-ups even when the
+sales enquiry is closed.
+
+The shared screen supports linked complaint/service intake and customer messages
+on existing tickets. Department status permissions remain unchanged. Legacy phone
+matches need explicit confirmation; creating a separate issue when an active ticket
+exists also requires confirmation. Closed sales enquiries accept inbound assistance
+without reopening. Version checks reject stale writes, and submission UUIDs make
+retries safe. Browser drafts are retained while refreshing the selected record.
+
+Deploy backend migration `leads.0021_inbound_call_center` before the frontend. It
+adds the interaction history and a follow-up origin, defaulting existing follow-ups
+to `OUTBOUND`. Existing reminder jobs deliver callbacks; no telephony or external
+messaging integration is added. Run `leads.test_call_center` against PostgreSQL to
+exercise concurrency checks; SQLite skips those four tests.

@@ -1,7 +1,7 @@
 import uuid
 
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 
 
 class Complaint(models.Model):
@@ -76,10 +76,14 @@ class Complaint(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.ticket_number:
-            last = Complaint.objects.order_by("-id").values_list("id", flat=True).first()
-            next_id = (last or 0) + 1
-            self.ticket_number = f"CMP-{next_id:05d}"
-        super().save(*args, **kwargs)
+            # Allocate from the real primary key so simultaneous intake cannot collide.
+            with transaction.atomic():
+                self.ticket_number = f"TMP-{uuid.uuid4().hex[:16]}"
+                super().save(*args, **kwargs)
+                self.ticket_number = f"CMP-{self.pk:05d}"
+                type(self).objects.filter(pk=self.pk).update(ticket_number=self.ticket_number)
+        else:
+            super().save(*args, **kwargs)
 
 
 class ComplaintNote(models.Model):

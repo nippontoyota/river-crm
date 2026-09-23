@@ -13,7 +13,7 @@ from ceo.models import FinancialEntry, Milestone, OperationEvent, SaleAccount, S
 from complaints.models import Complaint, ComplaintNote
 from feedback.models import FeedbackAssignment, FeedbackAttempt, FeedbackIssue, FeedbackIssueEvent, FeedbackRequest, FeedbackTask
 from intake.models import Connection, Heartbeat, IntakeAudit, IntakeForm, MappingVersion, Submission
-from leads.models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
+from leads.models import CallLog, FollowUp, InboundInteraction, Lead, LeadAudit, LeadQualification, SystemConfig
 from notifications.models import Notification, WhatsAppContact, WhatsAppMessage
 from servicing.models import ServiceEvent, ServiceRequest, Vehicle, VehicleEvent
 from uploads.models import UploadBatch, UploadRow
@@ -21,6 +21,7 @@ from uploads.storage import delete_paths
 
 
 DELETE_MODELS = [
+    InboundInteraction,
     OperationEvent,
     Milestone,
     TargetRevision,
@@ -102,6 +103,7 @@ class Command(BaseCommand):
         password_hash = keeper.password
         with transaction.atomic():
             keeper = User.objects.select_for_update().get(pk=keeper.pk)
+            InboundInteraction.objects.filter(review_of__isnull=False).delete()
             FinancialEntry.objects.filter(kind="REVERSAL").delete()
             for model in DELETE_MODELS:
                 model.objects.all().delete()
