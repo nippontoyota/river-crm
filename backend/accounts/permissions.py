@@ -22,6 +22,15 @@ class IsAdminReceptionistOrCRE(BasePermission):
         return bool(request.user and request.user.is_authenticated and (request.user.is_admin or getattr(request.user, "role", None) in ["RECEPTIONIST", "CRE"]))
 
 
+class IsActiveAdminOrCRE(BasePermission):
+    message = "Active Admin or CE access is required."
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and user.is_active and not user.deleted_at
+                    and user.role in {"ADMIN", "CRE"})
+
+
 class IsSalesManager(BasePermission):
     message = "Sales Manager access is required."
 

@@ -14,14 +14,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import User
-from accounts.permissions import IsAdmin, IsAdminOrReceptionist, IsAdminReceptionistOrCRE, IsSalesManager, IsSalesOfficer
+from accounts.permissions import IsActiveAdminOrCRE, IsAdmin, IsAdminOrReceptionist, IsAdminReceptionistOrCRE, IsSalesManager, IsSalesOfficer
 from notifications.models import Notification
 from notifications.serializers import WhatsAppAgreementSerializer
 from notifications.whatsapp import may_record_agreement, save_agreement
 from .outcomes import CLOSED_STATUSES, outcome_policy, validate_milestone_change
 from .metrics import etbr_aggregates
 from .phone_lock import guard_manual_phone, lock_phones
-from .serializers import validate_configured_choice
+from .serializers import CustomerLookupSerializer, validate_configured_choice
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from .serializers import CALL_OUTCOME_STATUS_OPTIONS, PS_CALL_OUTCOME_STATUS_OPTIONS, AssignmentSerializer, BulkDistributeSerializer, FollowUpReviewSerializer, FollowUpSerializer, LeadDetailSerializer, LeadSerializer, LeadUpdateSerializer, PSAssignmentSerializer, SOLeadCreateSerializer, SOLeadListSerializer, SOLeadUpdateSerializer, SystemConfigSerializer
 
@@ -101,6 +101,20 @@ class LeadViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         return Response(LeadDetailSerializer(self.get_object(), context={"request": request}).data)
+
+    @action(detail=False, methods=["get"], url_path="customer-lookup", permission_classes=[IsActiveAdminOrCRE])
+    def customer_lookup(self, request):
+        from intake.mapping import normalize_phone
+        from intake.services import matching_leads
+
+        phone = normalize_phone(request.query_params.get("phone"))
+        if not phone:
+            raise ValidationError({"phone": "Enter a complete 10-digit customer phone number, optionally with +91 or a leading 0."})
+        # Deliberately bypass queue filters; the explicit serializer limits team visibility.
+        leads = matching_leads(phone).select_related("assigned_so", "assigned_ps").order_by("-enquiry_date", "-id")
+        page = self.paginate_queryset(leads)
+        serializer = CustomerLookupSerializer(page if page is not None else leads, many=True, context={"request": request})
+        return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
 
     @action(detail=True, methods=["patch"], url_path="whatsapp-agreement", serializer_class=WhatsAppAgreementSerializer)
     def whatsapp_agreement(self, request, pk=None):
@@ -315,7 +329,11 @@ class LeadViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(source=value)
         if value := request.query_params.get("q"):
             queryset = queryset.filter(Q(name__icontains=value) | Q(phone__icontains=value) | Q(campaign__icontains=value) | Q(model_interest__icontains=value) | Q(branch__icontains=value))
-        leads = queryset.distinct().order_by("-enquiry_date", "-created_at").only("id", "status", "name", "phone", "source", "flagged_to_manager")
+        leads = queryset.select_related("assigned_ps").distinct().order_by("-enquiry_date", "-created_at").only(
+            "id", "status", "name", "phone", "source", "flagged_to_manager", "branch", "needs_so_reassignment",
+            "assigned_ps__id", "assigned_ps__first_name", "assigned_ps__last_name", "assigned_ps__email",
+            "assigned_ps__is_active", "assigned_ps__deleted_at", "assigned_ps__location",
+        )
         return Response({"summary": summary, "section": section, "results": SOLeadListSerializer(leads, many=True).data})
 
     @action(detail=True, methods=["patch"], url_path="so-update")

@@ -198,13 +198,69 @@ class SOLeadCreateSerializer(LeadSerializer):
 
 
 class SOLeadListSerializer(serializers.ModelSerializer):
+    assigned_ps_name = serializers.CharField(source="assigned_ps.history_display_name", read_only=True, default=None)
+    assigned_ps_status = serializers.CharField(source="assigned_ps.lifecycle_status", read_only=True, default=None)
+    assigned_ps_branch = serializers.CharField(source="assigned_ps.location", read_only=True, default="")
+
     class Meta:
         model = Lead
-        fields = ["id", "status", "name", "phone", "source", "flagged_to_manager"]
+        fields = ["id", "status", "name", "phone", "source", "flagged_to_manager", "assigned_ps", "assigned_ps_name", "assigned_ps_status", "assigned_ps_branch", "branch", "needs_so_reassignment"]
+
+
+class OwnerContactSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source="history_display_name")
+    branch = serializers.CharField(source="location")
+
+    class Meta:
+        model = User
+        fields = ["id", "name", "phone", "branch", "lifecycle_status"]
+
+
+class LeadOwnershipSerializer(serializers.ModelSerializer):
+    assigned_ps = OwnerContactSerializer(read_only=True)
+    managers = serializers.SerializerMethodField()
+    manager_branch = serializers.SerializerMethodField()
+
+    def get_manager_branch(self, obj):
+        return obj.branch.strip() or (obj.assigned_ps.location.strip() if obj.assigned_ps else "")
+
+    def get_managers(self, obj):
+        # One request-local manager query, shared by every lookup result.
+        if "branch_managers" not in self.context:
+            managers = {}
+            for manager in User.objects.filter(role=User.Role.SALES_MANAGER, is_active=True, deleted_at__isnull=True).order_by("first_name", "last_name", "id"):
+                branch = manager.location.strip().casefold()
+                if branch:
+                    managers.setdefault(branch, []).append(OwnerContactSerializer(manager).data)
+            self.context["branch_managers"] = managers
+        return self.context["branch_managers"].get(self.get_manager_branch(obj).casefold(), [])
+
+    class Meta:
+        model = Lead
+        fields = ["assigned_ps", "needs_so_reassignment", "branch", "manager_branch", "managers"]
+
+
+class CustomerLookupSerializer(serializers.ModelSerializer):
+    assigned_ce = serializers.SerializerMethodField()
+    ownership = LeadOwnershipSerializer(source="*", read_only=True)
+    can_open = serializers.SerializerMethodField()
+
+    def get_assigned_ce(self, obj):
+        owner = obj.assigned_so
+        return {"id": owner.id, "name": owner.history_display_name, "lifecycle_status": owner.lifecycle_status} if owner else None
+
+    def get_can_open(self, obj):
+        user = self.context["request"].user
+        return user.role == User.Role.CRE and obj.assigned_so_id == user.id
+
+    class Meta:
+        model = Lead
+        fields = ["id", "name", "phone", "enquiry_date", "status", "branch", "assigned_ce", "needs_cre_reassignment", "ownership", "can_open"]
 
 
 class LeadDetailSerializer(LeadSerializer):
     vehicles = serializers.SerializerMethodField()
+    ownership = LeadOwnershipSerializer(source="*", read_only=True)
 
     def get_vehicles(self, obj):
         return list(obj.vehicles.values("id", "chassis_number", "model", "registration_number"))
@@ -247,7 +303,7 @@ class LeadDetailSerializer(LeadSerializer):
         return [{"event": event.event, "before": event.before, "after": event.after, "actor": event.actor.history_display_name if event.actor else "System", "created_at": event.created_at} for event in obj.audit_events.select_related("actor").order_by("-created_at")[:30]]
 
     class Meta(LeadSerializer.Meta):
-        fields = LeadSerializer.Meta.fields + ["vehicles", "call_history", "follow_up_history", "audit_history", "outcome_policy", "whatsapp"]
+        fields = LeadSerializer.Meta.fields + ["vehicles", "call_history", "follow_up_history", "audit_history", "outcome_policy", "whatsapp", "ownership"]
 
 
 class CallLogSerializer(serializers.ModelSerializer):

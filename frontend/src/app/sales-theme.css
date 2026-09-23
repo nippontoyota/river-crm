@@ -1084,3 +1084,26 @@
     padding-right: 32px;
   }
 }
+.sales-hero-actions { flex-wrap: wrap; }
+.ownership-grid, .lookup-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.ownership-panel h4 { margin: 0 0 10px; }
+.ownership-panel p { margin: 8px 0; }
+.ownership-panel { overflow-wrap: anywhere; }
+.ownership-contact { display: grid; gap: 8px; margin-top: 8px; }
+.ownership-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ownership-manager + .ownership-manager { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
+.customer-lookup-modal { margin: auto; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); border: 1px solid var(--line); color: inherit; }
+.customer-lookup-modal::backdrop { background: #15232980; }
+.customer-lookup-modal[open] { display: flex; flex-direction: column; }
+.customer-lookup-modal .sales-detail-scroll { min-height: 0; max-height: none; }
+.customer-lookup-form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.customer-lookup-form label { flex: 1; min-width: 180px; }
+.customer-lookup-result { border-top: 1px solid var(--line); padding-top: 20px; margin-top: 20px; }
+.customer-lookup-result > header { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.customer-lookup-result h3 { margin: 0; }
+.lookup-facts dt { font-size: 12px; color: var(--sales-muted); margin-bottom: 6px; }
+.lookup-facts dd { margin: 0; overflow-wrap: anywhere; }
+.lookup-facts small { display: block; }
+@media (max-width: 620px) {
+  .ownership-grid, .lookup-facts { grid-template-columns: 1fr; gap: 16px; }
+}

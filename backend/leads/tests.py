@@ -437,7 +437,7 @@ class LeadAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["summary"]["qualified"], 1)
         self.assertEqual(len(response.data["results"]), 1)
-        self.assertEqual(set(response.data["results"][0]), {"id", "status", "name", "phone", "source", "flagged_to_manager"})
+        self.assertEqual(set(response.data["results"][0]), {"id", "status", "name", "phone", "source", "flagged_to_manager", "assigned_ps", "assigned_ps_name", "assigned_ps_status", "assigned_ps_branch", "branch", "needs_so_reassignment"})
         self.assertEqual(response.data["results"][0]["status"], Lead.Status.QUALIFIED)
 
     def test_cre_all_dashboard_includes_handed_off_own_leads(self):
