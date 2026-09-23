@@ -92,3 +92,46 @@ class EtbrTests(TestCase):
         self.assertEqual(response.data["summary"]["etbr_enquired"], 1)
         self.assertEqual(sum(row["count"] for row in response.data["so_breakdown"]), 1)
         self.assertTrue(Lead.objects.filter(name="Digital", source=Lead.Source.META).exists())
+
+    def test_ce_completed_test_drive_view_matches_count_and_opens_owned_details(self):
+        path = "/api/leads/my-dashboard/?section=test_drive_completed"
+        self.client.force_authenticate(self.cre)
+        requested = self.client.get(path)
+        self.assertEqual(requested.status_code, 200)
+        self.assertEqual(requested.data["results"], [])
+        self.assertEqual(requested.data["summary"]["etbr_test_drive_completed"], 0)
+
+        self.client.force_authenticate(self.so)
+        completed = self.client.post(f"/api/leads/{self.lead.pk}/complete-test-drive/")
+        self.assertEqual(completed.status_code, 200, completed.data)
+        older = Lead.objects.create(
+            name="Earlier retail", phone="9876543213", assigned_so=self.cre, status=Lead.Status.WON,
+            enquiry_date=timezone.localdate() - timedelta(days=35), source=Lead.Source.WEBSITE,
+            test_drive_completed_at=timezone.now(), category=Lead.Category.HOT,
+        )
+        Lead.objects.create(name="Awaiting drive", phone="9876543214", assigned_so=self.cre)
+        other_ce = User.objects.create_user(email="other-ce@example.com", role=User.Role.CRE)
+        other = Lead.objects.create(name="Other CE", phone="9876543215", assigned_so=other_ce, test_drive_completed_at=timezone.now())
+        Lead.objects.create(name="Deleted", phone="9876543216", assigned_so=self.cre, test_drive_completed_at=timezone.now(), deleted_at=timezone.now())
+        CallLog.objects.create(lead=self.lead, so=self.so, status=Lead.Status.QUALIFIED, outcome="Call Me Back")
+
+        self.client.force_authenticate(self.cre)
+        response = self.client.get(path)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["summary"]["etbr_test_drive_completed"], 2)
+        self.assertEqual([row["id"] for row in response.data["results"]], [self.lead.pk, older.pk])
+        for query, expected in [
+            ("range=today", [self.lead.pk]), ("range=mtd", [self.lead.pk]),
+            ("source=WEBSITE", [older.pk]), ("category=HOT", [older.pk]),
+            ("q=Earlier", [older.pk]), ("q=Awaiting", []),
+        ]:
+            with self.subTest(query=query):
+                filtered = self.client.get(f"{path}&{query}")
+                self.assertEqual(filtered.status_code, 200, filtered.data)
+                self.assertEqual([row["id"] for row in filtered.data["results"]], expected)
+                if query.startswith("range="):
+                    self.assertEqual(filtered.data["summary"]["etbr_test_drive_completed"], len(expected))
+        detail = self.client.get(f"/api/leads/{self.lead.pk}/")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.data["test_drive_completed_at"], completed.data["test_drive_completed_at"])
+        self.assertEqual(self.client.get(f"/api/leads/{other.pk}/").status_code, 404)

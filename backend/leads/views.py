@@ -296,6 +296,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             "missed": missed_filter,
             "pending": pending_status,
             "qualified": Q(status=Lead.Status.QUALIFIED),
+            "test_drive_completed": Q(test_drive_completed_at__isnull=False),
             "walkin": Q(status=Lead.Status.WALKIN),
             "won": Q(status=Lead.Status.WON),
             "lost": Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]),
