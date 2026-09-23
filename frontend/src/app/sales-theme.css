@@ -1086,10 +1086,10 @@
 }
 .sales-hero-actions { flex-wrap: wrap; }
 .ownership-grid, .lookup-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-.ownership-panel h4 { margin: 0 0 10px; }
-.ownership-panel p { margin: 8px 0; }
+.ownership-panel p { margin: 0 0 10px; }
 .ownership-panel { overflow-wrap: anywhere; }
-.ownership-contact { display: grid; gap: 8px; margin-top: 8px; }
+.ownership-contact { display: grid; gap: 8px; }
+.ownership-contact p { margin: 0; }
 .ownership-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .ownership-manager + .ownership-manager { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
 .customer-lookup-modal { margin: auto; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); border: 1px solid var(--line); color: inherit; }
