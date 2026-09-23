@@ -5,7 +5,7 @@ import { ActivityFields } from "@/components/activity-fields";
 
 import { useEffect, useState, type FormEvent } from "react";
 import { DateInput } from "@/components/date-input";
-import { createSoLead, getSystemConfig, type CurrentUser, type SystemConfig } from "@/lib/crm";
+import { createSoLead, getSystemConfig, sourceName, type CurrentUser, type SystemConfig } from "@/lib/crm";
 import { formatDate, parseDate } from "@/lib/dates";
 
 export function SOLeadForm({ user, onClose, onCreated }: { user: CurrentUser; onClose: () => void; onCreated: (name: string) => void }) {
@@ -16,8 +16,10 @@ export function SOLeadForm({ user, onClose, onCreated }: { user: CurrentUser; on
   const change = (field: keyof typeof form, value: string) => setForm(current => ({ ...current, [field]: value }));
   const models = config?.lists.models || [];
   const colors = config?.lists.colorVariants || [];
-  const sources = config?.so_lead_sources || [];
+  const sources = config?.lists.sources || [];
   const rtos = config?.rto_options || [];
+  const branch = user.location?.trim() || "";
+  const validBranch = Boolean(branch && config?.lists.branches?.includes(branch));
 
   useEffect(() => {
     void getSystemConfig().then(setConfig).catch(() => setError("Unable to load form options. Close the form and try again."));
@@ -52,21 +54,21 @@ export function SOLeadForm({ user, onClose, onCreated }: { user: CurrentUser; on
               <label>Profession<input name="profession" maxLength={100} value={form.profession} onChange={event => change("profession", event.target.value)} placeholder="Customer profession (optional)" /></label>
               <label>City<input name="city" maxLength={100} value={form.city} onChange={event => change("city", event.target.value)} placeholder="Customer city" /></label>
               <RtoField options={rtos} value={form.rto} onChange={value => change("rto", value)} />
-              <label>Lead source *<select name="source" required value={form.source} onChange={event => change("source", event.target.value)} disabled={!sources.length}><option value="">Select how you found this customer</option>{sources.map(source => <option key={source} value={source}>{source}</option>)}</select></label>
-              <ActivityFields activity={form.activity} subActivity={form.sub_activity} onChange={fields => setForm(current => ({ ...current, ...fields }))} />
+              <label>Lead source *<select name="source" required value={form.source} onChange={event => change("source", event.target.value)} disabled={!sources.length}><option value="">Select source</option>{sources.map(source => <option key={source} value={source}>{sourceName(source)}</option>)}</select></label>
+              <ActivityFields lists={config?.lists} activity={form.activity} subActivity={form.sub_activity} onChange={fields => setForm(current => ({ ...current, ...fields }))} />
               <label>Enquiry date *<DateInput required value={form.enquiry_date} max={formatDate(new Date())} onChange={value => change("enquiry_date", value)} ariaLabel="Enquiry date, DD/MM/YYYY" /></label>
               <label>Vehicle interest *<select name="model_interest" required value={form.model_interest} onChange={event => change("model_interest", event.target.value)} disabled={!models.length}><option value="">{models.length ? "Select model" : "Add models in Lists first"}</option>{models.map(model => <option key={model} value={model}>{model}</option>)}</select></label>
               <label>Color interested *<select name="variant" required value={form.variant} onChange={event => change("variant", event.target.value)} disabled={!colors.length}><option value="">{colors.length ? "Select color" : "Add color variants in Lists first"}</option>{colors.map(color => <option key={color} value={color}>{color}</option>)}</select></label>
               <label>Purchase timeline<select name="buying_timeline" value={form.buying_timeline} onChange={event => change("buying_timeline", event.target.value)}><option value="">Select timeline (optional)</option><option>Immediate</option><option>1–2 Months</option><option>2–3 Months</option><option>Greater than 3 months</option></select></label>
-              <label>Branch<input value={user.location || "Branch not set"} readOnly /></label>
+              <label>Branch<select name="branch" value={branch} disabled><option value="">Branch not set</option>{branch && <option value={branch}>{branch}</option>}</select></label>
             </div>
-            <label className="sales-full-label">{form.source === "Other" ? "Source detail *" : "Source detail (optional)"}<input name="source_label" maxLength={100} required={form.source === "Other"} value={form.source_label} onChange={event => change("source_label", event.target.value)} placeholder={form.source === "Referral" ? "Referrer name or referral details" : "How did you meet or hear from this customer?"} /></label>
+            <label className="sales-full-label">Source detail (optional)<input name="source_label" maxLength={100} value={form.source_label} onChange={event => change("source_label", event.target.value)} placeholder="Ad set, partner, referral, or other detail" /></label>
           </section>
           <p className="subtext">Assigned to you: {[user.first_name, user.last_name].filter(Boolean).join(" ") || user.email}. This lead will appear in your Fresh leads.</p>
-          {!user.location?.trim() && <p className="form-error" role="alert">Ask your admin to set your branch before adding a lead.</p>}
+          {config && !validBranch && <p className="form-error" role="alert">Ask your admin to assign you a branch from Admin Lists before adding a lead.</p>}
           {error && <p className="form-error" role="alert">{error}</p>}
         </div>
-        <footer className="sales-detail-footer"><button type="button" className="filter" onClick={onClose} disabled={saving}>Cancel</button><button className="button primary" disabled={saving || !sources.length || !models.length || !colors.length || !user.location?.trim()}>{saving ? "Adding…" : "Add my lead"}</button></footer>
+        <footer className="sales-detail-footer"><button type="button" className="filter" onClick={onClose} disabled={saving}>Cancel</button><button className="button primary" disabled={saving || !sources.length || !models.length || !colors.length || !validBranch}>{saving ? "Adding…" : "Add my lead"}</button></footer>
       </form>
     </section>
   </div>;

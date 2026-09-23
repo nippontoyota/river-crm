@@ -13,7 +13,7 @@ import { ActivityFields } from "@/components/activity-fields";
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createLead, getCurrentUser, getLeadDetail, getMyDashboard, getOfficers, sourceName, toOfficer, updateMyLead, type CurrentUser, type LeadDetail, type LeadInput, type RtoOption, type LeadQualification, type Officer, type SalesDashboard, type SalesLead, getSystemConfig } from "@/lib/crm";
+import { createLead, getCurrentUser, getLeadDetail, getMyDashboard, getOfficers, sourceName, toOfficer, updateMyLead, type CurrentUser, type LeadDetail, type LeadInput, type SystemConfig, type LeadQualification, type Officer, type SalesDashboard, type SalesLead, getSystemConfig } from "@/lib/crm";
 import { SOLeadForm } from "@/features/leads/so-lead-form";
 import { DateInput } from "@/components/date-input";
 import { addDays, formatDate, formatDateTime, parseDate, todayInIST, toApiDate } from "@/lib/dates";
@@ -25,7 +25,7 @@ type Draft = {
   model_interest: string; city: string; profession: string; custom_location: string; ps_officer_id: string; lost_reason: string; pending_reason: string;
   qualification: LeadQualification;
 };
-type LeadFields = { name: string; phone: string; email: string; source: string; source_label: string; campaign: string; model_interest: string; city: string; branch: string; enquiry_date: string | null };
+type LeadFields = { name: string; phone: string; email: string; source: string; source_label: string; campaign: string; activity: string; sub_activity: string; model_interest: string; city: string; branch: string; enquiry_date: string | null };
 
 const sections: { key: Section; label: string; count: keyof SalesDashboard["summary"]; icon: string }[] = [
   { key: "all", label: "All leads", count: "total", icon: "☰" },
@@ -103,16 +103,38 @@ function draftFor(lead: LeadDetail): Draft {
 }
 
 function leadFieldsFor(lead: LeadDetail): LeadFields {
-  return { name: lead.name, phone: lead.phone, email: lead.email, source: lead.sourceCode, source_label: lead.sourceLabel, campaign: lead.campaign, model_interest: lead.model === "—" ? "" : lead.model, city: lead.city, branch: lead.branch, enquiry_date: formatDate(lead.enquiryDate) };
+  return { name: lead.name, phone: lead.phone, email: lead.email, source: lead.sourceCode, source_label: lead.sourceLabel, campaign: lead.campaign, activity: lead.activity, sub_activity: lead.sub_activity, model_interest: lead.model === "—" ? "" : lead.model, city: lead.city, branch: lead.branch, enquiry_date: formatDate(lead.enquiryDate) };
 }
 
 function ChoiceRow({ options, value, onChange }: { options: string[]; value: string; onChange: (value: string) => void }) {
   return <div className="sales-choice-row">{options.map(option => <button type="button" className={value === option ? "chosen" : ""} onClick={() => onChange(option)} key={option}>{option}</button>)}</div>;
 }
 
-function LeadEditPanel({ fields, modelOptions, sourceOptions, onChange, onClose, onSave, saving }: { fields: LeadFields; modelOptions: string[]; sourceOptions: string[]; onChange: (fields: LeadFields) => void; onClose: () => void; onSave: () => void; saving: boolean }) {
+function LeadEditPanel({ fields, config, loading, error, onChange, onClose, onSave, saving }: { fields: LeadFields; config: SystemConfig | null; loading: boolean; error: string; onChange: (fields: LeadFields) => void; onClose: () => void; onSave: () => void; saving: boolean }) {
   const update = (field: keyof LeadFields, value: string | null) => onChange({ ...fields, [field]: value });
-  return <div className="modal-layer sales-edit-layer" role="presentation"><section className="modal sales-detail-modal sales-edit-modal" role="dialog" aria-modal="true" aria-labelledby="sales-edit-title"><header className="sales-detail-header"><div><p className="eyebrow">CUSTOMER INFORMATION</p><h2 id="sales-edit-title">Edit lead details</h2><p className="subtext">Update the customer record saved in ITS.</p></div><button className="modal-close" onClick={onClose} aria-label="Close">×</button></header><div className="sales-detail-scroll"><section className="sales-form-card"><div className="sales-form-grid"><label>Full name<input required value={fields.name} onChange={event => update("name", event.target.value)} /></label><label>Phone number<input required type="tel" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={fields.phone} onChange={event => update("phone", event.target.value.replace(/\D/g, "").slice(0, 10))} /></label><label>Email<input type="email" value={fields.email} onChange={event => update("email", event.target.value)} /></label><label>Lead source<select required value={fields.source} onChange={event => update("source", event.target.value)}>{optionsWithCurrent(sourceOptions, fields.source).map(item => <option value={item} key={item}>{sourceName(item)}</option>)}</select></label><label>Source detail<input value={fields.source_label} onChange={event => update("source_label", event.target.value)} /></label><label>Campaign<input value={fields.campaign} onChange={event => update("campaign", event.target.value)} /></label><label>Vehicle / model<select value={fields.model_interest} onChange={event => update("model_interest", event.target.value)} disabled={!modelOptions.length && !fields.model_interest}><option value="">{modelOptions.length ? "Select model" : "Add models in Lists first"}</option>{optionsWithCurrent(modelOptions, fields.model_interest).map(model => <option value={model} key={model}>{model}</option>)}</select></label><label>City<input value={fields.city} onChange={event => update("city", event.target.value)} /></label><label>Branch<input value={fields.branch} onChange={event => update("branch", event.target.value)} /></label><label>Enquiry date<DateInput value={fields.enquiry_date || ""} max={formatDate(new Date())} onChange={value => update("enquiry_date", value || null)} ariaLabel="Enquiry date, DD/MM/YYYY" /></label></div></section></div><footer className="sales-detail-footer"><button className="filter" onClick={onClose}>Cancel</button><button className="button primary" disabled={saving || !fields.name.trim() || fields.phone.length !== 10 || !fields.source} onClick={onSave}>{saving ? "Saving…" : "Save details"}</button></footer></section></div>;
+  const lists = config?.lists || {};
+  const options = (values: string[] = [], current: string, label = (value: string) => value) => optionsWithCurrent(values, current).map(value => <option value={value} key={value}>{label(value)}{!values.includes(value) ? " (retired)" : ""}</option>);
+  return <div className="modal-layer sales-edit-layer" role="presentation"><section className="modal sales-detail-modal sales-edit-modal" role="dialog" aria-modal="true" aria-labelledby="sales-edit-title">
+    <header className="sales-detail-header"><div><p className="eyebrow">CUSTOMER INFORMATION</p><h2 id="sales-edit-title">Edit lead details</h2><p className="subtext">Update the customer record saved in ITS.</p></div><button className="modal-close" onClick={onClose} aria-label="Close">×</button></header>
+    <form onSubmit={event => { event.preventDefault(); onSave(); }}>
+      <div className="sales-detail-scroll">
+        {loading ? <p role="status">Loading form options…</p> : error ? <p className="form-error" role="alert">{error}</p> : <section className="sales-form-card"><div className="sales-form-grid">
+          <label>Full name<input name="name" required maxLength={160} value={fields.name} onChange={event => update("name", event.target.value)} /></label>
+          <label>Phone number<input name="phone" required type="tel" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={fields.phone} onChange={event => update("phone", event.target.value.replace(/\D/g, "").slice(0, 10))} /></label>
+          <label>Email<input name="email" type="email" value={fields.email} onChange={event => update("email", event.target.value)} /></label>
+          <label>Lead source<select name="source" required value={fields.source} onChange={event => update("source", event.target.value)}><option value="">Select source</option>{options(lists.sources, fields.source, sourceName)}</select></label>
+          <label>Source detail<input name="source_label" maxLength={100} value={fields.source_label} onChange={event => update("source_label", event.target.value)} /></label>
+          <label>Campaign<input name="campaign" maxLength={160} value={fields.campaign} onChange={event => update("campaign", event.target.value)} /></label>
+          <ActivityFields lists={lists} activity={fields.activity} subActivity={fields.sub_activity} onChange={values => onChange({ ...fields, ...values })} />
+          <label>Vehicle / model<select name="model_interest" value={fields.model_interest} onChange={event => update("model_interest", event.target.value)} disabled={!lists.models?.length && !fields.model_interest}><option value="">Select model</option>{options(lists.models, fields.model_interest)}</select></label>
+          <label>City<input name="city" maxLength={100} value={fields.city} onChange={event => update("city", event.target.value)} /></label>
+          <label>Branch<select name="branch" value={fields.branch} onChange={event => update("branch", event.target.value)} disabled={!lists.branches?.length && !fields.branch}><option value="">Select branch</option>{options(lists.branches, fields.branch)}</select></label>
+          <label>Enquiry date<DateInput value={fields.enquiry_date || ""} max={formatDate(new Date())} onChange={value => update("enquiry_date", value || null)} ariaLabel="Enquiry date, DD/MM/YYYY" /></label>
+        </div></section>}
+      </div>
+      <footer className="sales-detail-footer"><button type="button" className="filter" onClick={onClose}>Cancel</button><button className="button primary" disabled={saving || loading || Boolean(error) || !config || !fields.name.trim() || fields.phone.length !== 10 || !fields.source}>{saving ? "Saving…" : "Save details"}</button></footer>
+    </form>
+  </section></div>;
 }
 
 export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, initialSection }: { followUpsOnly?: boolean; allLeadsOnly?: boolean; initialSection?: Section }) {
@@ -135,7 +157,6 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const [leadFields, setLeadFields] = useState<LeadFields | null>(null);
   const [addingLead, setAddingLead] = useState(false);
   const [addingSoLead, setAddingSoLead] = useState(false);
-  const [soLeadSources, setSoLeadSources] = useState<string[]>([]);
   const [creatingLead, setCreatingLead] = useState(false);
   const [newLead, setNewLead] = useState<LeadInput>(emptyLead());
   const [addLeadError, setAddLeadError] = useState("");
@@ -144,42 +165,37 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const [authChecked, setAuthChecked] = useState(false);
   const [psOptions, setPsOptions] = useState<Officer[]>([]);
   const [psLoading, setPsLoading] = useState(false);
-  const [branches, setBranches] = useState<string[]>([]);
-  const [modelOptions, setModelOptions] = useState<string[]>([]);
-  const [rtoOptions, setRtoOptions] = useState<RtoOption[]>([]);
-  const [colorVariantOptions, setColorVariantOptions] = useState<string[]>([]);
-  const [sourceOptions, setSourceOptions] = useState([{ value: "WALKIN", label: "Walk-in" }]);
+  const [config, setConfig] = useState<SystemConfig | null>(null);
+  const [configLoading, setConfigLoading] = useState(true);
+  const [configError, setConfigError] = useState("");
+  const branchOptions = config?.lists.branches || [];
+  const modelOptions = config?.lists.models || [];
+  const colorVariantOptions = config?.lists.colorVariants || [];
+  const rtoOptions = config?.rto_options || [];
+  const sourceOptions = (config?.lists.sources || []).map(value => ({ value, label: sourceName(value) }));
   const [addLeadPsOptions, setAddLeadPsOptions] = useState<Officer[]>([]);
   const dashboardRequest = useRef(0);
   const isPs = user?.role === "SO";
   const psVisibleOutcomes = detail && draft ? detail.outcomePolicy.outcomes[draft.call_status] || [] : [];
   const selectedPsOutcome = psVisibleOutcomes.find(option => option.label === draft?.call_outcome);
   const activeOutcomeLabels = isPs ? psOutcomeLabels : outcomeLabels;
-  const branchOptions = branches;
   const selectedLocation = draft ? draft.city.trim() : "";
 
   useEffect(() => {
     void getCurrentUser().then(result => {
       setUser(result.user);
     }).catch(() => setUser(null)).finally(() => setAuthChecked(true));
-    void getSystemConfig()
-      .then(config => {
-        setBranches(config.lists?.branches || []);
-        setModelOptions(config.lists?.models || []);
-        setColorVariantOptions(config.lists?.colorVariants || []);
-        setRtoOptions(config.rto_options || []);
-        setSoLeadSources(config.so_lead_sources || []);
-        setSourceOptions((config.lists?.sources || ["WALKIN"]).map(value => ({ value, label: sourceName(value) })));
-      })
-      .catch(error => {
-        console.warn("Failed to fetch system config", error);
-        setBranches([]);
-        setModelOptions([]);
-        setColorVariantOptions([]);
-        setRtoOptions([]);
-        setSourceOptions([{ value: "WALKIN", label: "Walk-in" }]);
-      });
   }, [followUpsOnly]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getSystemConfig().then(result => {
+      if (!cancelled) setConfig(result);
+    }).catch(() => {
+      if (!cancelled) { setConfig(null); setConfigError("Unable to load form options. Close the form and reopen it to retry."); }
+    }).finally(() => { if (!cancelled) setConfigLoading(false); });
+    return () => { cancelled = true; };
+  }, [followUpsOnly, addingLead, editingLead]);
 
   useEffect(() => {
     let cancelled = false;
@@ -316,7 +332,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   };
 
   const saveLeadFields = async () => {
-    if (!detail || !leadFields || saving) return;
+    if (!detail || !leadFields || saving || configLoading || configError || !config) return;
     const enquiryDate = leadFields.enquiry_date ? parseDate(leadFields.enquiry_date) : null;
     if (leadFields.enquiry_date && !enquiryDate) return setNotice("Enter the enquiry date as DD/MM/YYYY.");
     const today = parseDate(formatDate(new Date()));
@@ -330,7 +346,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   };
 
   const saveLead = async () => {
-    if (creatingLead) return;
+    if (creatingLead || configLoading || configError || !config) return;
     if (!newLead.source) { setAddLeadError("Select a lead source from Admin Lists."); return; }
     if (!newLead.model_interest) { setAddLeadError("Select a vehicle model from Admin Lists."); return; }
     const enquiryDate = parseDate(newLead.enquiry_date || "");
@@ -374,7 +390,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const leadSearch = <label className="sales-search followup-lead-search">⌕<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name or mobile..." /></label>;
 
   return <section className="page sales-workspace">
-    <div className="sales-hero"><div>{!isPs && <p className="eyebrow">CE WORKSPACE</p>}<h1>{isPs ? followUpsOnly ? "Today's follow-ups" : allLeadsOnly ? "All leads" : "Fresh leads" : "My queue"}</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions"><button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{isPs ? <button className="button primary" onClick={() => setAddingSoLead(true)}>＋ Add my lead</button> : <button className="button primary" onClick={() => { setAddLeadError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
+    <div className="sales-hero"><div>{!isPs && <p className="eyebrow">CE WORKSPACE</p>}<h1>{isPs ? followUpsOnly ? "Today's follow-ups" : allLeadsOnly ? "All leads" : "Fresh leads" : "My queue"}</h1><p className="subtext">Today, {formatDate(new Date())}</p></div><div className="sales-hero-actions"><button className="filter" onClick={() => void loadDashboard()}>↻ Refresh</button><a className="button primary" href="/my-analytics">View analytics →</a>{isPs ? <button className="button primary" onClick={() => setAddingSoLead(true)}>＋ Add my lead</button> : <button className="button primary" onClick={() => { setAddLeadError(""); setConfigLoading(true); setConfigError(""); setAddingLead(true); }}>＋ Add lead</button>}</div></div>
     {isPs && followUpsOnly ? <div className="followup-overview"><section className="sales-metrics compact">{metricCards}</section><div className="followup-search-pane">{leadSearch}</div></div> : <section className="sales-overview-grid" aria-label="Lead overview">{!followUpsOnly && <EtbrTiles data={summary} embedded exclude={isPs ? ["etbr_booked", "etbr_retailed"] : undefined} />}{metricCards}</section>}
     
     {isPs ? (
@@ -403,7 +419,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
       </>
     )}
 
-    {editingLead && leadFields && <LeadEditPanel fields={leadFields} modelOptions={modelOptions} sourceOptions={detail?.generated_by ? soLeadSources : sourceOptions.map(option => option.value)} onChange={setLeadFields} onClose={() => setEditingLead(false)} onSave={() => void saveLeadFields()} saving={saving} />}
+    {editingLead && leadFields && <LeadEditPanel fields={leadFields} config={config} loading={configLoading} error={configError} onChange={setLeadFields} onClose={() => setEditingLead(false)} onSave={() => void saveLeadFields()} saving={saving} />}
     {notice && <div className="toast" role="status">{notice}<button aria-label="Dismiss" onClick={() => setNotice("")}>×</button></div>}
     {detailLoading && <div className="modal-layer"><section className="modal sales-loading-modal"><span className="sales-spinner" /><p>Opening lead history…</p></section></div>}
     {detail && draft && <div className="modal-layer" role="presentation"><section className="modal sales-detail-modal" role="dialog" aria-modal="true" aria-labelledby="sales-detail-title">
@@ -421,7 +437,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
             setNotice("Test drive completed. The previous outcome was cleared; choose the next action.");
           }
           void loadDashboard();
-        }} /><section className="sales-info-card"><h3>Customer information <button type="button" className="row-action" onClick={() => { setLeadFields(leadFieldsFor(detail)); setEditingLead(true); }}>Edit fields</button></h3><div className="sales-info-grid"><span><small>Name</small><b>{detail.name}</b></span><span><small>Phone</small><b>{detail.phone}</b></span><span><small>Email</small><b>{detail.email || "—"}</b></span><span><small>Source</small><b>{detail.source}</b></span><span><small>RTO</small><b>{detail.rto || "—"}</b></span><span><small>Source detail</small><b>{detail.sourceLabel || "—"}</b></span><span><small>Model</small><b>{detail.model}</b></span><span><small>City</small><b>{detail.city || "—"}</b></span><span><small>Pincode</small><b>{detail.pincode || "—"}</b></span><span><small>Enquiry date</small><b>{detail.enquiredAt}</b></span><span><small>Campaign</small><b>{detail.campaign || "—"}</b></span><span><small>Activity</small><b>{detail.activity || "—"}</b></span><span><small>Sub-activity</small><b>{detail.sub_activity || "—"}</b></span><span><small>Branch</small><b>{detail.branch || "—"}</b></span></div><div className="sales-detail-meta"><span>Category <b className={`category-pill ${draft.category.toLowerCase()}`}>{draft.category}</b></span><span>Calls <b>{detail.callCount}</b></span></div></section>
+        }} /><section className="sales-info-card"><h3>Customer information <button type="button" className="row-action" onClick={() => { setLeadFields(leadFieldsFor(detail)); setConfigLoading(true); setConfigError(""); setEditingLead(true); }}>Edit fields</button></h3><div className="sales-info-grid"><span><small>Name</small><b>{detail.name}</b></span><span><small>Phone</small><b>{detail.phone}</b></span><span><small>Email</small><b>{detail.email || "—"}</b></span><span><small>Source</small><b>{detail.source}</b></span><span><small>RTO</small><b>{detail.rto || "—"}</b></span><span><small>Source detail</small><b>{detail.sourceLabel || "—"}</b></span><span><small>Model</small><b>{detail.model}</b></span><span><small>City</small><b>{detail.city || "—"}</b></span><span><small>Pincode</small><b>{detail.pincode || "—"}</b></span><span><small>Enquiry date</small><b>{detail.enquiredAt}</b></span><span><small>Campaign</small><b>{detail.campaign || "—"}</b></span><span><small>Activity</small><b>{detail.activity || "—"}</b></span><span><small>Sub-activity</small><b>{detail.sub_activity || "—"}</b></span><span><small>Branch</small><b>{detail.branch || "—"}</b></span></div><div className="sales-detail-meta"><span>Category <b className={`category-pill ${draft.category.toLowerCase()}`}>{draft.category}</b></span><span>Calls <b>{detail.callCount}</b></span></div></section>
         {detail.qualification && <section className="sales-info-card"><h3>CE qualification</h3><div className="sales-info-grid"><span><small>Color variant</small><b>{detail.qualification.variant || "—"}</b></span><span><small>Buying plan</small><b>{detail.qualification.buying_timeline || "—"}</b></span><span><small>Finance</small><b>{detail.qualification.finance_type || "—"}</b></span><span><small>Test-drive request at qualification</small><b>{detail.qualification.test_drive || "—"}</b></span><span><small>Trade-in</small><b>{detail.qualification.trade_in === true ? "Yes" : detail.qualification.trade_in === false ? "No" : "—"}</b></span><span><small>Notes</small><b style={{ whiteSpace: "pre-line" }}>{creNoteText(detail.qualification.notes) || "—"}</b></span></div></section>}
         {detail.outcomePolicy.can_update ? <>
         <section className="sales-form-card sales-outcome-card"><h3>Lead Status Update</h3><div className="sales-stepper">{["F1", "F2", "F3", "F4", "F5"].map((step, index) => <span className={progressState(detail.callCount, index)} key={step}>{index < Math.min(detail.callCount, 4) ? "✓" : index === Math.min(detail.callCount, 4) ? "○" : "▣"} {step}</span>)}</div>
@@ -493,7 +509,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
       <footer className="sales-detail-footer"><button className="filter" onClick={() => setDetail(null)}>Close</button>{detail.outcomePolicy.can_update && <button className={`button primary ${saveTone}`} disabled={saving || completingDrive} onClick={() => void save()}>{saving ? "Saving…" : submitLabel}</button>}</footer>
     </section></div>}
     {addingSoLead && isPs && user && <SOLeadForm user={user} onClose={() => setAddingSoLead(false)} onCreated={name => { setAddingSoLead(false); setNotice(`${name} added to your Fresh leads.`); void loadDashboard(); }} />}
-    {addingLead && <div className="modal-layer" role="presentation"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="add-lead-title"><button className="modal-close" onClick={() => setAddingLead(false)} aria-label="Close">×</button><p className="eyebrow">CUSTOMER ENQUIRY</p><h2 id="add-lead-title">Add a lead</h2><form className="lead-form" onSubmit={event => { event.preventDefault(); void saveLead(); }}><div className="form-grid"><label>Full name<input required maxLength={160} value={newLead.name} onChange={event => setNewLead(current => ({ ...current, name: event.target.value }))} placeholder="Customer name" /></label><label>Phone number<input required inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={newLead.phone} onChange={event => setNewLead(current => ({ ...current, phone: event.target.value.replace(/\D/g, "") }))} placeholder="10-digit mobile number" /></label><label>Email<input type="email" inputMode="email" pattern={emailPattern.source} title="Use a complete email such as name@example.com" value={newLead.email} onChange={event => setNewLead(current => ({ ...current, email: event.target.value }))} placeholder="name@example.com" /></label><label>City<input maxLength={100} value={newLead.city} onChange={event => setNewLead(current => ({ ...current, city: event.target.value }))} placeholder="City" /></label><RtoField options={rtoOptions} value={newLead.rto || ""} onChange={value => setNewLead(current => ({ ...current, rto: value }))} /><label>Lead source<select value={newLead.source} onChange={event => setNewLead(current => ({ ...current, source: event.target.value }))}>{sourceOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><ActivityFields activity={newLead.activity} subActivity={newLead.sub_activity} onChange={fields => setNewLead(current => ({ ...current, ...fields }))} /><label>Enquiry date<DateInput required value={newLead.enquiry_date || ""} max={formatDate(new Date())} onChange={value => setNewLead(current => ({ ...current, enquiry_date: value }))} ariaLabel="Enquiry date, DD/MM/YYYY" /></label><label>Vehicle interest<select required value={newLead.model_interest || ""} onChange={event => setNewLead(current => ({ ...current, model_interest: event.target.value }))} disabled={!modelOptions.length}><option value="">{modelOptions.length ? "Select model" : "Add models in Lists first"}</option>{modelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select></label><label>Campaign<input maxLength={160} value={newLead.campaign} onChange={event => setNewLead(current => ({ ...current, campaign: event.target.value }))} placeholder="Campaign name" /></label><label>Branch *<select required value={newLead.branch || ""} onChange={event => setNewLead(current => ({ ...current, branch: event.target.value, ps_officer_id: undefined }))}><option value="">Select branch</option>{branchOptions.map(branch => <option key={branch} value={branch}>{branch}</option>)}</select></label><label>PS Name *<select required value={newLead.ps_officer_id || ""} onChange={event => setNewLead(current => ({ ...current, ps_officer_id: Number(event.target.value) }))}><option value="">{addLeadPsOptions.length ? "Select PS" : newLead.branch ? "No PS in this branch" : "Select branch first"}</option>{addLeadPsOptions.map(ps => <option key={ps.id} value={ps.id}>{ps.name}</option>)}</select></label></div><label style={{ marginTop: "13px", display: "block" }}>Source detail<input maxLength={100} value={newLead.source_label} onChange={event => setNewLead(current => ({ ...current, source_label: event.target.value }))} placeholder="Ad set, partner, referral, or other detail" /></label>{addLeadError && <p className="form-error" role="alert">{addLeadError}</p>}<p className="subtext">The new lead will be automatically assigned to the selected PS as a Qualified lead.</p><footer><button type="button" className="filter" onClick={() => setAddingLead(false)}>Cancel</button><button className="button primary" disabled={creatingLead || !newLead.ps_officer_id}>{creatingLead ? "Adding…" : "Add lead"}</button></footer></form></section></div>}
+    {addingLead && <div className="modal-layer" role="presentation"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="add-lead-title"><button className="modal-close" onClick={() => setAddingLead(false)} aria-label="Close">×</button><p className="eyebrow">CUSTOMER ENQUIRY</p><h2 id="add-lead-title">Add a lead</h2><form className="lead-form" onSubmit={event => { event.preventDefault(); void saveLead(); }}><div className="form-grid"><label>Full name<input required maxLength={160} value={newLead.name} onChange={event => setNewLead(current => ({ ...current, name: event.target.value }))} placeholder="Customer name" /></label><label>Phone number<input required inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={newLead.phone} onChange={event => setNewLead(current => ({ ...current, phone: event.target.value.replace(/\D/g, "") }))} placeholder="10-digit mobile number" /></label><label>Email<input type="email" inputMode="email" pattern={emailPattern.source} title="Use a complete email such as name@example.com" value={newLead.email} onChange={event => setNewLead(current => ({ ...current, email: event.target.value }))} placeholder="name@example.com" /></label><label>City<input maxLength={100} value={newLead.city} onChange={event => setNewLead(current => ({ ...current, city: event.target.value }))} placeholder="City" /></label><RtoField options={rtoOptions} value={newLead.rto || ""} onChange={value => setNewLead(current => ({ ...current, rto: value }))} /><label>Lead source<select value={newLead.source} onChange={event => setNewLead(current => ({ ...current, source: event.target.value }))}>{sourceOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><ActivityFields lists={config?.lists} activity={newLead.activity} subActivity={newLead.sub_activity} onChange={fields => setNewLead(current => ({ ...current, ...fields }))} /><label>Enquiry date<DateInput required value={newLead.enquiry_date || ""} max={formatDate(new Date())} onChange={value => setNewLead(current => ({ ...current, enquiry_date: value }))} ariaLabel="Enquiry date, DD/MM/YYYY" /></label><label>Vehicle interest<select required value={newLead.model_interest || ""} onChange={event => setNewLead(current => ({ ...current, model_interest: event.target.value }))} disabled={!modelOptions.length}><option value="">{modelOptions.length ? "Select model" : "Add models in Lists first"}</option>{modelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select></label><label>Campaign<input maxLength={160} value={newLead.campaign} onChange={event => setNewLead(current => ({ ...current, campaign: event.target.value }))} placeholder="Campaign name" /></label><label>Branch *<select required value={newLead.branch || ""} onChange={event => setNewLead(current => ({ ...current, branch: event.target.value, ps_officer_id: undefined }))}><option value="">Select branch</option>{branchOptions.map(branch => <option key={branch} value={branch}>{branch}</option>)}</select></label><label>PS Name *<select required value={newLead.ps_officer_id || ""} onChange={event => setNewLead(current => ({ ...current, ps_officer_id: Number(event.target.value) }))}><option value="">{addLeadPsOptions.length ? "Select PS" : newLead.branch ? "No PS in this branch" : "Select branch first"}</option>{addLeadPsOptions.map(ps => <option key={ps.id} value={ps.id}>{ps.name}</option>)}</select></label></div><label style={{ marginTop: "13px", display: "block" }}>Source detail<input maxLength={100} value={newLead.source_label} onChange={event => setNewLead(current => ({ ...current, source_label: event.target.value }))} placeholder="Ad set, partner, referral, or other detail" /></label>{configLoading && <p role="status">Loading form options…</p>}{(addLeadError || configError) && <p className="form-error" role="alert">{addLeadError || configError}</p>}<p className="subtext">The new lead will be automatically assigned to the selected PS as a Qualified lead.</p><footer><button type="button" className="filter" onClick={() => setAddingLead(false)}>Cancel</button><button className="button primary" disabled={creatingLead || configLoading || Boolean(configError) || !config || !newLead.ps_officer_id}>{creatingLead ? "Adding…" : "Add lead"}</button></footer></form></section></div>}
     {submittedLead && <div className="modal-layer" role="presentation"><section className="modal success-modal" role="dialog" aria-modal="true" aria-labelledby="submitted-title"><button className="modal-close" onClick={() => setSubmittedLead(null)} aria-label="Close">×</button><div className="success-mark" aria-hidden="true">✓</div><p className="eyebrow">LEAD SUBMITTED</p><h2 id="submitted-title">Thank you, lead submitted.</h2><p className="subtext">{submittedLead} has been directly assigned as Qualified.</p><button className="button primary" onClick={() => setSubmittedLead(null)}>Done</button></section></div>}
   </section>;
 }

@@ -22,8 +22,9 @@ New leads reach CE and branch workspaces through the existing assignment workflo
 
 Admin Lists manages lead sources, activities, and sub-activities grouped under an
 activity. These optional fields appear in admin, CE, SO, and receptionist intake
-forms. Removing an option does not alter historical leads. SO sources retain
-their existing choices; receptionist enquiries remain Walk-in.
+forms. SO lead creation and editing use the same sources as Admin Lists, along
+with the shared activities, sub-activities, models, and color variants. Removing
+an option does not alter historical leads; receptionist enquiries remain Walk-in.
 
 ETBR tiles show progress of enquiries within each dashboard's existing date and
 permission filters: Enquired, Test Drive Completed, Booked, Retailed. Booked in

@@ -8,15 +8,6 @@ from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, Syste
 from .outcomes import PS_CALL_OUTCOME_STATUS_OPTIONS, outcome_policy, validate_sales_call
 from .rtos import KERALA_RTO_CHOICES
 
-SO_LEAD_SOURCES = ["Referral", "Existing customer", "Friends / Family", "Personal contact", "Local networking", "Self prospecting", "Other"]
-
-
-def validate_so_source(value):
-    if value not in SO_LEAD_SOURCES:
-        raise serializers.ValidationError("Choose a source for an SO-generated lead.")
-    return value
-
-
 def normalize_sources(values):
     sources = [Lead.Source.WALKIN]
     seen = {"walkin"}
@@ -53,10 +44,10 @@ def validate_configured_source(value, current=""):
     raise serializers.ValidationError("Choose a lead source from Admin Lists.")
 
 
-def validate_configured_choice(value, list_name, label):
+def validate_configured_choice(value, list_name, label, current=""):
     value = (value or "").strip()
     allowed = configured_values(list_name)
-    if value and allowed and value not in allowed:
+    if value and value != current and value not in allowed:
         raise serializers.ValidationError(f"Choose a {label} from Admin Lists.")
     return value
 
@@ -92,7 +83,9 @@ CALL_OUTCOME_STATUS_OPTIONS = {
 
 class QualificationSerializer(serializers.ModelSerializer):
     def validate_variant(self, value):
-        return validate_configured_choice(value, "colorVariants", "color variant")
+        lead = self.context.get("lead") or self.root.instance
+        qualification = self.instance or getattr(lead, "qualification", None)
+        return validate_configured_choice(value, "colorVariants", "color variant", getattr(qualification, "variant", ""))
 
     class Meta:
         model = LeadQualification
@@ -138,11 +131,12 @@ class LeadSerializer(serializers.ModelSerializer):
         return value
 
     def validate_model_interest(self, value):
-        return validate_configured_choice(value, "models", "vehicle model")
+        return validate_configured_choice(value, "models", "vehicle model", getattr(self.instance, "model_interest", ""))
+
+    def validate_branch(self, value):
+        return validate_configured_choice(value, "branches", "branch", getattr(self.instance, "branch", ""))
 
     def validate_source(self, value):
-        if self.instance and self.instance.generated_by_id:
-            return validate_so_source(value)
         return validate_configured_source(value, self.instance.source if self.instance else "")
 
     ps_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True, deleted_at__isnull=True), source="assigned_ps", required=False, write_only=True)
@@ -190,17 +184,12 @@ class LeadSerializer(serializers.ModelSerializer):
 class SOLeadCreateSerializer(LeadSerializer):
     phone = serializers.RegexField(regex=r"^\d{10}$")
 
-    def validate_source(self, value):
-        return validate_so_source(value)
-
     def validate(self, attrs):
         attrs = super().validate(attrs)
         if not attrs.get("model_interest"):
             raise serializers.ValidationError({"model_interest": "Choose a vehicle model."})
         if not attrs.get("enquiry_date"):
             raise serializers.ValidationError({"enquiry_date": "Enter the enquiry date."})
-        if attrs.get("source") == "Other" and not attrs.get("source_label", "").strip():
-            raise serializers.ValidationError({"source_label": "Describe how you found this customer."})
         return attrs
 
     class Meta(LeadSerializer.Meta):
@@ -315,11 +304,12 @@ class SOLeadUpdateSerializer(serializers.Serializer):
     flagged_to_manager = serializers.BooleanField(required=False)
 
     def validate_model_interest(self, value):
-        return validate_configured_choice(value, "models", "vehicle model")
+        return validate_configured_choice(value, "models", "vehicle model", getattr(self.context.get("lead"), "model_interest", ""))
+
+    def validate_branch(self, value):
+        return validate_configured_choice(value, "branches", "branch", getattr(self.context.get("lead"), "branch", ""))
 
     def validate_source(self, value):
-        if self.context.get("self_generated"):
-            return validate_so_source(value)
         return validate_configured_source(value, self.context.get("current_source", ""))
 
     def validate(self, attrs):
@@ -406,7 +396,8 @@ class SystemConfigSerializer(serializers.ModelSerializer):
         return COMPLAINT_SUBTYPES
 
     def get_so_lead_sources(self, obj):
-        return SO_LEAD_SOURCES
+        # Keep older clients on the same sources as Admin Lists.
+        return normalize_sources((obj.lists or {}).get("sources", []))
 
     def get_rto_options(self, obj):
         return [{"value": code, "label": f"{code.replace('-', '')} - {name}"} for code, name in KERALA_RTO_CHOICES]

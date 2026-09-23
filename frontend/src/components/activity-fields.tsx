@@ -3,17 +3,19 @@
 import { useEffect, useState } from "react";
 import { getSystemConfig, type SystemConfig } from "@/lib/crm";
 
-export function ActivityFields({ activity = "", subActivity = "", onChange }: {
+export function ActivityFields({ activity = "", subActivity = "", lists: configuredLists, onChange }: {
   activity?: string; subActivity?: string;
+  lists?: SystemConfig["lists"];
   onChange: (fields: { activity: string; sub_activity: string }) => void;
 }) {
   const [lists, setLists] = useState<SystemConfig["lists"]>({});
   const [error, setError] = useState("");
   useEffect(() => {
+    if (configuredLists) return;
     void getSystemConfig().then(config => setLists(config.lists)).catch(() => setError("Unable to load activities. Reopen this form to retry."));
-  }, []);
-  const activities = lists.activities || [];
-  const children = lists.subActivities?.[activity] || [];
+  }, [configuredLists]);
+  const activities = (configuredLists || lists).activities || [];
+  const children = (configuredLists || lists).subActivities?.[activity] || [];
   return <>
     <label>Activity (optional)<select name="activity" value={activity} onChange={event => onChange({ activity: event.target.value, sub_activity: "" })} disabled={!activities.length && !activity}>
       <option value="">Select activity</option>

@@ -21,6 +21,7 @@ from notifications.whatsapp import may_record_agreement, save_agreement
 from .outcomes import CLOSED_STATUSES, outcome_policy, validate_milestone_change
 from .metrics import etbr_aggregates
 from .phone_lock import guard_manual_phone, lock_phones
+from .serializers import validate_configured_choice
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from .serializers import CALL_OUTCOME_STATUS_OPTIONS, PS_CALL_OUTCOME_STATUS_OPTIONS, AssignmentSerializer, BulkDistributeSerializer, FollowUpReviewSerializer, FollowUpSerializer, LeadDetailSerializer, LeadSerializer, LeadUpdateSerializer, PSAssignmentSerializer, SOLeadCreateSerializer, SOLeadListSerializer, SOLeadUpdateSerializer, SystemConfigSerializer
 
@@ -143,8 +144,12 @@ class LeadViewSet(viewsets.ModelViewSet):
                 raise ValidationError({"detail": "Your account is no longer active."})
             if not owner.location.strip():
                 raise ValidationError({"branch": "Ask your admin to set your branch before adding a lead."})
+            try:
+                branch = validate_configured_choice(owner.location, "branches", "branch")
+            except ValidationError as error:
+                raise ValidationError({"branch": error.detail})
             lead = serializer.save(
-                assigned_ps=owner, assigned_so=None, generated_by=owner, branch=owner.location.strip(),
+                assigned_ps=owner, assigned_so=None, generated_by=owner, branch=branch,
                 status=Lead.Status.QUALIFIED, category=Lead.Category.WARM, sales_outcome=Lead.SalesOutcome.PENDING,
             )
             LeadAudit.objects.create(lead=lead, actor=owner, event="created", after={
@@ -162,6 +167,10 @@ class LeadViewSet(viewsets.ModelViewSet):
             branch = self.request.user.location.strip()
             if not branch:
                 raise ValidationError({"branch": "Ask your admin to set your branch before adding a lead."})
+            try:
+                validate_configured_choice(branch, "branches", "branch")
+            except ValidationError as error:
+                raise ValidationError({"branch": error.detail})
             if serializer.validated_data.get("branch", branch).casefold() != branch.casefold():
                 raise ValidationError({"branch": "Walk-ins must be recorded at your assigned branch."})
             officer = serializer.validated_data.get("assigned_ps")
@@ -315,7 +324,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         user_field = "assigned_so_id" if request.user.role == User.Role.CRE else "assigned_ps_id"
         if not request.user.is_admin and getattr(lead, user_field) != request.user.id:
             return Response({"detail": "This lead is not assigned to you."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = SOLeadUpdateSerializer(data=request.data, context={"lead": lead, "user": request.user, "current_source": lead.source, "self_generated": bool(lead.generated_by_id)})
+        serializer = SOLeadUpdateSerializer(data=request.data, context={"lead": lead, "user": request.user, "current_source": lead.source})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         sales_call = request.user.role == User.Role.SALES_OFFICER or (request.user.is_admin and (data.get("call_status") or data.get("call_outcome") in PS_CALL_OUTCOME_STATUS_OPTIONS))
