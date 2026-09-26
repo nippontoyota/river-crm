@@ -13,7 +13,8 @@ from rest_framework.test import APIClient
 from accounts.models import User
 from complaints.models import Complaint, ComplaintNote
 from servicing.models import ServiceRequest, Vehicle
-from .models import CallLog, FollowUp, InboundInteraction, Lead, SystemConfig
+from notifications.models import Notification
+from .models import CallLog, FollowUp, InboundInteraction, Lead, LeadAudit, SystemConfig
 
 
 class CallCenterTests(TestCase):
@@ -151,7 +152,7 @@ class CallCenterTests(TestCase):
             result = self.client.patch(url, {"submission_id": str(uuid4()), "lead_version": self.detail()["updated_at"], field: value}, format="json")
             self.assertEqual(result.status_code, 400, result.data)
 
-    def test_first_qualification_and_existing_ps_protection(self):
+    def test_first_qualification_and_same_branch_ps_reassignment(self):
         url = f"/api/call-center/leads/{self.lead.pk}/"
         payload = {"submission_id": str(uuid4()), "lead_version": self.detail()["updated_at"], "status": "QUALIFIED", "call_outcome": "QUALIFIED", "ps_officer_id": self.ps.pk, "city": "Kochi", "branch": "Kochi", "qualification": {"variant": "Blue", "notes": "Qualified by answering CE"}}
         response = self.client.patch(url, payload, format="json")
@@ -159,8 +160,108 @@ class CallCenterTests(TestCase):
         self.assertEqual(response.data["assigned_ps"], self.ps.pk)
         self.assertEqual(response.data["assigned_so"], self.owner.pk)
         other = User.objects.create_user(email="otherps@example.test", role="SO", location="Kochi")
-        response = self.client.patch(url, {"submission_id": str(uuid4()), "lead_version": self.detail()["updated_at"], "ps_officer_id": other.pk}, format="json")
-        self.assertEqual(response.status_code, 400)
+        at = timezone.now() + timedelta(days=1)
+        reminders = [FollowUp.objects.create(lead=self.lead, so=self.ps, scheduled_for=at, origin=origin,
+                     notified_at=timezone.now()) for origin in ("INBOUND", "OUTBOUND")]
+        completed = FollowUp.objects.create(lead=self.lead, so=self.ps, scheduled_for=at, resolved_at=timezone.now())
+        ce_reminder = FollowUp.objects.create(lead=self.lead, so=self.owner, scheduled_for=at)
+        # Customer city is not necessarily the sales branch.
+        Lead.objects.filter(pk=self.lead.pk).update(city="Aluva")
+        payload = {"submission_id": str(uuid4()), "lead_version": self.detail()["updated_at"],
+                   "ps_officer_id": other.pk, "remarks": "Customer requested another PS"}
+        response = self.client.patch(url, payload, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self.client.patch(url, payload, format="json").status_code, 200)
+        self.assertEqual(self.client.patch(url, {**payload, "submission_id": str(uuid4())}, format="json").status_code, 409)
+        self.lead.refresh_from_db()
+        self.assertEqual((self.lead.assigned_ps_id, self.lead.assigned_so_id, self.lead.status, self.lead.city, self.lead.branch),
+                         (other.pk, self.owner.pk, "QUALIFIED", "Aluva", "Kochi"))
+        self.assertEqual(self.lead.qualification.notes, "Qualified by answering CE")
+        for reminder in reminders:
+            reminder.refresh_from_db()
+            self.assertEqual((reminder.so_id, reminder.scheduled_for, reminder.resolved_at, reminder.notified_at), (other.pk, at, None, None))
+        completed.refresh_from_db(); ce_reminder.refresh_from_db()
+        self.assertEqual(completed.so_id, self.ps.pk)
+        self.assertEqual(ce_reminder.so_id, self.owner.pk)
+        self.assertIsNone(ce_reminder.resolved_at)
+        audit = LeadAudit.objects.filter(event="assigned_ps").latest("id")
+        self.assertEqual(audit.actor_id, self.ce.pk)
+        self.assertEqual(audit.before, {"assigned_ps": self.ps.pk})
+        self.assertEqual(audit.after, {"assigned_ps": other.pk, "remarks": payload["remarks"]})
+        self.assertEqual(Notification.objects.filter(user=other, kind="ASSIGNMENT", lead=self.lead).count(), 1)
+        self.assertEqual(InboundInteraction.objects.filter(kind="LEAD_UPDATE").count(), 2)
+        self.assertEqual(CallLog.objects.count(), 0)
+        self.assertEqual(response.data["callback_destination"]["owner"]["id"], other.pk)
+
+    def test_ps_reassignment_rejects_branch_changes_invalid_targets_and_missing_reason(self):
+        Lead.objects.filter(pk=self.lead.pk).update(status="QUALIFIED", assigned_ps=self.ps)
+        same = User.objects.create_user(email="same@example.test", role="SO", location="Kochi")
+        cross = User.objects.create_user(email="cross@example.test", role="SO", location="Thrissur")
+        disabled = User.objects.create_user(email="disabled@example.test", role="SO", location="Kochi", is_active=False)
+        deleted = User.objects.create_user(email="deleted@example.test", role="SO", location="Kochi", deleted_at=timezone.now())
+        SystemConfig.objects.filter(pk=1).update(lists={"branches": ["Kochi", "Thrissur"]})
+        url = f"/api/call-center/leads/{self.lead.pk}/"
+        for changes, error_field in [
+            ({"ps_officer_id": cross.pk}, "ps_officer_id"),
+            ({"ps_officer_id": cross.pk, "branch": "Thrissur", "city": "Thrissur"}, "ps_officer_id"),
+            ({"branch": "Thrissur"}, "branch"),
+            ({"ps_officer_id": disabled.pk}, "ps_officer_id"),
+            ({"ps_officer_id": deleted.pk}, "ps_officer_id"),
+            ({"ps_officer_id": self.owner.pk}, "ps_officer_id"),
+            ({"ps_officer_id": None}, "ps_officer_id"),
+            ({"remarks": "   "}, "remarks"),
+        ]:
+            with self.subTest(changes=changes):
+                payload = {"submission_id": str(uuid4()), "lead_version": self.detail()["updated_at"],
+                           "ps_officer_id": same.pk, "remarks": "Reassign", "name": "Must not save", **changes}
+                response = self.client.patch(url, payload, format="json")
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertIn(error_field, response.data)
+                self.lead.refresh_from_db()
+                self.assertEqual((self.lead.assigned_ps_id, self.lead.name, self.lead.branch), (self.ps.pk, "Shared Customer", "Kochi"))
+        self.assertFalse(InboundInteraction.objects.exists())
+        self.assertFalse(LeadAudit.objects.exists())
+        self.assertFalse(Notification.objects.exists())
+
+    def test_ps_reassignment_protects_closed_and_queued_leads(self):
+        other = User.objects.create_user(email="same@example.test", role="SO", location="Kochi")
+        for changes in ({"status": "WON"}, {"status": "LOST"}, {"status": "UNQUALIFIED"}, {"sales_outcome": "RETAILED"}, {"sales_outcome": "LOST"}, {"needs_so_reassignment": True}):
+            with self.subTest(changes=changes):
+                Lead.objects.filter(pk=self.lead.pk).update(status="QUALIFIED", sales_outcome="PENDING", needs_so_reassignment=False, assigned_ps=self.ps)
+                Lead.objects.filter(pk=self.lead.pk).update(**changes)
+                payload = {"submission_id": str(uuid4()), "lead_version": self.detail()["updated_at"], "ps_officer_id": other.pk, "remarks": "Reassign"}
+                response = self.client.patch(f"/api/call-center/leads/{self.lead.pk}/", payload, format="json")
+                self.assertEqual(response.status_code, 400, response.data)
+                self.lead.refresh_from_db()
+                self.assertEqual(self.lead.assigned_ps_id, self.ps.pk)
+
+    def test_ps_reassignment_preserves_open_progress_and_uses_owner_branch_when_missing(self):
+        other = User.objects.create_user(email="same@example.test", role="SO", location="Kochi")
+        for progress in ("QUALIFIED", "PENDING", "RNR", "SWITCHED_OFF", "CALLBACK", "WALKIN"):
+            with self.subTest(progress=progress):
+                outcome = "BOOKED" if progress == "WALKIN" else "PENDING"
+                Lead.objects.filter(pk=self.lead.pk).update(status=progress, sales_outcome=outcome, assigned_ps=self.ps, branch="")
+                payload = {"submission_id": str(uuid4()), "lead_version": self.detail()["updated_at"], "ps_officer_id": other.pk, "remarks": "Reassign"}
+                response = self.client.patch(f"/api/call-center/leads/{self.lead.pk}/", payload, format="json")
+                self.assertEqual(response.status_code, 200, response.data)
+                self.lead.refresh_from_db()
+                self.assertEqual((self.lead.assigned_ps_id, self.lead.status, self.lead.sales_outcome), (other.pk, progress, outcome))
+
+    def test_personal_update_uses_same_branch_reassignment_rules(self):
+        self.client.force_authenticate(self.owner)
+        Lead.objects.filter(pk=self.lead.pk).update(status="QUALIFIED", assigned_ps=self.ps, city="Aluva")
+        other = User.objects.create_user(email="same@example.test", role="SO", location=" kochi ")
+        cross = User.objects.create_user(email="cross@example.test", role="SO", location="Thrissur")
+        reminder = FollowUp.objects.create(lead=self.lead, so=self.ps, scheduled_for=timezone.now() + timedelta(days=1))
+        url = f"/api/leads/{self.lead.pk}/so-update/"
+        response = self.client.patch(url, {"ps_officer_id": cross.pk, "remarks": "Transfer"}, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        response = self.client.patch(url, {"ps_officer_id": other.pk, "remarks": "Reassign"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        reminder.refresh_from_db()
+        self.assertEqual(reminder.so_id, other.pk)
+        self.assertIsNone(reminder.resolved_at)
+        self.assertFalse(CallLog.objects.exists())
 
     def test_outbound_update_does_not_clear_inbound_tasks(self):
         row = self.post(self.payload(kind="CALLBACK", callback_at=(timezone.now() + timedelta(hours=1)).isoformat()))
@@ -231,6 +332,8 @@ class CallCenterTests(TestCase):
             user = User.objects.create_user(email=f"role-{role}@example.test", role=role)
             self.client.force_authenticate(user)
             self.assertEqual(self.client.get(f"/api/call-center/leads/{self.lead.pk}/").status_code, 403)
+            self.assertEqual(self.client.patch(f"/api/call-center/leads/{self.lead.pk}/",
+                             {"ps_officer_id": self.ps.pk, "remarks": "Reassign"}, format="json").status_code, 403)
             self.assertEqual(self.post(self.payload()).status_code, 403)
         self.client.force_authenticate(self.ce)
         self.lead.deleted_at = timezone.now(); self.lead.save()

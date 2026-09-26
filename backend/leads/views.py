@@ -18,7 +18,7 @@ from accounts.permissions import IsActiveAdminOrCRE, IsAdmin, IsAdminOrReception
 from notifications.models import Notification
 from notifications.serializers import WhatsAppAgreementSerializer
 from notifications.whatsapp import may_record_agreement, save_agreement
-from .outcomes import CLOSED_STATUSES, outcome_policy, validate_milestone_change
+from .outcomes import CLOSED_STATUSES, is_closed, outcome_policy, validate_milestone_change
 from .metrics import etbr_aggregates
 from .phone_lock import guard_manual_phone, lock_phones
 from .serializers import CustomerLookupSerializer, validate_configured_choice
@@ -362,6 +362,10 @@ class LeadViewSet(viewsets.ModelViewSet):
         serializer = SOLeadUpdateSerializer(data=request.data, context={"lead": lead, "user": request.user, "current_source": lead.source, "call_center": self.shared_call_center})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        ps_officer = data.get("ps_officer")
+        reassigning_ps = bool(ps_officer and lead.assigned_ps_id and ps_officer.pk != lead.assigned_ps_id
+                              and (request.user.role == User.Role.CRE or self.shared_call_center))
+        assignment_only = reassigning_ps and not any(field in data for field in ("status", "sales_outcome", "call_status", "call_outcome", "follow_up_at"))
         sales_call = request.user.role == User.Role.SALES_OFFICER or (request.user.is_admin and (data.get("call_status") or data.get("call_outcome") in PS_CALL_OUTCOME_STATUS_OPTIONS))
         sales_status = {Lead.SalesOutcome.BOOKED: Lead.Status.WALKIN, Lead.SalesOutcome.RETAILED: Lead.Status.WON, Lead.SalesOutcome.LOST: Lead.Status.LOST}
         call_status = {"QUALIFIED": Lead.Status.QUALIFIED, "PENDING": Lead.Status.PENDING, "LOST": Lead.Status.LOST, "RNR": Lead.Status.RNR, "SWITCHED_OFF": Lead.Status.SWITCHED_OFF, "CALLBACK": Lead.Status.CALLBACK}
@@ -392,9 +396,9 @@ class LeadViewSet(viewsets.ModelViewSet):
         if not sales_call and any(field in data for field in ("status", "sales_outcome", "call_outcome", "call_status", "remarks", "follow_up_at")):
             data["status"] = next_status
             validate_milestone_change(lead, data)
-        ps_officer = data.get("ps_officer")
         qualification_update = (
             request.user.role == User.Role.CRE
+            and not reassigning_ps
             and next_status == Lead.Status.QUALIFIED
             and (
                 lead.status != Lead.Status.QUALIFIED
@@ -427,20 +431,22 @@ class LeadViewSet(viewsets.ModelViewSet):
             check_actor = not request.user.is_admin or "whatsapp_agreed" in data
             check_ps = bool(ps_officer and (request.user.role == User.Role.CRE or self.shared_call_center))
             user_ids = ({request.user.pk} if check_actor else set()) | ({ps_officer.pk} if check_ps else set())
+            if check_ps and lead.assigned_ps_id:
+                user_ids.add(lead.assigned_ps_id)
             # Shared assistance and personal qualification must lock accounts in the same order.
             locked_users = {user.pk: user for user in User.objects.select_for_update(no_key=True).filter(
-                pk__in=user_ids, is_active=True, deleted_at__isnull=True,
+                pk__in=user_ids,
             ).order_by("pk")}
             if check_actor:
                 actor = locked_users.get(request.user.pk)
-                if not actor:
+                if not actor or not actor.is_active or actor.deleted_at:
                     return Response(
                         {"detail": "Your account is no longer active. Refresh the page."},
                         status=status.HTTP_409_CONFLICT,
                     )
             if check_ps:
                 ps_officer = locked_users.get(ps_officer.pk)
-                if not ps_officer or ps_officer.role != User.Role.SALES_OFFICER:
+                if not ps_officer or not ps_officer.is_active or ps_officer.deleted_at or ps_officer.role != User.Role.SALES_OFFICER:
                     return Response(
                         {"detail": "That PS/SO is no longer active. Refresh and choose again."},
                         status=status.HTTP_409_CONFLICT,
@@ -456,6 +462,18 @@ class LeadViewSet(viewsets.ModelViewSet):
                     {"detail": "This lead is no longer assigned to you. Refresh the page."},
                     status=status.HTTP_409_CONFLICT,
                 )
+            previous_ps_id = lead.assigned_ps_id
+            if reassigning_ps:
+                if is_closed(lead) or lead.needs_so_reassignment:
+                    raise ValidationError({"ps_officer_id": "Ask Admin to reopen or route this lead before reassignment."})
+                previous_branch = locked_users[previous_ps_id].location.strip().casefold()
+                branch = lead.branch.strip().casefold() or previous_branch
+                if not branch or ps_officer.location.strip().casefold() != branch or (previous_branch and previous_branch != branch):
+                    raise ValidationError({"ps_officer_id": "Choose an active PS/SO from the lead's existing branch. Ask Admin for a branch transfer."})
+                if data.get("branch", lead.branch).strip().casefold() != lead.branch.strip().casefold():
+                    raise ValidationError({"branch": "Keep the existing branch when reassigning a PS/SO. Ask Admin for a branch transfer."})
+                if not data.get("remarks", "").strip():
+                    raise ValidationError({"remarks": "Enter a reason for the PS/SO reassignment."})
             from .outcomes import validate_retail_vehicle
             validate_retail_vehicle(lead, data)
             lead.status = next_status
@@ -478,16 +496,22 @@ class LeadViewSet(viewsets.ModelViewSet):
                 record.save()
                 if qualification_before != qualification:
                     LeadAudit.objects.create(lead=lead, actor=request.user, event="qualification_updated", before=qualification_before, after=qualification)
-            if not self.shared_call_center and any(field in data for field in ("status", "sales_outcome", "remarks", "call_status", "call_outcome", "follow_up_at")):
+            if not self.shared_call_center and not assignment_only and any(field in data for field in ("status", "sales_outcome", "remarks", "call_status", "call_outcome", "follow_up_at")):
                 FollowUp.objects.filter(lead=lead, resolved_at__isnull=True, origin="OUTBOUND").update(resolved_at=timezone.now())
                 CallLog.objects.create(lead=lead, so=request.user, status=next_status, call_status=data.get("call_status", ""), outcome=data.get("call_outcome", ""), remarks=data.get("remarks", ""))
                 if follow_up_at := data.get("follow_up_at"):
                     FollowUp.objects.create(lead=lead, so=request.user, scheduled_for=follow_up_at)
             after = {field: audit_value(getattr(lead, field)) for field in ("status", "category", "sales_outcome", *editable_fields)}
             LeadAudit.objects.create(lead=lead, actor=request.user, event="so_updated", before=before, after=after)
-            if ps_officer and (request.user.role == User.Role.CRE or self.shared_call_center):
-                LeadAudit.objects.create(lead=lead, actor=request.user, event="assigned_ps", after={"assigned_ps": ps_officer.id})
-                Notification.objects.create(user=ps_officer, lead=lead, kind=Notification.Kind.ASSIGNMENT, message=f"You have a qualified lead: {lead.name}.")
+            if check_ps and ps_officer.pk != previous_ps_id:
+                if reassigning_ps:
+                    FollowUp.objects.filter(lead=lead, so_id=previous_ps_id, resolved_at__isnull=True).update(
+                        so=ps_officer, reminder_held=False, notified_at=None,
+                    )
+                LeadAudit.objects.create(lead=lead, actor=request.user, event="assigned_ps",
+                    before={"assigned_ps": previous_ps_id}, after={"assigned_ps": ps_officer.id, "remarks": data.get("remarks", "")})
+                message = f"Lead reassigned to you: {lead.name}." if reassigning_ps else f"You have a qualified lead: {lead.name}."
+                Notification.objects.create(user=ps_officer, lead=lead, kind=Notification.Kind.ASSIGNMENT, message=message)
         return Response(LeadDetailSerializer(self.get_object(), context={"request": request}).data)
 
     @action(detail=True, methods=["post"])

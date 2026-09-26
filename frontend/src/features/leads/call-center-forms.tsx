@@ -66,18 +66,24 @@ export function SharedLeadEditor({ lead, config, onSaved, onCancel }: { lead: Sh
   const [version, setVersion] = useState(lead.updated_at);
   const [latest, setLatest] = useState(lead);
   const [officers, setOfficers] = useState<{ id: number; first_name: string; last_name: string; email: string }[]>([]);
+  const [psOfficerId, setPsOfficerId] = useState(String(lead.assignedPsId || ""));
+  const [officersBranch, setOfficersBranch] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [optionsError, setOptionsError] = useState("");
   const submission = useSubmission();
-  const qualifying = values.status === "QUALIFIED" && base.status !== "QUALIFIED";
+  const qualifying = !latest.assignedPsId && !latest.needsSoReassignment && values.status === "QUALIFIED" && base.status !== "QUALIFIED";
+  const reassigning = Boolean(latest.assignedPsId && psOfficerId && Number(psOfficerId) !== latest.assignedPsId);
+  const psBranch = latest.assignedPsId ? latest.branch.trim() || latest.ownership.assigned_ps?.branch.trim() || "" : values.branch;
+  const showPs = Boolean(latest.assignedPsId && !latest.needsSoReassignment) || qualifying;
+  const officersReady = officersBranch === psBranch;
   useEffect(() => {
-    if (!qualifying || !values.branch) return;
+    if (!showPs || !psBranch) return;
     let current = true;
-    getOfficers(values.branch).then(rows => { if (current) { setOfficers(rows); setOptionsError(""); } }).catch(e => { if (current) { setOfficers([]); setOptionsError(e.message); } });
+    getOfficers(psBranch).then(rows => { if (current) { setOfficers(rows.filter(user => user.is_active)); setOfficersBranch(psBranch); setOptionsError(""); } }).catch(e => { if (current) { setOfficers([]); setOfficersBranch(""); setOptionsError(e.message); } });
     return () => { current = false; };
-  }, [qualifying, values.branch]);
+  }, [showPs, psBranch]);
   const set = (key: keyof typeof values, value: string) => setValues(old => ({ ...old, [key]: value }));
   const options = (items: string[] | undefined, current: string) => [...new Set([current, ...items || []].filter(Boolean))].map(value => <option key={value} value={value}>{value}</option>);
   return <form className="sales-form-card call-center-form" onSubmit={async event => {
@@ -86,7 +92,8 @@ export function SharedLeadEditor({ lead, config, onSaved, onCancel }: { lead: Sh
     const payload: Record<string, unknown> = Object.fromEntries(Object.entries(values).filter(([key, value]) => value !== base[key as keyof typeof base]));
     if (payload.enquiry_date === "") payload.enquiry_date = null;
     payload.lead_version = version;
-    if (qualifying) Object.assign(payload, { call_outcome: "QUALIFIED", city: values.branch, ps_officer_id: Number(field(data, "ps_officer_id")), qualification: { variant: field(data, "variant"), buying_timeline: field(data, "buying_timeline"), finance_type: field(data, "finance_type"), trade_in: null, test_drive: "", notes: field(data, "qualification_notes") } });
+    if (qualifying) Object.assign(payload, { call_outcome: "QUALIFIED", city: values.branch, ps_officer_id: Number(psOfficerId), qualification: { variant: field(data, "variant"), buying_timeline: field(data, "buying_timeline"), finance_type: field(data, "finance_type"), trade_in: null, test_drive: "", notes: field(data, "qualification_notes") } });
+    if (reassigning) payload.ps_officer_id = Number(psOfficerId);
     if (field(data, "remarks")) payload.remarks = field(data, "remarks");
     try { onSaved(await updateSharedLead(lead.id, submission(payload))); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }}><h3>Update lead #{lead.id}</h3><p><strong>Assigned CE:</strong> {latest.assignedSoName || "Not assigned"} · <strong>Assigned PS/SO:</strong> {latest.assignedPsName || "Not assigned"}</p>
@@ -94,19 +101,24 @@ export function SharedLeadEditor({ lead, config, onSaved, onCancel }: { lead: Sh
       {([['name', 'Customer name'], ['phone', 'Registered phone'], ['email', 'Email'], ['city', 'City'], ['pincode', 'Pincode'], ['source_label', 'Source detail'], ['campaign', 'Campaign']] as const).map(([key, label]) => <label key={key}>{label}<input value={values[key]} onChange={e => set(key, e.target.value)} required={key === "name" || key === "phone"} type={key === "email" ? "email" : "text"} pattern={key === "phone" ? "[0-9]{10}" : key === "pincode" ? "[1-9][0-9]{5}" : undefined} maxLength={key === "phone" ? 10 : key === "pincode" ? 6 : 160} /></label>)}
       <label>Lead source<select value={values.source} onChange={e => set("source", e.target.value)}>{[...new Set([values.source, ...config.lists.sources || []])].map(value => <option key={value} value={value}>{sourceName(value)}</option>)}</select></label>
       <label>Model<select value={values.model_interest} onChange={e => set("model_interest", e.target.value)} required={qualifying}><option value="">Select model</option>{options(config.lists.models, values.model_interest)}</select></label>
-      <label>Branch<select value={values.branch} onChange={e => set("branch", e.target.value)} required={qualifying}><option value="">Select branch</option>{options(config.lists.branches, values.branch)}</select></label>
+      <label>Branch<select value={values.branch} onChange={e => { set("branch", e.target.value); if (!latest.assignedPsId) setPsOfficerId(""); }} required={qualifying}><option value="">Select branch</option>{options(config.lists.branches, values.branch)}</select></label>
       <label>Activity<select value={values.activity} onChange={e => setValues(old => ({ ...old, activity: e.target.value, sub_activity: "" }))}><option value="">None</option>{options(config.lists.activities, values.activity)}</select></label>
       <label>Sub-activity<select value={values.sub_activity} onChange={e => set("sub_activity", e.target.value)}><option value="">None</option>{options(config.lists.subActivities?.[values.activity], values.sub_activity)}</select></label>
       <label>Enquiry date<input type="date" value={values.enquiry_date} onChange={e => set("enquiry_date", e.target.value)} /></label>
       <label>Category<select value={values.category} onChange={e => set("category", e.target.value)}>{["HOT", "WARM", "COLD"].map(value => <option key={value}>{value}</option>)}</select></label>
       <label>Lead status<select value={values.status} onChange={e => set("status", e.target.value)}>{[...new Set([base.status, ...transitions[base.status] || []])].map(value => <option key={value} value={value}>{statusName(value)}</option>)}</select></label>
+      {showPs && <label>Assigned PS/SO<select name="ps_officer_id" required value={psOfficerId} disabled={!psBranch || !officersReady || busy} onChange={e => setPsOfficerId(e.target.value)}>
+        {!latest.assignedPsId && <option value="">Select PS/SO</option>}
+        {latest.assignedPsId && (!officersReady || !officers.some(user => user.id === latest.assignedPsId)) && <option value={latest.assignedPsId}>{latest.assignedPsName || "Current PS/SO"}</option>}
+        {officersReady && officers.map(user => <option key={user.id} value={user.id}>{`${user.first_name} ${user.last_name}`.trim() || user.email}</option>)}
+      </select>{latest.assignedPsId && <small>{psBranch ? `Reassign within ${psBranch}. Enter the reason in Change remarks; open reminders will move to the new PS/SO.` : "Ask Admin to confirm the branch before reassignment."}</small>}</label>}
     </div>
-    {qualifying && <div className="sales-form-grid"><label>Assigned PS/SO<select name="ps_officer_id" required defaultValue={lead.assignedPsId || ""} key={values.branch}><option value="">Select PS/SO</option>{officers.map(user => <option key={user.id} value={user.id}>{`${user.first_name} ${user.last_name}`.trim() || user.email}</option>)}</select></label><label>Color variant<select name="variant" required><option value="">Select variant</option>{options(config.lists.colorVariants, "")}</select></label><label>Buying plan<select name="buying_timeline" required>{["Immediate", "1–2 Months", "2–3 Months", "Greater than 3 months"].map(value => <option key={value}>{value}</option>)}</select></label><label>Finance<select name="finance_type" required><option>Inhouse</option><option>Outright</option></select></label><label>Qualification notes<textarea name="qualification_notes" required maxLength={10000} /></label></div>}
+    {qualifying && <div className="sales-form-grid"><label>Color variant<select name="variant" required><option value="">Select variant</option>{options(config.lists.colorVariants, "")}</select></label><label>Buying plan<select name="buying_timeline" required>{["Immediate", "1–2 Months", "2–3 Months", "Greater than 3 months"].map(value => <option key={value}>{value}</option>)}</select></label><label>Finance<select name="finance_type" required><option>Inhouse</option><option>Outright</option></select></label><label>Qualification notes<textarea name="qualification_notes" required maxLength={10000} /></label></div>}
     {optionsError && <p role="alert">{optionsError}</p>}
     <p className="subtext">Schedule a callback before moving to Pending, Callback, or Walk-in. Updating progress preserves existing reminders.</p>
-    <label>Change remarks<textarea name="remarks" maxLength={500} required={values.status !== base.status} /></label>
+    <label>Change remarks<textarea name="remarks" maxLength={500} required={reassigning || values.status !== base.status} /></label>
     {error && <p className="form-error" role="alert">{error}</p>}{message && <p role="status">{message}</p>}
-    <footer><button type="button" className="filter" disabled={busy} onClick={async () => { try { const fresh = await getSharedLead(lead.id); setVersion(fresh.updated_at); setLatest(fresh); setMessage(`Latest saved name: ${fresh.name}; status: ${fresh.status}. Your draft is preserved. Review it before saving.`); } catch (e) { setError(errorMessage(e)); } }}>Refresh record · Keep draft</button><button type="button" className="filter" onClick={onCancel}>Cancel</button><button className="button primary" disabled={busy || !!optionsError}>{busy ? "Saving…" : "Save lead changes"}</button></footer>
+    <footer><button type="button" className="filter" disabled={busy} onClick={async () => { try { const fresh = await getSharedLead(lead.id); setVersion(fresh.updated_at); setLatest(fresh); setMessage(`Latest saved name: ${fresh.name}; status: ${fresh.status}. Your draft is preserved. Review it before saving.`); } catch (e) { setError(errorMessage(e)); } }}>Refresh record · Keep draft</button><button type="button" className="filter" onClick={onCancel}>Cancel</button><button className="button primary" disabled={busy || ((qualifying || reassigning) && (!officersReady || !!optionsError || !psOfficerId))}>{busy ? "Saving…" : "Save lead changes"}</button></footer>
   </form>;
 }
 

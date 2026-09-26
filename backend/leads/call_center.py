@@ -161,9 +161,6 @@ class CallCenterLeadViewSet(LeadViewSet):
         unknown = set(request.data) - allowed - {"submission_id", "lead_version"}
         if unknown:
             raise ValidationError({field: "This field cannot be changed through call-center lead updates." for field in unknown})
-        if request.data.get("ps_officer_id") and lead.assigned_ps_id:
-            if str(request.data["ps_officer_id"]) != str(lead.assigned_ps_id):
-                raise ValidationError({"ps_officer_id": "Only Admin assignment actions can replace the assigned PS/SO."})
         if request.data.get("ps_officer_id") and not lead.assigned_ps_id:
             if lead.needs_so_reassignment or lead.status not in {"FRESH", "PENDING", "RNR", "SWITCHED_OFF", "CALLBACK"} or request.data.get("call_outcome") != "QUALIFIED":
                 raise ValidationError({"ps_officer_id": "Assign a PS only during first qualification. Ask Admin for reassignment."})
