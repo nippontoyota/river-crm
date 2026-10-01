@@ -72,6 +72,17 @@ class LeadAnalysisTests(TestCase):
             if state == "LOST":
                 self.assertEqual(record.loss_reason, "Reason not recorded")
 
+    def test_detail_exposes_current_consultant_contact(self):
+        self.officer.phone = "9876543211"
+        self.officer.save(update_fields=["phone"])
+        lead = self.lead(assigned_ps=self.officer)
+        detail = self.get(f"leads/{lead.pk}")
+        self.assertEqual(detail.data["assigned_ps_phone"], "9876543211")
+        self.assertEqual(detail.data["assigned_ps_name"], self.officer.history_display_name)
+        lead.assigned_ps = None
+        lead.save(update_fields=["assigned_ps"])
+        self.assertIsNone(self.get(f"leads/{lead.pk}").data["assigned_ps_phone"])
+
     def test_totals_drilldowns_and_export_reconcile(self):
         for state, outcome, assigned in [("PENDING", "RNR", self.officer), ("PENDING", "Line Busy", self.officer), ("LOST", "Dropped", None), ("LOST", "LOST RNR", self.officer), ("LOST", "", None), ("FRESH", "", None)]:
             lead = self.lead(status=state, assigned_ps=assigned)

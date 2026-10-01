@@ -85,6 +85,10 @@ Lead lists and exports accept `analysis_status` and `loss_reason` as exact label
 and `analysis_officer` as a current PS/SO ID or `__unassigned__`. They use the same
 classification as the overview. History remains lifetime operational history,
 independent of the analysis's enquiry dates.
+Analysis links open a filtered, paginated customer popup over the overview.
+Selecting a customer opens their summary, current consultant contact and lifetime
+history together; Back or Escape restores the same list page and search. The
+officer matrix displays ten officers per page while totals cover all officers.
 Lists and histories paginate at 25, maximum 100. CSV exports stream the full
 filtered result, with formula-safe cells, reporting metadata and matching order.
 

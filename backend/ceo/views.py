@@ -156,6 +156,7 @@ class CEOLeadDetailView(CEOView):
         # older detail serializer's unbounded call/follow-up lists.
         from leads.serializers import LeadSerializer
         record = LeadSerializer(lead).data
+        record["assigned_ps_phone"] = lead.assigned_ps.phone if lead.assigned_ps else None
         record["milestones"] = list(lead.milestones.values("kind", "occurred_on", "occurred_at", "branch", "provenance", "actor_id", "cre_id", "so_id"))
         record["archived"] = bool(lead.deleted_at)
         record["related_complaints"] = list(lead.complaints.values("id", "ticket_number", "subject", "status"))

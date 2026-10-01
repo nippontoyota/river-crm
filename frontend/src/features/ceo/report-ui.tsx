@@ -2,14 +2,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { count, label, text, type ReportRow } from "@/lib/ceo";
 
-export function Drawer({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+export function Drawer({ title, onClose, children, wide = false, centered = false, closeLabel }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean; centered?: boolean; closeLabel?: string }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
     dialog?.showModal();
     return () => dialog?.close();
   }, []);
-  return <dialog ref={ref} className={`ceo-drawer ${wide ? "wide" : ""}`} aria-label={title} onCancel={onClose} onClick={event => { if (event.target === event.currentTarget) { const box = event.currentTarget.getBoundingClientRect(); if (event.clientX < box.left || event.clientX > box.right) onClose(); } }}><header><h2>{title}</h2><button className="ceo-icon" onClick={onClose} aria-label={`Close ${title}`}>×</button></header>{children}</dialog>;
+  return <dialog ref={ref} className={`ceo-drawer ${wide ? "wide" : ""} ${centered ? "ceo-centered" : ""}`} aria-label={title} onCancel={onClose} onClick={event => { if (event.target === event.currentTarget) { const box = event.currentTarget.getBoundingClientRect(); if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) onClose(); } }}><header><h2>{title}</h2><button className="ceo-icon" onClick={onClose} aria-label={closeLabel || `Close ${title}`}>{closeLabel || "×"}</button></header>{children}</dialog>;
 }
 
 export function Badge({ value }: { value: unknown }) {
