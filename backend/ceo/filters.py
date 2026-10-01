@@ -61,6 +61,12 @@ class ReportFilters:
             raise ValidationError({"metric": "Choose E, T, B or R."})
         if params.get("followup") and params["followup"] not in {"overdue", "due", "missing", "unassigned", "reassignment", "untouched", "flagged", "incomplete"}:
             raise ValidationError({"followup": "Choose a valid workload filter."})
+        officer = params.get("analysis_officer")
+        if officer and officer != "__unassigned__" and (not officer.isascii() or not officer.isdigit() or len(officer) > 18 or int(officer) < 1):
+            raise ValidationError({"analysis_officer": "Choose a sales officer or Unassigned."})
+        for key in ("analysis_status", "loss_reason"):
+            if len(params.get(key, "")) > 100:
+                raise ValidationError({key: "Choose a recorded analysis category."})
 
     def period(self, queryset, field):
         if self.start:
@@ -173,10 +179,14 @@ class ReportFilters:
         return queryset.distinct()
 
     def leads(self):
+        from .lead_analysis import filter_analysis
         if self.params.get("metric"):
-            return Lead.objects.filter(pk__in=self.milestones(True).values("lead_id"))
-        queryset = self.base_leads()
-        return queryset if self.params.get("scope") == "workload" else self.period(queryset, "enquiry_date")
+            queryset = Lead.objects.filter(pk__in=self.milestones(True).values("lead_id"))
+        else:
+            queryset = self.base_leads()
+            if self.params.get("scope") != "workload":
+                queryset = self.period(queryset, "enquiry_date")
+        return filter_analysis(queryset, self.params)
 
     def events(self):
         queryset = OperationEvent.objects.filter(Q(lead__deleted_at__isnull=True), lead__isnull=False)

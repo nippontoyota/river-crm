@@ -69,6 +69,22 @@ Common filters: repeated `branch`, `range` (`today`, `mtd`, `previous_month`,
 `role`, `employee`, source/RTO/campaign/activity/sub-activity/model/status/category.
 Lead filters include `metric=E|T|B|R`, `scope=workload`, `ownership=handled`,
 `followup`, `age` and `q`. Complaint filters are separate. Dates use Asia/Kolkata.
+The overview's `lead_analysis` contains status and loss-reason counts plus a
+current PS/SO status matrix. These tables always select enquiries by the chosen
+dates, regardless of the milestone reporting mode, and classify their latest
+state now. The latest call (timestamp then ID) supplies the outcome only when its
+recorded status matches the current stage and it follows the last reopening;
+otherwise the current stage supplies the label. Blank latest outcomes never
+reuse an older call. Lost, retailed and unqualified states take precedence.
+Generic CE outcome codes use the same display labels as their matching stages;
+a generic LOST code does not count as a recorded loss reason.
+Currently lost leads use their latest valid LOST call outcome as the loss reason,
+or "Reason not recorded". Archived leads are excluded, and unassigned leads and
+inactive officers with assignments remain in the matrix.
+Lead lists and exports accept `analysis_status` and `loss_reason` as exact labels,
+and `analysis_officer` as a current PS/SO ID or `__unassigned__`. They use the same
+classification as the overview. History remains lifetime operational history,
+independent of the analysis's enquiry dates.
 Lists and histories paginate at 25, maximum 100. CSV exports stream the full
 filtered result, with formula-safe cells, reporting metadata and matching order.
 
@@ -76,3 +92,8 @@ Run `python manage.py test ceo leads analytics accounts complaints uploads` and
 the frontend lint/build checks. CEO tests cover permission boundaries, totals,
 drilldowns, exports, cancellation/reassignment, old histories, skipped milestones,
 legacy backfill, refunds/reversals, idempotency and query-count scaling.
+The isolated `frontend/scripts/ceo-analysis-browser.cjs` check exercises analysis
+links, preserved filters, pagination, lifetime history and mobile sticky columns.
+Run it against a local frontend using `WEB_BASE` and an existing `puppeteer-core`
+installation via `PUPPETEER_MODULE`. It intercepts all API requests and changes no
+CRM data.

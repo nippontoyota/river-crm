@@ -18,14 +18,14 @@ function HistoryItem({ event, options }: { event: HistoryEvent; options: ReportO
   return <li className="ceo-history-item"><div className="ceo-history-dot" /><div><header><strong>{eventLabels[event.kind] || event.kind.replaceAll("_", " ")}</strong><time>{formatDateTime(event.occurred_at)}</time></header><small>{event.actor || "Actor not recorded"}{event.actor_role ? ` · ${label(event.actor_role)}` : ""}{event.provenance === "legacy" ? " · Historical record" : ""}</small>{Boolean(event.after.remarks || event.after.notes || event.after.content) && <p className="ceo-note">{text(event.after.remarks || event.after.notes || event.after.content)}</p>}{changes.length > 0 && <dl className="ceo-event-fields">{changes.map(([key, value]) => <div key={key}><dt>{fieldLabels[key] || key.replaceAll("_", " ")}</dt><dd>{key in event.before && event.before[key] !== value ? <><span>{format(key, event.before[key])}</span> → </> : null}{format(key, value)}</dd></div>)}</dl>}</div></li>;
 }
 
-export function LeadDetailDrawer({ id, options, entity = "leads", onClose, onOpenLead, onOpenComplaint, showFinance = false }: { id: number; options: ReportOptions | null; entity?: "leads" | "complaints"; onClose: () => void; onOpenLead?: (id: number) => void; onOpenComplaint?: (id: number) => void; showFinance?: boolean }) {
+export function LeadDetailDrawer({ id, options, entity = "leads", onClose, onOpenLead, onOpenComplaint, showFinance = false, initialTab = "summary" }: { id: number; options: ReportOptions | null; entity?: "leads" | "complaints"; onClose: () => void; onOpenLead?: (id: number) => void; onOpenComplaint?: (id: number) => void; showFinance?: boolean; initialTab?: "summary" | "history" }) {
   const [detail, setDetail] = useState<ReportRow | null>(null);
   const [events, setEvents] = useState<HistoryEvent[]>([]);
   const [historyCount, setHistoryCount] = useState(0);
   const [historyPage, setHistoryPage] = useState(1);
   const [kind, setKind] = useState("");
   const [order, setOrder] = useState("newest");
-  const [tab, setTab] = useState("summary");
+  const [tab, setTab] = useState<string>(initialTab);
   const [entries, setEntries] = useState<PageData | null>(null);
   const [entryPage, setEntryPage] = useState(1);
   const [error, setError] = useState("");

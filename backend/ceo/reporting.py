@@ -13,6 +13,7 @@ from .finance import signed_amount
 from .filters import AGE_BANDS, ROLES, ReportFilters
 from .models import FinancialEntry, Milestone, OperationEvent, SaleAccount, SalesTarget
 from .tracking import branch_key
+from .lead_analysis import lead_analysis
 
 KINDS = "ETBR"
 TARGET_FIELDS = ("enquiries", "test_drives", "bookings", "retails")
@@ -232,7 +233,7 @@ def summary(filters):
     return {**filters.metadata(), "ageing": ageing, "trend": trend, "trend_interval": "month" if monthly else "day", "previous_etbr": previous_counts, "etbr": counts, "conversions": conversions(filters), "current": current_counts(cohort),
         "activity": {**activity, "connection_rate": ratio(activity["connected"], calls.exclude(after__call_status="").count()),
                      "cancellations": events.filter(kind="booking_cancelled").count()},
-        "complaints": complaint_summary(filters), "targets": target_summary(filters),
+        "complaints": complaint_summary(filters), "targets": target_summary(filters), "lead_analysis": lead_analysis(filters),
         "coverage": {"unknown_dates": Milestone.objects.filter(lead__in=cohort, occurred_on__isnull=True).count(),
                      "legacy_events": milestones.filter(provenance="legacy").count(),
                      "unknown_branch": milestones.filter(branch="").count(),

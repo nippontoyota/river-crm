@@ -23,6 +23,7 @@ from leads.rtos import KERALA_RTO_CHOICES
 from .filters import DIMENSIONS, ROLES, ReportFilters
 from .finance import FinanceInput, TargetInput, save_finance, save_target, target_data
 from .models import FinancialEntry, Milestone, OperationEvent, SalesTarget
+from .lead_analysis import classified_leads
 from .reporting import account_row, branch_options, complaint_queryset, complaint_summary, financial_accounts, financial_summary, people_queryset, people_rows, segment_rows, summary
 
 
@@ -69,11 +70,12 @@ def lead_rows(queryset):
     if isinstance(queryset, list):
         ordered_ids = [lead.pk for lead in queryset]
         queryset = Lead.objects.filter(pk__in=ordered_ids)
-    queryset = queryset.select_related("assigned_so", "assigned_ps").annotate(
+    queryset = classified_leads(queryset).select_related("assigned_so", "assigned_ps").annotate(
         next_follow_up=Min("follow_ups__scheduled_for", filter=Q(follow_ups__resolved_at__isnull=True)),
         calls=Count("call_logs", distinct=True), last_call=Max("call_logs__created_at"))
     rows = [{"id": lead.id, "name": lead.name, "phone": lead.phone, "branch": lead.branch, "rto": lead.rto,
-        "status": lead.status, "sales_outcome": lead.sales_outcome, "source": lead.source, "model": lead.model_interest,
+        "status": lead.status, "analysis_status": lead.analysis_status, "loss_reason": lead.loss_reason,
+        "sales_outcome": lead.sales_outcome, "source": lead.source, "model": lead.model_interest,
         "category": lead.category, "enquiry_date": lead.enquiry_date, "cre_id": lead.assigned_so_id, "so_id": lead.assigned_ps_id,
         "cre": lead.assigned_so.history_display_name if lead.assigned_so else None,
         "so": lead.assigned_ps.history_display_name if lead.assigned_ps else None,
