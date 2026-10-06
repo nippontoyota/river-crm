@@ -4,7 +4,7 @@ import { ActivityFields } from "@/components/activity-fields";
 import { RtoField } from "@/components/rto-field";
 
 import { useEffect, useState, FormEvent } from "react";
-import { createLead, getCurrentUser, getSystemConfig, getOfficers, toOfficer, type Officer, type SystemConfig, type CurrentUser } from "@/lib/crm";
+import { createLead, getCurrentUser, getSystemConfig, getOfficers, toOfficer, sourceName, type Officer, type SystemConfig, type CurrentUser } from "@/lib/crm";
 import { CustomerLookup } from "@/features/leads/customer-lookup";
 
 export default function CaptureLeadPage() {
@@ -93,6 +93,7 @@ export default function CaptureLeadPage() {
 
   const modelOptions = config?.lists?.models || [];
   const rtoOptions = config?.rto_options || [];
+  const sourceOptions = config?.lists?.sources || [];
 
   return (
     <div className="page capture-page">
@@ -148,14 +149,11 @@ export default function CaptureLeadPage() {
                   Walk-in
                 </label>
               ) : (
-                <select name="source" value={formData.source} onChange={handleChange} required>
+                <select name="source" value={formData.source} onChange={handleChange} required disabled={!sourceOptions.length}>
                   <option value="WALKIN">Walk-in</option>
-                  <option value="META">Meta Ads</option>
-                  <option value="WEBSITE">Website</option>
-                  <option value="CARWALE">CarWale</option>
-                  <option value="CAMPAIGN">Campaign</option>
-                  <option value="OTHER">Other</option>
-                  <option value="UNKNOWN">Unknown</option>
+                  {sourceOptions.filter(s => s !== "WALKIN").map(s => (
+                    <option key={s} value={s}>{sourceName(s)}</option>
+                  ))}
                 </select>
               )}
             </div>
