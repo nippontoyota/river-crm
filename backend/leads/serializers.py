@@ -139,6 +139,14 @@ class LeadSerializer(serializers.ModelSerializer):
     def validate_source(self, value):
         return validate_configured_source(value, self.instance.source if self.instance else "")
 
+    def validate_phone(self, value):
+        qs = Lead.objects.filter(phone=value, deleted_at__isnull=True)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("An active lead with this phone number already exists.")
+        return value
+
     ps_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True, deleted_at__isnull=True), source="assigned_ps", required=False, write_only=True)
 
     class Meta:

@@ -18,9 +18,9 @@ class ActivityIntakeTests(TestCase):
     def test_admin_configuration_and_creation_across_intake_roles(self):
         response = self.client.put("/api/system-config/", {"lists": self.config.lists}, format="json")
         self.assertEqual(response.status_code, 200, response.data)
-        for user, endpoint, source in [(self.admin, "/api/leads/", "WEBSITE"), (self.receptionist, "/api/leads/", "WALKIN"), (self.so, "/api/leads/so-create/", "WEBSITE")]:
+        for i, (user, endpoint, source) in enumerate([(self.admin, "/api/leads/", "WEBSITE"), (self.receptionist, "/api/leads/", "WALKIN"), (self.so, "/api/leads/so-create/", "WEBSITE")]):
             self.client.force_authenticate(user)
-            response = self.client.post(endpoint, {"rto": "KL-07", "name": "Roadshow enquiry", "phone": "9876543210", "source": source, "activity": "Roadshow", "sub_activity": "Kochi", "model_interest": "River Indie", "enquiry_date": timezone.localdate().isoformat()}, format="json")
+            response = self.client.post(endpoint, {"rto": "KL-07", "name": "Roadshow enquiry", "phone": f"987654321{i}", "source": source, "activity": "Roadshow", "sub_activity": "Kochi", "model_interest": "River Indie", "enquiry_date": timezone.localdate().isoformat()}, format="json")
             self.assertEqual(response.status_code, 201, response.data)
             self.assertEqual(response.data["sub_activity"], "Kochi")
             self.assertEqual(Lead.objects.get(pk=response.data["id"]).activity, "Roadshow")
@@ -81,8 +81,9 @@ class ConfiguredLeadFieldsTests(TestCase):
         payload = {"rto": "KL-07", "name": "Configured customer", "phone": "9000000001", "source": "Event",
                    "model_interest": "Indie", "branch": "Kochi", "enquiry_date": timezone.localdate().isoformat(),
                    "activity": "Roadshow", "sub_activity": "Mall", "qualification_input": {"variant": "Blue"}}
-        for user, endpoint in [(self.ce, "/api/leads/"), (self.ps, "/api/leads/so-create/")]:
+        for i, (user, endpoint) in enumerate([(self.ce, "/api/leads/"), (self.ps, "/api/leads/so-create/")], start=1):
             self.client.force_authenticate(user)
+            payload["phone"] = f"900000000{i}"
             with self.subTest(role=user.role):
                 response = self.client.post(endpoint, payload, format="json")
                 self.assertEqual(response.status_code, 201, response.data)
@@ -99,6 +100,7 @@ class ConfiguredLeadFieldsTests(TestCase):
                 self.assertIn("qualification_input", rejected.data)
                 self.set_config()
         self.client.force_authenticate(self.ce)
+        payload["phone"] = "9000000003"
         self.assertEqual(self.client.post("/api/leads/", {**payload, "branch": "Typo"}, format="json").status_code, 400)
         self.ps.location = "Unconfigured branch"
         self.ps.save()
