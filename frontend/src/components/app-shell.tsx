@@ -57,6 +57,7 @@ const managerLinks = [
 const creLinks = [
   ["/services", "Services", "⚒"],
   ["/my-leads", "My assigned leads", "◫"],
+  ["/capture", "Capture Lead", "＋"],
   ["/call-center", "Call center / All customers", "☎"],
   ["/follow-ups", "Follow-ups", "◷"],
   ["/complaints", "Complaints", "⚑"],

@@ -4,7 +4,8 @@ import { ActivityFields } from "@/components/activity-fields";
 import { RtoField } from "@/components/rto-field";
 
 import { useEffect, useState, FormEvent } from "react";
-import { createLead, getCurrentUser, getSystemConfig, getOfficers, toOfficer, type Officer, type SystemConfig } from "@/lib/crm";
+import { createLead, getCurrentUser, getSystemConfig, getOfficers, toOfficer, type Officer, type SystemConfig, type CurrentUser } from "@/lib/crm";
+import { CustomerLookup } from "@/features/leads/customer-lookup";
 
 export default function CaptureLeadPage() {
   const [loading, setLoading] = useState(false);
@@ -14,6 +15,8 @@ export default function CaptureLeadPage() {
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [officers, setOfficers] = useState<Officer[]>([]);
   const [branch, setBranch] = useState("");
+  const [userRole, setUserRole] = useState<string>("");
+  const [showLookup, setShowLookup] = useState(false);
 
   const [formData, setFormData] = useState({
     activity: "", sub_activity: "",
@@ -22,6 +25,7 @@ export default function CaptureLeadPage() {
     email: "",
     profession: "",
     rto: "",
+    source: "WALKIN",
     model_interest: "",
     assigned_ps_id: "",
   });
@@ -29,6 +33,7 @@ export default function CaptureLeadPage() {
   useEffect(() => {
     getSystemConfig().then(setConfig).catch(() => setError("Unable to load enquiry options. Refresh the page to retry."));
     getCurrentUser().then(async ({ user }) => {
+      setUserRole(user.role);
       const location = user.location?.trim() || "";
       setBranch(location);
       if (!location) return;
@@ -45,7 +50,7 @@ export default function CaptureLeadPage() {
   const handleClear = () => {
     setFormData({
       activity: "", sub_activity: "",
-      name: "", phone: "", email: "", profession: "", rto: "",
+      name: "", phone: "", email: "", profession: "", rto: "", source: "WALKIN",
       model_interest: "", assigned_ps_id: ""
     });
     setError("");
@@ -67,7 +72,7 @@ export default function CaptureLeadPage() {
         email: formData.email || undefined,
         profession: formData.profession,
         rto: formData.rto,
-        source: "WALKIN",
+        source: formData.source,
         activity: formData.activity, sub_activity: formData.sub_activity,
         status: "QUALIFIED",
         model_interest: formData.model_interest,
@@ -91,13 +96,16 @@ export default function CaptureLeadPage() {
 
   return (
     <div className="page capture-page">
-      <div className="page-heading compact capture-heading">
+      <div className="page-heading compact capture-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <p className="eyebrow">FRONT DESK INTAKE</p>
           <h1>Capture <span>lead</span></h1>
           <p className="subtext">Register a new customer enquiry and assign it to a sales executive.</p>
         </div>
+        <button type="button" className="button" onClick={() => setShowLookup(true)}>⌕ Check if customer exists</button>
       </div>
+
+      {showLookup && <CustomerLookup onClose={() => setShowLookup(false)} onOpenLead={() => setShowLookup(false)} />}
 
       <form className="panel capture-form" onSubmit={submit}>
         {error && <div className="form-error capture-alert">{error}</div>}
@@ -134,10 +142,22 @@ export default function CaptureLeadPage() {
         <fieldset className="capture-fieldset">
             <legend>Source *</legend>
             <div className="capture-choice-row">
-              <label className="selected">
-                <input type="radio" name="sourceType" checked readOnly />
-                Walk-in
-              </label>
+              {userRole === "RECEPTIONIST" ? (
+                <label className="selected">
+                  <input type="radio" name="source" value="WALKIN" checked readOnly />
+                  Walk-in
+                </label>
+              ) : (
+                <select name="source" value={formData.source} onChange={handleChange} required>
+                  <option value="WALKIN">Walk-in</option>
+                  <option value="META">Meta Ads</option>
+                  <option value="WEBSITE">Website</option>
+                  <option value="CARWALE">CarWale</option>
+                  <option value="CAMPAIGN">Campaign</option>
+                  <option value="OTHER">Other</option>
+                  <option value="UNKNOWN">Unknown</option>
+                </select>
+              )}
             </div>
         </fieldset>
 
