@@ -206,10 +206,15 @@ class LeadViewSet(viewsets.ModelViewSet):
             officer = serializer.validated_data.get("assigned_ps")
             if officer and officer.location.strip().casefold() != branch.casefold():
                 raise ValidationError({"ps_officer_id": "Choose a sales executive from your branch."})
-            lead = serializer.save(source=Lead.Source.WALKIN, status=Lead.Status.QUALIFIED, branch=branch)
+            lead = serializer.save(source=Lead.Source.WALKIN, status=Lead.Status.QUALIFIED, branch=branch, generated_by=self.request.user)
         elif is_walkin:
             # Walk-in leads bypass CE – go directly to PS/SO as qualified
-            lead = serializer.save(status=Lead.Status.QUALIFIED)
+            kwargs = {"status": Lead.Status.QUALIFIED, "generated_by": self.request.user}
+            if getattr(self.request.user, "role", None) == User.Role.CRE:
+                owner = User.objects.filter(pk=self.request.user.pk).first()
+                if owner:
+                    kwargs["assigned_so"] = owner
+            lead = serializer.save(**kwargs)
         elif not self.request.user.is_admin and getattr(self.request.user, "role", None) == User.Role.CRE:
             with transaction.atomic():
                 owner = User.objects.select_for_update().filter(
@@ -220,9 +225,9 @@ class LeadViewSet(viewsets.ModelViewSet):
                 ).first()
                 if not owner:
                     raise ValidationError({"detail": "Your account is no longer active."})
-                lead = serializer.save(assigned_so=owner)
+                lead = serializer.save(assigned_so=owner, generated_by=self.request.user)
         else:
-            lead = serializer.save()
+            lead = serializer.save(generated_by=self.request.user)
         LeadAudit.objects.create(lead=lead, actor=self.request.user, event="created")
 
     def perform_destroy(self, instance):
