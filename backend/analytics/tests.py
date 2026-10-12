@@ -51,12 +51,58 @@ class SalesManagerAnalyticsTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["cre"], [])
+        self.assertEqual(response.data["filters"]["cre"], [])
         self.assertEqual(response.data["source"], [])
         self.assertEqual(response.data["filters"]["ps"][0]["id"], self.ps.id)
 
-        cre = self.client.get("/api/analytics/sales-manager/?include=cre")
-        self.assertEqual(cre.data["cre"][0]["id"], self.cre.id)
-        self.assertEqual(cre.data["ps"], [])
+        ps = self.client.get("/api/analytics/sales-manager/?include=ps")
+        self.assertEqual(ps.data["ps"][0]["id"], self.ps.id)
+        self.assertEqual(ps.data["cre"], [])
+
+    def test_manager_staff_reporting_excludes_ce_without_changing_history(self):
+        now = timezone.now()
+        CallLog.objects.create(lead=self.branch_lead, so=self.cre, status=Lead.Status.QUALIFIED)
+        FollowUp.objects.create(lead=self.branch_lead, so=self.cre, scheduled_for=now - timedelta(hours=1))
+        FollowUp.objects.create(lead=self.branch_lead, so=self.ps, scheduled_for=now - timedelta(hours=1))
+        before = {
+            model: list(model.objects.order_by("pk").values())
+            for model in (User, Lead, CallLog, FollowUp)
+        }
+        self.client.force_authenticate(self.manager)
+
+        for query in ("", "?include=cre", "?include=overview,filters,cre,ps"):
+            with self.subTest(query=query):
+                response = self.client.get(f"/api/analytics/sales-manager/{query}")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["cre"], [])
+                self.assertEqual(response.data["summary"]["total"], 2)
+                self.assertNotIn(self.cre.email, str(response.data))
+
+        overview = self.client.get("/api/analytics/sales-manager/?include=overview,filters,ps")
+        self.assertEqual({row["id"] for row in overview.data["ps"]}, {self.ps.id})
+        self.assertEqual(overview.data["ps"][0]["calls"], 1)
+        self.assertEqual(overview.data["followups"]["due"], 1)
+        self.assertEqual({row["so__id"] for row in overview.data["followups"]["by_owner"]}, {self.ps.id})
+        self.assertEqual(overview.data["filters"]["cre"], [])
+
+        for section in ("cre", "ce"):
+            export = self.client.get(f"/api/analytics/sales-manager/export/?section={section}")
+            self.assertEqual(export.status_code, 403)
+        for query in ("", "?section=ps"):
+            export = self.client.get(f"/api/analytics/sales-manager/export/{query}")
+            self.assertEqual(export.status_code, 200)
+            self.assertIn(self.ps.email, export.content.decode())
+            self.assertNotIn(self.cre.email, export.content.decode())
+
+        # Existing CE reporting remains available to admins and the CE themselves.
+        self.client.force_authenticate(self.admin)
+        admin = self.client.get("/api/analytics/admin/")
+        self.assertIn(self.cre.id, {row["id"] for row in admin.data["cre"]})
+        self.client.force_authenticate(self.cre)
+        personal = self.client.get("/api/analytics/me/?range=all")
+        self.assertEqual(personal.data["summary"]["total"], 2)
+        for model, rows in before.items():
+            self.assertEqual(list(model.objects.order_by("pk").values()), rows)
 
     def test_other_analytics_query_budgets(self):
         self.client.force_authenticate(self.admin)
@@ -216,6 +262,7 @@ class SalesManagerAnalyticsTests(TestCase):
         FollowUp.objects.create(lead=self.branch_lead, so=self.ps, scheduled_for=now - timedelta(hours=1))
         FollowUp.objects.create(lead=self.retailed, so=self.ps, scheduled_for=now - timedelta(hours=2), resolved_at=now)
         FollowUp.objects.create(lead=self.retailed, so=self.ps, scheduled_for=now + timedelta(hours=1))
+        FollowUp.objects.create(lead=self.retailed, so=self.cre, scheduled_for=now - timedelta(hours=1))
         FollowUp.objects.create(lead=self.other_branch_lead, so=self.ps, scheduled_for=now - timedelta(hours=1))
         self.client.force_authenticate(self.manager)
 

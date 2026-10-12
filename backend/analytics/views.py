@@ -120,8 +120,6 @@ def manager_base_queryset(request, include_ps=True):
         queryset = queryset.filter(category=value)
     if value := request.query_params.get("status"):
         queryset = queryset.filter(status=value)
-    if value := request.query_params.get("cre"):
-        queryset = queryset.filter(assigned_so_id=value)
     if include_ps and (value := request.query_params.get("ps")):
         queryset = queryset.filter(assigned_ps_id=value)
     return queryset
@@ -307,7 +305,7 @@ def manager_payload(request):
     scoped = manager_base_queryset(request)
     queryset = with_period(scoped, start, end)
     requested = {value for value in request.query_params.get("include", "").split(",") if value}
-    includes = requested or {"overview", "cre", "ps", "source", "ops"}
+    includes = requested or {"overview", "ps", "source", "ops"}
     prev_start, prev_end = previous_mtd_bounds(start, end) if date_range == "mtd" else (None, None)
     previous = summary_for(with_period(manager_base_queryset(request), prev_start, prev_end)) if prev_start and prev_end else {}
     today = timezone.localdate()
@@ -315,7 +313,7 @@ def manager_payload(request):
     summary = with_deltas(summary_for(queryset, stale_since), previous)
     followups = {"due": 0, "overdue": 0, "by_owner": []}
     if "overview" in includes:
-        due_followups = FollowUp.objects.filter(resolved_at__isnull=True, lead__deleted_at__isnull=True, lead__branch__iexact=branch, scheduled_for__date__lte=today)
+        due_followups = FollowUp.objects.filter(so__role=User.Role.SALES_OFFICER, resolved_at__isnull=True, lead__deleted_at__isnull=True, lead__branch__iexact=branch, scheduled_for__date__lte=today)
         if start:
             due_followups = due_followups.filter(scheduled_for__date__gte=start)
         if end:
@@ -345,8 +343,6 @@ def manager_payload(request):
     }
     if "overview" in includes:
         payload["monthly"] = list(queryset.annotate(month=TruncMonth("enquiry_date")).values("month").annotate(total=Count("id"), qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)), booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)), retailed=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.RETAILED))).order_by("month"))
-    if "cre" in includes:
-        payload["cre"] = role_rows(User.objects.filter(role=User.Role.CRE, is_active=True), "assigned_leads", branch, start, end)
     if "ps" in includes:
         payload["ps"] = role_rows(User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True), "ps_leads", branch, start, end)
     if "source" in includes:
@@ -358,14 +354,14 @@ def manager_payload(request):
         payload["lost_reasons"] = list(CallLog.objects.filter(lead__in=queryset.filter(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]), outcome__gt="").values("outcome").annotate(count=Count("id")).order_by("-count", "outcome"))
         payload["stale_leads"] = list(queryset.filter(status=Lead.Status.FRESH, created_at__date__lte=stale_since).order_by("created_at").values("id", "name", "phone", "source", "model_interest", "created_at")[:20])
     if "filters" in includes:
-        pairs = list(queryset.values("source", "model_interest", "assigned_so_id", "assigned_ps_id").distinct())
-        owner_ids = {row[key] for row in pairs for key in ("assigned_so_id", "assigned_ps_id") if row[key]}
-        users = User.objects.filter(is_active=True, role__in=[User.Role.CRE, User.Role.SALES_OFFICER]).filter(Q(location__iexact=branch) | Q(id__in=owner_ids)).order_by("first_name", "last_name", "email")
+        pairs = list(queryset.values("source", "model_interest", "assigned_ps_id").distinct())
+        owner_ids = {row["assigned_ps_id"] for row in pairs if row["assigned_ps_id"]}
+        users = User.objects.filter(is_active=True, role=User.Role.SALES_OFFICER).filter(Q(location__iexact=branch) | Q(id__in=owner_ids)).order_by("first_name", "last_name", "email")
         payload["filters"] = {
             "source": sorted({row["source"] for row in pairs if row["source"]}),
             "models": sorted({row["model_interest"] for row in pairs if row["model_interest"]}),
-            "cre": [{"id": user.id, "name": user.get_full_name() or user.email} for user in users if user.role == User.Role.CRE],
-            "ps": [{"id": user.id, "name": user.get_full_name() or user.email} for user in users if user.role == User.Role.SALES_OFFICER],
+            "cre": [],  # Retain the response shape for older clients without exposing CE data.
+            "ps": [{"id": user.id, "name": user.get_full_name() or user.email} for user in users],
         }
     return payload
 
@@ -467,7 +463,7 @@ class ReceptionistAnalyticsView(APIView):
 class SalesManagerAnalyticsView(APIView):
     permission_classes = [IsSalesManager]
 
-    @cache_analytics("sales-manager")
+    @cache_analytics("sales-manager-so-only")
     def get(self, request):
         return Response(manager_payload(request))
 
@@ -475,7 +471,7 @@ class SalesManagerAnalyticsView(APIView):
 class SalesManagerPSFollowupsView(APIView):
     permission_classes = [IsSalesManager]
 
-    @cache_analytics("sales-manager-ps-followups")
+    @cache_analytics("sales-manager-ps-followups-so-only")
     def get(self, request):
         return Response(ps_followup_payload(request))
 
@@ -484,7 +480,9 @@ class SalesManagerAnalyticsExportView(APIView):
     permission_classes = [IsSalesManager]
 
     def get(self, request):
-        section = request.query_params.get("section", "cre")
+        section = request.query_params.get("section", "ps")
+        if section in {"cre", "ce"}:
+            return Response({"detail": "CE performance is not available to sales managers."}, status=403)
         if section == "ps_followups":
             data = ps_followup_payload(request)
             rows = data["leads"] or data["rows"]
@@ -500,11 +498,10 @@ class SalesManagerAnalyticsExportView(APIView):
             return response
         data = manager_payload(request)
         response = HttpResponse(content_type="text/csv")
-        export_section = "ce" if section == "cre" else section
-        response["Content-Disposition"] = f'attachment; filename="incheon-sales-manager-{export_section}.csv"'
+        response["Content-Disposition"] = f'attachment; filename="incheon-sales-manager-{section}.csv"'
         writer = csv.writer(response)
         rows = data.get(section, [])
-        if section in {"cre", "ps", "source", "models", "lost_reasons", "stale_leads"} and isinstance(rows, list) and rows:
+        if section in {"ps", "source", "models", "lost_reasons", "stale_leads"} and isinstance(rows, list) and rows:
             keys = list(rows[0].keys())
             writer.writerow(keys)
             for row in rows:

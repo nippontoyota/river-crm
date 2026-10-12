@@ -256,7 +256,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         if request.query_params.get("flagged") == "true":
             queryset = queryset.filter(flagged_to_manager=True)
         if request.query_params.get("followup") == "overdue":
-            queryset = queryset.filter(follow_ups__resolved_at__isnull=True, follow_ups__scheduled_for__lt=timezone.now()).distinct()
+            queryset = queryset.filter(follow_ups__so__role=User.Role.SALES_OFFICER, follow_ups__resolved_at__isnull=True, follow_ups__scheduled_for__lt=timezone.now()).distinct()
         if request.query_params.get("risk") == "stale":
             queryset = queryset.filter(status=Lead.Status.FRESH, created_at__date__lte=timezone.localdate() - timedelta(days=3))
         if request.query_params.get("status_group") == "lost_or_unqualified":

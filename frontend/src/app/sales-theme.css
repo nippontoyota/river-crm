@@ -454,7 +454,7 @@
 
 .manager-filter-bar {
   display: grid;
-  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
   gap: 12px;
   margin-bottom: 18px;
   border-radius: 8px;
