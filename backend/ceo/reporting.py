@@ -14,11 +14,12 @@ from .filters import AGE_BANDS, ROLES, ReportFilters
 from .models import FinancialEntry, Milestone, OperationEvent, SaleAccount, SalesTarget
 from .tracking import branch_key
 from .lead_analysis import lead_analysis
+from leads.metrics import ps_handling_counts, with_ps_handling
 
 KINDS = "ETBR"
 TARGET_FIELDS = ("enquiries", "test_drives", "bookings", "retails")
 CLOSED = ["WON", "LOST", "UNQUALIFIED"]
-TARGET_DIMENSIONS = ("rto", "source", "campaign", "activity", "sub_activity", "model_interest", "status", "category", "followup", "age", "q")
+TARGET_DIMENSIONS = ("rto", "source", "campaign", "activity", "sub_activity", "model_interest", "status", "category", "followup", "age", "q", "ps_handling")
 
 
 def targets_applicable(filters):
@@ -263,9 +264,11 @@ def segment_rows(filters, dimension="branch"):
                 rows.setdefault(key, {"group_key": key, **dict.fromkeys(KINDS, 0)})
     # Cohort conversion uses intersection with enquiries for this segment.
     cohort = filters.period(filters.base_leads(), "enquiry_date").annotate(group_key=Lower(Trim(dimension)) if dimension == "branch" else F(dimension))
-    rates = {r["group_key"] or "": ratio(r["retails"], r["total"]) for r in cohort.values("group_key").annotate(total=Count("id", distinct=True), retails=Count("id", filter=Q(milestones__kind="R"), distinct=True))}
+    cohort_counts = {r["group_key"] or "": r for r in with_ps_handling(cohort).values("group_key").annotate(total=Count("id", distinct=True), retails=Count("id", filter=Q(milestones__kind="R"), distinct=True), **ps_handling_counts())}
     for key, row in rows.items():
-        row.update(key=key or "__unknown__", label=labels.get(key, key) or "Not recorded", conversion=rates.get(key))
+        counts = cohort_counts.get(key, {})
+        row.update(key=key or "__unknown__", label=labels.get(key, key) or "Not recorded", conversion=ratio(counts.get("retails", 0), counts.get("total", 0)),
+                   passed_to_ps=counts.get("passed_to_ps", 0), untouched_by_ps=counts.get("untouched_by_ps", 0))
         if dimension == "branch":
             row["targets"] = None  # Populated in one grouped query below.
     if dimension == "branch" and targets_applicable(filters) and not filters.employee and not filters.params.get("role"):

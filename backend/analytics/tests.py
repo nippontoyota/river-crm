@@ -322,7 +322,7 @@ class SalesManagerAnalyticsTests(TestCase):
         row = response.data["rows"][0]
         self.assertEqual(row["total_leads"], 3)
         self.assertEqual(row["test_drive"], 2)
-        self.assertEqual(row["unattended"], 1)
+        self.assertEqual(row["unattended"], 2)
         self.assertEqual(row["f1"], 1)
         self.assertEqual(row["f5"], 1)
 
@@ -335,6 +335,44 @@ class SalesManagerAnalyticsTests(TestCase):
         self.assertIn("First follow-up", exported_csv)
         self.assertIn("Unattended", exported_csv)
         self.assertIn(timezone.localtime(first.created_at).strftime("%d/%m/%Y %H:%M"), exported_csv)
+
+    def test_unattended_and_untouched_use_ps_calls_not_followup_schedules(self):
+        # CE activity must not hide a lead the assigned PS has never called.
+        CallLog.objects.create(lead=self.branch_lead, so=self.cre, status=Lead.Status.QUALIFIED)
+        pending = Lead.objects.create(name="Called with overdue follow-up", phone="9000000030", branch="Mount Road", assigned_ps=self.ps, status=Lead.Status.PENDING)
+        no_schedule = Lead.objects.create(name="Called without follow-up", phone="9000000031", branch="Mount Road", assigned_ps=self.ps, status=Lead.Status.PENDING)
+        future = Lead.objects.create(name="Called with future follow-up", phone="9000000032", branch="Mount Road", assigned_ps=self.ps, status=Lead.Status.PENDING)
+        for lead in (pending, no_schedule, future):
+            CallLog.objects.create(lead=lead, so=self.ps, status=Lead.Status.PENDING)
+        FollowUp.objects.create(lead=pending, so=self.ps, scheduled_for=timezone.now() - timedelta(hours=1))
+        FollowUp.objects.create(lead=future, so=self.ps, scheduled_for=timezone.now() + timedelta(days=1))
+        before = {model: list(model.objects.order_by("pk").values()) for model in (Lead, CallLog, FollowUp)}
+        self.client.force_authenticate(self.manager)
+
+        summary = self.client.get("/api/analytics/sales-manager/?range=all").data
+        followups = self.client.get("/api/analytics/sales-manager/ps-followups/?range=all").data
+        self.assertEqual(summary["summary"]["untouched"], 1)
+        self.assertEqual(summary["ps"][0]["untouched"], 1)
+        self.assertEqual(summary["followups"]["overdue"], 1)
+        self.assertEqual(followups["rows"][0]["unattended"], 1)
+        self.assertEqual(followups["rows"][0]["f1"], 2)
+        bucket = f"range=all&ps={self.ps.pk}&bucket=unattended"
+        leads = self.client.get(f"/api/analytics/sales-manager/ps-followups/?{bucket}").data["leads"]
+        self.assertEqual([row["id"] for row in leads], [self.branch_lead.pk])
+        drilldown = self.client.get("/api/leads/manager-leads/?ps_handling=untouched").data["results"]
+        self.assertEqual([row["id"] for row in drilldown], [self.branch_lead.pk])
+        overdue = self.client.get("/api/leads/manager-leads/?followup=overdue").data["results"]
+        self.assertEqual([row["id"] for row in overdue], [pending.pk])
+        exported = self.client.get(f"/api/analytics/sales-manager/export/?section=ps_followups&{bucket}").content.decode()
+        self.assertIn("Branch lead", exported)
+        self.assertNotIn("Called", exported)
+
+        ceo = User.objects.create_user(email="unattended-ceo@example.com", role=User.Role.CEO)
+        self.client.force_authenticate(ceo)
+        analysis = self.client.get("/api/ceo/overview/?range=all&branch=mount%20road").data["lead_analysis"]
+        self.assertEqual(analysis["untouched_by_ps"], 1)
+        for model, rows in before.items():
+            self.assertEqual(list(model.objects.order_by("pk").values()), rows)
 
     def test_non_manager_cannot_use_sales_manager_analytics(self):
         self.client.force_authenticate(self.admin)

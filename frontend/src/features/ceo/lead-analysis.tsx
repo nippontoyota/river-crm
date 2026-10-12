@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { count, type AnalysisCount, type LeadAnalysisData, type ReportOptions } from "@/lib/ceo";
+import { count, psHandlingMetrics, type AnalysisCount, type LeadAnalysisData, type ReportOptions } from "@/lib/ceo";
 import { AnalysisLeadsModal } from "./analysis-leads-modal";
 
 type Filters = Record<string, string | null>;
@@ -20,7 +20,7 @@ export function LeadAnalysis({ data, loading, query, options }: Props) {
       else params.set(key, value);
     }
     const officer = data.officers.find(row => row.key === params.get("analysis_officer"));
-    const status = params.get("loss_reason") || params.get("analysis_status") || "All leads";
+    const status = [psHandlingMetrics.find(([, , value]) => value === params.get("ps_handling"))?.[1], params.get("loss_reason") || params.get("analysis_status")].filter(Boolean).join(" · ") || "All leads";
     setSelection({ query: params.toString(), title: `${status}${officer ? ` — ${officer.name}` : ""}` });
   };
   const link = (title: string, filters: Filters, description: string) => <button className="ceo-link" disabled={loading} onClick={() => onOpen(filters)} aria-label={description}>{title}</button>;
@@ -47,17 +47,18 @@ export function LeadAnalysis({ data, loading, query, options }: Props) {
     {totals("Lead Status Analysis", data.statuses, data.total)}
     {totals("Lost Lead Analysis", data.loss_reasons, data.lost_total, true)}
     <section className="ceo-table-card ceo-analysis ceo-analysis-officers" aria-busy={loading}>
-      <header><div><h2>Sales Officer-wise Lead Status</h2><p>Grouped by current PS/SO assignment.</p></div></header>
+      <header><div><h2>Sales Officer-wise Lead Status</h2><p>Passed to PS = currently assigned. Untouched by PS = no call logged by that PS, even if the CE called. Counts use the selected enquiry dates and branch filters.</p></div></header>
       <div className="ceo-table-scroll" tabIndex={0} role="region" aria-label="Sales officer status matrix">
         <table>
           <caption className="ceo-sr-only">Sales Officer-wise Lead Status</caption>
-          <thead><tr><th scope="col">Sales officer</th><th scope="col" className="number">{link("Total", {}, "View all matching leads")}</th>{data.statuses.map(status => <th key={status.key} scope="col" className="number">{link(status.label, { analysis_status: status.key }, `View all ${status.label} leads`)}</th>)}</tr></thead>
+          <thead><tr><th scope="col">Sales officer</th><th scope="col" className="number">{link("Total", {}, "View all matching leads")}</th>{psHandlingMetrics.map(([key, title, value]) => <th key={key} scope="col" className="number">{link(title, { ps_handling: value }, `View all ${title.toLowerCase()} leads`)}</th>)}{data.statuses.map(status => <th key={status.key} scope="col" className="number">{link(status.label, { analysis_status: status.key }, `View all ${status.label} leads`)}</th>)}</tr></thead>
           <tbody>{data.officers.slice((page - 1) * 10, page * 10).map(officer => <tr key={officer.key}>
             <th scope="row">{link(officer.name, { analysis_officer: officer.key }, `View leads assigned to ${officer.name}`)}{officer.key !== "__unassigned__" && <small className="ceo-cell-sub">{officer.branch || "No branch"} · #{officer.key}</small>}</th>
             <td className="number">{link(count(officer.total), { analysis_officer: officer.key }, `View all ${count(officer.total)} leads assigned to ${officer.name}`)}</td>
+            {psHandlingMetrics.map(([key, title, value]) => <td key={key} className="number">{link(count(officer[key]), { analysis_officer: officer.key, ps_handling: value }, `View ${count(officer[key])} ${title.toLowerCase()} leads for ${officer.name}`)}</td>)}
             {data.statuses.map(status => <td key={status.key} className="number">{link(count(officer.statuses[status.key] || 0), { analysis_officer: officer.key, analysis_status: status.key }, `View ${count(officer.statuses[status.key] || 0)} ${status.label} leads assigned to ${officer.name}`)}</td>)}
           </tr>)}</tbody>
-          <tfoot><tr><th scope="row">{link("Total", {}, "View all matching leads")}</th><td className="number">{link(count(data.total), {}, `View all ${count(data.total)} matching leads`)}</td>{data.statuses.map(status => <td key={status.key} className="number">{link(count(status.count), { analysis_status: status.key }, `View all ${count(status.count)} ${status.label} leads`)}</td>)}</tr></tfoot>
+          <tfoot><tr><th scope="row">{link("Total", {}, "View all matching leads")}</th><td className="number">{link(count(data.total), {}, `View all ${count(data.total)} matching leads`)}</td>{psHandlingMetrics.map(([key, title, value]) => <td key={key} className="number">{link(count(data[key]), { ps_handling: value }, `View all ${count(data[key])} ${title.toLowerCase()} leads`)}</td>)}{data.statuses.map(status => <td key={status.key} className="number">{link(count(status.count), { analysis_status: status.key }, `View all ${count(status.count)} ${status.label} leads`)}</td>)}</tr></tfoot>
         </table>
         {!data.officers.length && <p className="ceo-empty">No leads match these filters.</p>}
       </div>

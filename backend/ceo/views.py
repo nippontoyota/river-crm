@@ -118,7 +118,7 @@ class CEOOptionsView(CEOView):
 
 
 class CEOReportView(CEOView):
-    @cache_analytics("ceo-operational-report", max_ttl=60)
+    @cache_analytics("ceo-operational-report-ps-handling", max_ttl=60)
     def get(self, request, section="overview"):
         filters = ReportFilters(request.query_params)
         if section == "overview":

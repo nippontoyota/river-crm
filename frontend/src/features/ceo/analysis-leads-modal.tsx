@@ -47,6 +47,7 @@ export function AnalysisLeadsModal({ query, title, options, onClose }: { query: 
         <ReportTable caption="Matching customers" loading={loading} rows={data?.results || []} onOpen={row => setDetail({ id: Number(row.id), entity: "leads" })} columns={[
           { key: "name", title: "Customer" },
           { key: "phone", title: "Mobile", render: row => <a href={`tel:${text(row.phone, "")}`}>{text(row.phone)}</a> },
+          { key: "branch", title: "Branch" },
           { key: "next_follow_up", title: "Next date", render: row => formatDate(text(row.next_follow_up, "")) || "Not scheduled" },
           { key: "analysis_status", title: "Latest outcome" },
           { key: "status", title: "Stage", render: row => <Badge value={row.status} /> },

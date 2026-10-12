@@ -5,6 +5,7 @@ from django.db.models import Case, CharField, Count, F, OuterRef, Q, Subquery, V
 from django.db.models.functions import Trim
 
 from accounts.models import User
+from leads.metrics import ps_handling_counts, with_ps_handling
 from leads.models import CallLog
 from .models import OperationEvent
 
@@ -63,14 +64,15 @@ def filter_analysis(queryset, params):
 def lead_analysis(filters):
     queryset = filter_analysis(filters.period(filters.base_leads(), "enquiry_date"), filters.params)
     # Roll up database groups, never individual leads or per-officer queries.
-    groups = queryset.order_by().values("assigned_ps_id", "analysis_status", "loss_reason").annotate(count=Count("pk", distinct=True))
-    statuses, reasons, officers = Counter(), Counter(), {}
+    groups = with_ps_handling(queryset).order_by().values("assigned_ps_id", "analysis_status", "loss_reason").annotate(count=Count("pk", distinct=True), **ps_handling_counts())
+    statuses, reasons, officers, handling = Counter(), Counter(), {}, {}
     for row in groups:
         status, count = row["analysis_status"], row["count"]
         statuses[status] += count
         if status == "Lost Lead":
             reasons[row["loss_reason"]] += count
         officers.setdefault(row["assigned_ps_id"], Counter())[status] += count
+        handling.setdefault(row["assigned_ps_id"], Counter()).update({key: row[key] for key in ("passed_to_ps", "untouched_by_ps")})
     users = User.objects.in_bulk([pk for pk in officers if pk is not None])
     officer_rows = []
     for pk, counts in officers.items():
@@ -80,11 +82,13 @@ def lead_analysis(filters):
             "name": user.history_display_name if user else "Unassigned Sales Officer",
             "branch": user.location if user else "", "total": sum(counts.values()),
             "statuses": dict(counts),
+            **handling[pk],
         })
     def rows(counts):
         return [{"key": key, "label": key, "count": count} for key, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
     return {
         "total": sum(statuses.values()), "lost_total": sum(reasons.values()),
+        **{key: sum(row[key] for row in handling.values()) for key in ("passed_to_ps", "untouched_by_ps")},
         "statuses": rows(statuses), "loss_reasons": rows(reasons),
         "officers": sorted(officer_rows, key=lambda row: (-row["total"], row["name"], row["key"])),
     }

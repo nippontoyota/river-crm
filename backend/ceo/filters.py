@@ -61,6 +61,8 @@ class ReportFilters:
             raise ValidationError({"metric": "Choose E, T, B or R."})
         if params.get("followup") and params["followup"] not in {"overdue", "due", "missing", "unassigned", "reassignment", "untouched", "flagged", "incomplete"}:
             raise ValidationError({"followup": "Choose a valid workload filter."})
+        if params.get("ps_handling") and params["ps_handling"] not in {"passed", "untouched"}:
+            raise ValidationError({"ps_handling": "Choose passed to PS or untouched by PS."})
         officer = params.get("analysis_officer")
         if officer and officer != "__unassigned__" and (not officer.isascii() or not officer.isdigit() or len(officer) > 18 or int(officer) < 1):
             raise ValidationError({"analysis_officer": "Choose a sales officer or Unassigned."})
@@ -127,6 +129,9 @@ class ReportFilters:
             else:
                 locations = User.objects.filter(role=role).exclude(location="").annotate(key=Lower(Trim("location"))).values("key")
                 queryset = queryset.annotate(_manager_branch=Lower(Trim("branch"))).filter(_manager_branch__in=locations)
+        if self.params.get("ps_handling"):
+            from leads.metrics import PS_HANDLING_FILTERS, with_ps_handling
+            queryset = with_ps_handling(queryset).filter(PS_HANDLING_FILTERS[self.params["ps_handling"]])
         return self.workload(queryset).distinct()
 
     def workload(self, queryset):

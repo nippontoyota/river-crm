@@ -2,7 +2,8 @@ import { api, download } from "@/lib/crm";
 
 export type Cell = string | number | boolean | null | undefined;
 export type AnalysisCount = { key: string; label: string; count: number };
-export type LeadAnalysisData = { total: number; lost_total: number; statuses: AnalysisCount[]; loss_reasons: AnalysisCount[]; officers: { key: string; name: string; branch: string; total: number; statuses: Record<string, number> }[] };
+export const psHandlingMetrics = [["passed_to_ps", "Passed to PS", "passed"], ["untouched_by_ps", "Untouched by PS", "untouched"]] as const;
+export type LeadAnalysisData = { total: number; lost_total: number; passed_to_ps: number; untouched_by_ps: number; statuses: AnalysisCount[]; loss_reasons: AnalysisCount[]; officers: { key: string; name: string; branch: string; total: number; passed_to_ps: number; untouched_by_ps: number; statuses: Record<string, number> }[] };
 export type ReportRow = Record<string, unknown>;
 export type PageData = { count: number; next: string | null; previous: string | null; results: ReportRow[]; summary?: Record<string, unknown> };
 export type Target = { available: boolean; values?: Record<string, number | string | null>; allocated?: Record<string, number | string | null>; allocation_gap?: Record<string, number | string>; missing_branches?: string[]; reason?: string };

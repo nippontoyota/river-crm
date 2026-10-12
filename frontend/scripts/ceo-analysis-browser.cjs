@@ -13,12 +13,13 @@ for (const [analysis_status, status, loss_reason, so_id] of [['Lost Lead', 'LOST
 }
 for (const officer of officers.slice(2)) records.push({ id: records.length + 1, name: `Customer of ${officer.name}`, analysis_status: 'Fresh', status: 'FRESH', so_id: officer.id });
 records.forEach(row => Object.assign(row, { phone: '9876543210', branch: 'Kochi', enquiry_date: '2026-09-15', so: officers.find(o => o.id === row.so_id)?.name, calls: 30, last_call: '2026-09-30T10:00:00Z' }));
+const psCounts = items => ({ passed_to_ps: items.filter(row => row.so_id !== null).length, untouched_by_ps: items.filter(row => row.so_id !== null && row.status === 'FRESH').length });
 const counts = (items, field) => [...new Set(items.map(row => row[field]))].map(key => ({ key, label: key, count: items.filter(row => row[field] === key).length })).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
 const statuses = counts(records, 'analysis_status');
 const lost = records.filter(row => row.status === 'LOST');
-const lead_analysis = { total: records.length, lost_total: lost.length, statuses, loss_reasons: counts(lost, 'loss_reason'), officers: [...officers, { id: null, name: 'Unassigned Sales Officer', branch: '' }].map(officer => {
+const lead_analysis = { ...psCounts(records), total: records.length, lost_total: lost.length, statuses, loss_reasons: counts(lost, 'loss_reason'), officers: [...officers, { id: null, name: 'Unassigned Sales Officer', branch: '' }].map(officer => {
   const owned = records.filter(row => row.so_id === officer.id);
-  return { key: officer.id === null ? '__unassigned__' : String(officer.id), name: officer.name, branch: officer.branch, total: owned.length, statuses: Object.fromEntries(counts(owned, 'analysis_status').map(row => [row.key, row.count])) };
+  return { ...psCounts(owned), key: officer.id === null ? '__unassigned__' : String(officer.id), name: officer.name, branch: officer.branch, total: owned.length, statuses: Object.fromEntries(counts(owned, 'analysis_status').map(row => [row.key, row.count])) };
 }) };
 const history = Array.from({ length: 30 }, (_, i) => ({ id: i + 1, kind: 'call', occurred_at: '2026-08-01T10:00:00Z', actor: 'Rahul P M', actor_role: 'SO', before: {}, after: { outcome: 'RNR', remarks: `Earlier call ${i + 1}` }, provenance: 'live' }));
 const paginate = (items, params) => { const page = Number(params.get('page') || 1); return { count: items.length, results: items.slice((page - 1) * 25, page * 25), next: page * 25 < items.length ? '?page=2' : null, previous: page > 1 ? '?page=1' : null }; };
@@ -41,11 +42,11 @@ const paginate = (items, params) => { const page = Number(params.get('page') || 
       let data;
       if (url.pathname === '/api/auth/me/') data = { user: { id: 1, first_name: 'CEO', last_name: 'Preview', email: 'ceo@example.com', role: 'CEO' } };
       else if (url.pathname === '/api/ceo/options/') data = { branches: [{ value: 'kochi', label: 'Kochi' }, { value: 'thrissur', label: 'Thrissur' }], employees: officers, roles: [], rtos: [], statuses: [], source: ['META'], campaign: [], model_interest: [], activities: [], sub_activities: {} };
-      else if (url.pathname === '/api/ceo/overview/') data = { lead_analysis, etbr: { E: records.length, T: 0, B: 1, R: 0 }, targets: { available: false }, conversions: { E_T: 0, E_B: 3, E_R: 0, T_B: null, B_R: 0 }, current: {}, activity: {}, complaints: {}, coverage: {}, branches: [], ageing: {} };
+      else if (url.pathname === '/api/ceo/overview/') data = { lead_analysis, etbr: { E: records.length, T: 0, B: 1, R: 0 }, targets: { available: false }, conversions: { E_T: 0, E_B: 3, E_R: 0, T_B: null, B_R: 0 }, current: {}, activity: {}, complaints: {}, coverage: {}, branches: [{ key: 'kochi', label: 'Kochi', ...psCounts(records), E: records.length, T: 0, B: 1, R: 0, conversion: 0 }], ageing: {} };
       else if (/\/leads\/\d+\/history\/$/.test(url.pathname)) data = paginate(history, params);
       else if (/\/leads\/\d+\/$/.test(url.pathname)) data = { ...records.find(row => row.id === Number(url.pathname.split('/')[4])), milestones: [], assigned_ps: 2, assigned_ps_name: 'Rahul P M', assigned_ps_phone: '9876543211' };
       else if (url.pathname === '/api/ceo/leads/') {
-        const matches = records.filter(row => (!params.has('analysis_status') || row.analysis_status === params.get('analysis_status')) && (!params.has('loss_reason') || row.loss_reason === params.get('loss_reason')) && (!params.has('analysis_officer') || (row.so_id === null ? '__unassigned__' : String(row.so_id)) === params.get('analysis_officer')) && (!params.has('q') || row.name.includes(params.get('q'))));
+        const matches = records.filter(row => (!params.has('ps_handling') || (row.so_id !== null && (params.get('ps_handling') === 'passed' || row.status === 'FRESH'))) && (!params.has('analysis_status') || row.analysis_status === params.get('analysis_status')) && (!params.has('loss_reason') || row.loss_reason === params.get('loss_reason')) && (!params.has('analysis_officer') || (row.so_id === null ? '__unassigned__' : String(row.so_id)) === params.get('analysis_officer')) && (!params.has('q') || row.name.includes(params.get('q'))));
         data = paginate(matches, params);
       } else { errors.push(`Unexpected API: ${url.pathname}`); data = {}; }
       return request.respond({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': new URL(webBase).origin, 'Access-Control-Allow-Credentials': 'true' }, body: JSON.stringify(data) });
@@ -97,12 +98,29 @@ const paginate = (items, params) => { const page = Number(params.get('page') || 
     await checkDrill('.ceo-analysis-lost button[aria-label="View 1 Dropped leads"]', { loss_reason: 'Dropped' });
     await checkDrill('.ceo-analysis-officers tbody tr:first-child th button', { analysis_officer: '2' });
     await checkDrill('.ceo-analysis-officers tbody tr:first-child td:nth-child(2) button', { analysis_officer: '2' });
-    await checkDrill('.ceo-analysis-officers tbody tr:first-child td:nth-child(3) button', { analysis_officer: '2', analysis_status: 'RNR' });
-    await checkDrill('.ceo-analysis-officers tbody tr:nth-child(2) td:nth-child(3) button', { analysis_officer: '3', analysis_status: 'RNR' });
+    await checkDrill('.ceo-analysis-officers tbody tr:first-child td:nth-child(5) button', { analysis_officer: '2', analysis_status: 'RNR' });
+    await checkDrill('.ceo-analysis-officers tbody tr:nth-child(2) td:nth-child(5) button', { analysis_officer: '3', analysis_status: 'RNR' });
     assert.match(await page.$eval('.ceo-analysis-results', node => node.textContent), /No records match/);
-    await checkDrill('.ceo-analysis-officers thead th:nth-child(3) button', { analysis_status: 'RNR' });
-    await checkDrill('.ceo-analysis-officers tfoot td:nth-child(3) button', { analysis_status: 'RNR' });
+    await checkDrill('.ceo-analysis-officers thead th:nth-child(5) button', { analysis_status: 'RNR' });
+    await checkDrill('.ceo-analysis-officers tfoot td:nth-child(5) button', { analysis_status: 'RNR' });
     await checkDrill('.ceo-analysis-officers tfoot td:nth-child(2) button', {});
+    await checkDrill('.ceo-analysis-officers tbody tr:first-child td:nth-child(3) button', { analysis_officer: '2', ps_handling: 'passed' });
+    await checkDrill('.ceo-analysis-officers tbody tr:nth-child(2) td:nth-child(4) button', { analysis_officer: '3', ps_handling: 'untouched' });
+    assert.match(await page.$eval('dialog[open]', node => node.textContent), /Untouched by PS/);
+    assert.equal(await page.$$eval('.ceo-analysis-results tbody tr', rows => rows.length), 1);
+    await checkDrill('.ceo-analysis-officers thead th:nth-child(4) button', { ps_handling: 'untouched' });
+    await checkDrill('.ceo-analysis-officers tfoot td:nth-child(3) button', { ps_handling: 'passed' });
+    await checkDrill('.ceo-analysis-officers tfoot td:nth-child(4) button', { ps_handling: 'untouched' });
+    await overview();
+    await Promise.all([page.waitForResponse(response => new URL(response.url()).pathname === '/api/ceo/leads/'), click('.ceo-table-card button[title="Current PS assignment for enquiries received in the selected dates"]')]);
+    await ready();
+    assert.equal(new URL(page.url()).pathname, '/ceo/leads');
+    const branchParams = requests.filter(url => url.pathname === '/api/ceo/leads/').at(-1).searchParams;
+    assert.equal(branchParams.get('branch'), 'kochi');
+    assert.equal(branchParams.get('ps_handling'), 'passed');
+    assert.equal(branchParams.get('date_from'), '2026-09-01');
+    assert.equal(branchParams.get('source'), 'META');
+    assert.match(await page.$eval('.ceo-filter-chips', node => node.textContent), /Passed to PS/);
     await overview();
     assert.equal(await page.$$eval('.ceo-analysis-officers tbody tr', rows => rows.length), 10);
     await click('button[aria-label="Officer page 2"]');
@@ -140,6 +158,6 @@ const paginate = (items, params) => { const page = Number(params.get('page') || 
     await page.waitForFunction(() => !document.querySelector('.ceo-loading'));
     assert.ok(requests.filter(url => url.searchParams.has('refresh')).length > refresh);
     assert.deepEqual(errors, []);
-    console.log('PASS: filtered modal links, officer/list pagination, contact details and inline lifetime history, preserved list state on Back/Escape, dashboard filters, refresh, and desktop/mobile layout.');
+    console.log('PASS: PS handoff/untouched totals and officer/branch drilldowns, filtered modal links, officer/list pagination, contact details and inline lifetime history, preserved list state on Back/Escape, dashboard filters, refresh, and desktop/mobile layout.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

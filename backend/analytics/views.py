@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 from accounts.models import User
 from accounts.permissions import IsAdmin, IsSalesManager
 from analytics.cache import cache_analytics
-from leads.metrics import etbr_aggregates
+from leads.metrics import PS_HANDLING_FILTERS, etbr_aggregates, with_ps_handling
 from leads.models import CallLog, FollowUp, Lead, LeadAudit
 
 
@@ -133,7 +133,7 @@ def ps_followup_queryset(request):
             queryset = queryset.filter(category=priority)
     followup_count = FollowUp.objects.filter(lead_id=OuterRef("pk"), so_id=OuterRef("assigned_ps_id")).values("lead_id").annotate(total=Count("id")).values("total")
     test_drive_call = CallLog.objects.filter(lead_id=OuterRef("pk"), so_id=OuterRef("assigned_ps_id"), outcome__iexact="Need Test Drive")
-    return queryset.annotate(
+    return with_ps_handling(queryset).annotate(
         ps_followup_count=Coalesce(Subquery(followup_count, output_field=IntegerField()), Value(0)),
         has_test_drive_call=Exists(test_drive_call),
     )
@@ -163,7 +163,7 @@ def ps_followup_payload(request):
                 | (Q(qualification__test_drive__isnull=False) & ~Q(qualification__test_drive="") & ~Q(qualification__test_drive__iexact="No"))
             )
         elif bucket == "unattended":
-            queryset = queryset.filter(ps_followup_count=0)
+            queryset = queryset.filter(PS_HANDLING_FILTERS["untouched"])
         elif bucket == "f5":
             queryset = queryset.filter(ps_followup_count__gte=5)
         elif bucket.startswith("f"):
@@ -186,16 +186,16 @@ def ps_followup_payload(request):
 
     grouped = {}
     empty_counts = {"total_leads": 0, "test_drive": 0, "unattended": 0, "f1": 0, "f2": 0, "f3": 0, "f4": 0, "f5": 0}
-    for lead in queryset.values("assigned_ps_id", "ps_followup_count", "qualification__test_drive", "has_test_drive_call"):
+    for lead in queryset.values("assigned_ps_id", "_ps_called", "ps_followup_count", "qualification__test_drive", "has_test_drive_call"):
         row = grouped.setdefault(lead["assigned_ps_id"], empty_counts.copy())
         row["total_leads"] += 1
         count = lead["ps_followup_count"]
         row["test_drive"] += int(has_test_drive(lead["qualification__test_drive"], lead["has_test_drive_call"]))
-        if count == 0:
+        if not lead["_ps_called"]:
             row["unattended"] += 1
-        elif count >= 5:
+        if count >= 5:
             row["f5"] += 1
-        else:
+        elif count:
             row[f"f{count}"] += 1
 
     branch = request.user.location.strip()
@@ -210,7 +210,7 @@ def summary_for(queryset, stale_since=None):
     aggregates = dict(
         **etbr_aggregates(),
         total=Count("id"),
-        untouched=Count("id", filter=Q(status=Lead.Status.FRESH)),
+        untouched=Count("id", filter=PS_HANDLING_FILTERS["untouched"]),
         contacted=Count("id", filter=~Q(status=Lead.Status.FRESH)),
         open=Count("id", filter=~Q(status__in=[Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED])),
         qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)),
@@ -222,7 +222,7 @@ def summary_for(queryset, stale_since=None):
     )
     if stale_since:
         aggregates["stale_untouched"] = Count("id", filter=Q(status=Lead.Status.FRESH, created_at__date__lte=stale_since))
-    data = queryset.aggregate(**aggregates)
+    data = with_ps_handling(queryset).aggregate(**aggregates)
     data["lead_to_qualified_rate"] = percent(data["qualified"], data["total"])
     data["lead_to_retail_rate"] = percent(data["retailed"], data["total"])
     data["qualified_to_booked_rate"] = percent(data["booked"], data["qualified"])
@@ -252,6 +252,7 @@ def model_rows(queryset):
 
 
 def role_rows(users, lead_relation, branch, start, end):
+    untouched_leads = with_ps_handling(Lead.objects.all()).filter(PS_HANDLING_FILTERS["untouched"])
     lead_filter = Q(**{f"{lead_relation}__deleted_at__isnull": True, f"{lead_relation}__branch__iexact": branch})
     if start:
         lead_filter &= Q(**{f"{lead_relation}__enquiry_date__gte": start})
@@ -268,7 +269,7 @@ def role_rows(users, lead_relation, branch, start, end):
     rows = []
     for user in users.annotate(
         total=Count(lead_relation, filter=lead_filter, distinct=True),
-        untouched=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__status": Lead.Status.FRESH}), distinct=True),
+        untouched=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__pk__in": untouched_leads.values("pk")}), distinct=True),
         qualified=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__status": Lead.Status.QUALIFIED}), distinct=True),
         booked=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__sales_outcome": Lead.SalesOutcome.BOOKED}), distinct=True),
         retailed=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__sales_outcome": Lead.SalesOutcome.RETAILED}), distinct=True),
@@ -463,7 +464,7 @@ class ReceptionistAnalyticsView(APIView):
 class SalesManagerAnalyticsView(APIView):
     permission_classes = [IsSalesManager]
 
-    @cache_analytics("sales-manager-so-only")
+    @cache_analytics("sales-manager-ps-calls")
     def get(self, request):
         return Response(manager_payload(request))
 
@@ -471,7 +472,7 @@ class SalesManagerAnalyticsView(APIView):
 class SalesManagerPSFollowupsView(APIView):
     permission_classes = [IsSalesManager]
 
-    @cache_analytics("sales-manager-ps-followups-so-only")
+    @cache_analytics("sales-manager-ps-followups-calls")
     def get(self, request):
         return Response(ps_followup_payload(request))
 

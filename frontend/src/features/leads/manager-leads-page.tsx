@@ -5,7 +5,7 @@ import { getLeadDetail, getManagerLeads, getSystemConfig, sourceName, statusName
 import { DateInput } from "@/components/date-input";
 import { formatDate, formatDateTime, todayInIST, toDateInputValue } from "@/lib/dates";
 
-const emptyFilters = { q: "", source: "", status: "", model: "", category: "", cre: "", ps: "", date_from: "", date_to: "", range: "", sales_outcome: "", flagged: "", followup: "", risk: "", status_group: "" };
+const emptyFilters = { q: "", source: "", status: "", model: "", category: "", cre: "", ps: "", ps_handling: "", date_from: "", date_to: "", range: "", sales_outcome: "", flagged: "", followup: "", risk: "", status_group: "" };
 
 function initialFilters(initialQuery: string) {
   const params = new URLSearchParams(initialQuery);
@@ -17,6 +17,7 @@ function initialFilters(initialQuery: string) {
     category: params.get("category") || "",
     cre: params.get("cre") || "",
     ps: params.get("ps") || "",
+    ps_handling: params.get("ps_handling") || "",
     date_from: formatDate(params.get("date_from")),
     date_to: formatDate(params.get("date_to")),
     range: params.get("range") || "",

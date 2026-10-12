@@ -89,6 +89,22 @@ Analysis links open a filtered, paginated customer popup over the overview.
 Selecting a customer opens their summary, current consultant contact and lifetime
 history together; Back or Escape restores the same list page and search. The
 officer matrix displays ten officers per page while totals cover all officers.
+The existing branch comparison and officer matrix also show **Passed to PS**
+and **Untouched by PS**, with clickable totals and matching lead exports.
+Passed to PS counts distinct leads currently assigned to a PS, not assignment
+events; reassigning a lead moves it to its current PS without double counting.
+Untouched by PS is the subset with no call logged by the currently assigned PS.
+The manager’s Unattended column and Untouched by PS card use this same rule.
+A called lead stays attended even when its follow-up is pending or overdue,
+or when no follow-up has been scheduled.
+Calls by a CE or a previous PS do not count as that PS's activity. Any logged
+call by the current PS counts, including an unsuccessful attempt. Unassigned
+and archived leads are excluded from both counts; inactive PS assignments remain
+visible. These columns use the selected enquiry dates in both reporting modes,
+and branch counts use the lead's current branch, not the PS's profile location.
+The `ps_handling=passed|untouched` filter applies the same definition to reports,
+lead lists and CSV exports. The existing `followup=untouched` filter keeps its
+original meaning (active leads with no calls by anyone).
 Lists and histories paginate at 25, maximum 100. CSV exports stream the full
 filtered result, with formula-safe cells, reporting metadata and matching order.
 

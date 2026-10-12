@@ -20,7 +20,7 @@ class LeadAnalysisTests(TestCase):
         self.client.force_authenticate(self.ceo)
 
     def lead(self, **values):
-        return Lead.objects.create(name="Customer", phone="9876543210", enquiry_date=timezone.localdate(), branch="Kochi", **values)
+        return Lead.objects.create(**{"name": "Customer", "phone": "9876543210", "enquiry_date": timezone.localdate(), "branch": "Kochi", **values})
 
     def call(self, lead, outcome, **values):
         return CallLog.objects.create(lead=lead, so=self.officer, status=lead.status, outcome=outcome, **values)
@@ -163,3 +163,52 @@ class LeadAnalysisTests(TestCase):
         with self.assertNumQueries(2):
             result = lead_analysis(filters)
         self.assertEqual(len(result["officers"]), 4)
+
+    def test_ps_handoff_counts_reconcile_with_branch_officer_lists_and_exports(self):
+        ce = User.objects.create_user(email="handoff-ce@example.com", role="CRE")
+        replacement = User.objects.create_user(email="handoff-so@example.com", role="SO", location="Thrissur", is_active=False)
+        untouched = self.lead(name="CE called only", assigned_ps=self.officer, status="QUALIFIED")
+        CallLog.objects.create(lead=untouched, so=ce, status="QUALIFIED")
+        touched = self.lead(assigned_ps=self.officer)
+        self.call(touched, "RNR")
+        self.call(touched, "RNR")  # Multiple calls still count one lead.
+        reassigned = self.lead(assigned_ps=replacement)
+        self.call(reassigned, "RNR")  # A previous PS's call is not the current PS's call.
+        old = self.lead(assigned_ps=self.officer)
+        Lead.objects.filter(pk=old.pk).update(enquiry_date=timezone.localdate() - timedelta(days=400))
+        other_branch = self.lead(assigned_ps=replacement)
+        Lead.objects.filter(pk=other_branch.pk).update(branch=" Thrissur ")
+        self.lead()  # Unassigned leads are not passed to PS or untouched by PS.
+        self.lead(assigned_ps=self.officer, deleted_at=timezone.now())
+        before_leads = list(Lead.objects.order_by("pk").values())
+        before_calls = list(CallLog.objects.order_by("pk").values())
+
+        for mode in ("period", "cohort"):
+            query = {"range": "today", "mode": mode}
+            overview = self.get("overview", **query).data
+            analysis = overview["lead_analysis"]
+            self.assertEqual((analysis["total"], analysis["passed_to_ps"], analysis["untouched_by_ps"]), (5, 4, 3))
+            for key, value in (("passed_to_ps", "passed"), ("untouched_by_ps", "untouched")):
+                self.assertEqual(sum(row[key] for row in analysis["officers"]), analysis[key])
+                self.assertEqual(sum(row[key] for row in overview["branches"]), analysis[key])
+                self.assertEqual(self.get("leads", ps_handling=value, **query).data["count"], analysis[key])
+                for officer in analysis["officers"]:
+                    result = self.get("leads", ps_handling=value, analysis_officer=officer["key"], **query)
+                    self.assertEqual(result.data["count"], officer[key])
+                for branch in overview["branches"]:
+                    result = self.get("leads", branch=branch["key"], ps_handling=value, **query)
+                    self.assertEqual(result.data["count"], branch[key])
+
+        scoped = self.get("leads", range="today", branch="kochi", analysis_officer=self.officer.pk, ps_handling="untouched")
+        self.assertEqual([row["id"] for row in scoped.data["results"]], [untouched.pk])
+        csv = b"".join(self.get("export/leads", range="today", branch="kochi", analysis_officer=self.officer.pk, ps_handling="untouched").streaming_content).decode("utf-8-sig")
+        self.assertEqual(csv.count("CE called only"), 1)
+        self.assertIn("passed_to_ps", b"".join(self.get("export/branches").streaming_content).decode())
+        self.assertEqual(self.get("overview").data["lead_analysis"]["passed_to_ps"], 5)
+        self.assertEqual(list(Lead.objects.order_by("pk").values()), before_leads)
+        self.assertEqual(list(CallLog.objects.order_by("pk").values()), before_calls)
+
+        CallLog.objects.create(lead=reassigned, so=replacement, status="PENDING")
+        remaining = self.get("leads", range="today", ps_handling="untouched")
+        self.assertEqual({row["id"] for row in remaining.data["results"]}, {untouched.pk, other_branch.pk})
+        self.assertEqual(self.get("leads", ps_handling="invalid").status_code, 400)

@@ -19,7 +19,7 @@ from notifications.models import Notification
 from notifications.serializers import WhatsAppAgreementSerializer
 from notifications.whatsapp import may_record_agreement, save_agreement
 from .outcomes import CLOSED_STATUSES, is_closed, outcome_policy, validate_milestone_change
-from .metrics import etbr_aggregates
+from .metrics import PS_HANDLING_FILTERS, etbr_aggregates, with_ps_handling
 from .phone_lock import guard_manual_phone, lock_phones
 from .serializers import CustomerLookupSerializer, validate_configured_choice
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
@@ -249,6 +249,8 @@ class LeadViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="manager-leads", permission_classes=[IsSalesManager])
     def manager_leads(self, request):
         queryset = self.filter_queryset(self.get_queryset())
+        if request.query_params.get("ps_handling") == "untouched":
+            queryset = with_ps_handling(queryset).filter(PS_HANDLING_FILTERS["untouched"])
         if value := request.query_params.get("cre"):
             queryset = queryset.filter(assigned_so_id=value)
         if value := request.query_params.get("ps"):
