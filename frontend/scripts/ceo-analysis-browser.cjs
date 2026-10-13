@@ -21,7 +21,18 @@ const lead_analysis = { ...psCounts(records), total: records.length, lost_total:
   const owned = records.filter(row => row.so_id === officer.id);
   return { ...psCounts(owned), key: officer.id === null ? '__unassigned__' : String(officer.id), name: officer.name, branch: officer.branch, total: owned.length, statuses: Object.fromEntries(counts(owned, 'analysis_status').map(row => [row.key, row.count])) };
 }) };
-const history = Array.from({ length: 30 }, (_, i) => ({ id: i + 1, kind: 'call', occurred_at: '2026-08-01T10:00:00Z', actor: 'Rahul P M', actor_role: 'SO', before: {}, after: { outcome: 'RNR', remarks: `Earlier call ${i + 1}` }, provenance: 'live' }));
+const history = Array.from({ length: 30 }, (_, i) => ({ id: i + 1, kind: 'call', occurred_at: `2026-08-0${i < 5 ? 1 : 2}T10:${String(i).padStart(2, '0')}:00Z`, actor: 'Rahul P M', actor_role: 'SO', before: {}, after: { outcome: 'RNR', remarks: `Earlier call ${i + 1}` }, provenance: 'live' }));
+[
+  { kind: 'created', after: {} },
+  { kind: 'so_updated', before: { status: 'FRESH' }, after: { status: 'QUALIFIED' } },
+  { kind: 'call', after: { status: 'QUALIFIED', outcome: 'Need Test Drive', remarks: 'Customer requested a weekend test drive.' } },
+  { kind: 'status_changed', before: { status: 'QUALIFIED' }, after: { status: 'WALKIN' } },
+  { kind: 'booking_cancelled', before: { status: 'WALKIN', sales_outcome: 'BOOKED' }, after: { status: 'LOST', sales_outcome: 'LOST' } },
+  { kind: 'reopened', before: { status: 'LOST' }, after: { status: 'FRESH' } },
+  { kind: 'status_changed', provenance: 'legacy', after: { status: 'RNR' } },
+  { kind: 'assigned_ps', before: { assigned_ps: 2 }, after: { assigned_ps: 3 } },
+  { kind: 'qualification_updated', before: { trade_in: false }, after: { trade_in: true } },
+].forEach((event, index) => Object.assign(history[index], event));
 const paginate = (items, params) => { const page = Number(params.get('page') || 1); return { count: items.length, results: items.slice((page - 1) * 25, page * 25), next: page * 25 < items.length ? '?page=2' : null, previous: page > 1 ? '?page=1' : null }; };
 
 (async () => {
@@ -29,6 +40,7 @@ const paginate = (items, params) => { const page = Number(params.get('page') || 
   try {
     const page = await browser.newPage();
     const errors = [], requests = [];
+    let failHistoryOnce = false;
     page.on('pageerror', error => errors.push(error.message));
     await page.setViewport({ width: 1440, height: 1000 });
     await page.setRequestInterception(true);
@@ -43,8 +55,12 @@ const paginate = (items, params) => { const page = Number(params.get('page') || 
       if (url.pathname === '/api/auth/me/') data = { user: { id: 1, first_name: 'CEO', last_name: 'Preview', email: 'ceo@example.com', role: 'CEO' } };
       else if (url.pathname === '/api/ceo/options/') data = { branches: [{ value: 'kochi', label: 'Kochi' }, { value: 'thrissur', label: 'Thrissur' }], employees: officers, roles: [], rtos: [], statuses: [], source: ['META'], campaign: [], model_interest: [], activities: [], sub_activities: {} };
       else if (url.pathname === '/api/ceo/overview/') data = { lead_analysis, etbr: { E: records.length, T: 0, B: 1, R: 0 }, targets: { available: false }, conversions: { E_T: 0, E_B: 3, E_R: 0, T_B: null, B_R: 0 }, current: {}, activity: {}, complaints: {}, coverage: {}, branches: [{ key: 'kochi', label: 'Kochi', ...psCounts(records), E: records.length, T: 0, B: 1, R: 0, conversion: 0 }], ageing: {} };
-      else if (/\/leads\/\d+\/history\/$/.test(url.pathname)) data = paginate(history, params);
-      else if (/\/leads\/\d+\/$/.test(url.pathname)) data = { ...records.find(row => row.id === Number(url.pathname.split('/')[4])), milestones: [], assigned_ps: 2, assigned_ps_name: 'Rahul P M', assigned_ps_phone: '9876543211' };
+      else if (/\/leads\/\d+\/history\/$/.test(url.pathname)) {
+        if (failHistoryOnce) { failHistoryOnce = false; return request.respond({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'History temporarily unavailable' }) }); }
+        const matching = history.filter(event => !params.get('kind') || event.kind === params.get('kind'));
+        data = paginate(params.get('order') === 'newest' ? matching.toReversed() : matching, params);
+      }
+      else if (/\/leads\/\d+\/$/.test(url.pathname)) data = { ...records.find(row => row.id === Number(url.pathname.split('/')[4])), milestones: [{ kind: 'E', occurred_on: '2026-08-01' }, { kind: 'B', occurred_on: '2026-08-01' }], assigned_ps: 2, assigned_ps_name: 'Rahul P M', assigned_ps_phone: '9876543211' };
       else if (url.pathname === '/api/ceo/leads/') {
         const matches = records.filter(row => (!params.has('ps_handling') || (row.so_id !== null && (params.get('ps_handling') === 'passed' || row.status === 'FRESH'))) && (!params.has('analysis_status') || row.analysis_status === params.get('analysis_status')) && (!params.has('loss_reason') || row.loss_reason === params.get('loss_reason')) && (!params.has('analysis_officer') || (row.so_id === null ? '__unassigned__' : String(row.so_id)) === params.get('analysis_officer')) && (!params.has('q') || row.name.includes(params.get('q'))));
         data = paginate(matches, params);
@@ -76,10 +92,36 @@ const paginate = (items, params) => { const page = Number(params.get('page') || 
     assert.match(await page.$eval('dialog:last-of-type', node => node.textContent), /Customer & ownership/);
     assert.match(await page.$eval('.ceo-consultant-info', node => node.textContent), /9876543211/);
     await page.waitForSelector('.ceo-history-item');
+    assert.equal(await page.$eval('select[aria-label="History order"]', node => node.value), 'oldest');
+    assert.match(await page.$eval('.ceo-history-item:first-child', node => node.textContent), /Lead created/);
+    assert.deepEqual(await page.$$eval('.ceo-stage-transition', rows => rows.map(node => node.textContent)), ['Fresh→Qualified', 'Qualified→Booked', 'Booked→Lost', 'Lost→Fresh', 'Previous stage not recorded→RNR']);
+    assert.equal(await page.$$eval('.ceo-history-item:nth-child(3) .ceo-stage-transition', rows => rows.length), 0);
+    assert.match(await page.$eval('.ceo-history-item:nth-child(3)', node => node.textContent), /Stage at time of callQualified/);
+    assert.match(await page.$eval('.ceo-history-item:nth-child(9)', node => node.textContent), /No → Yes/);
+    assert.match(await page.$eval('.ceo-lead-journey', node => node.textContent), /Test drive completedNot recorded/);
+    assert.match(await page.$eval('.ceo-lead-journey', node => node.textContent), /First booking01\/08\/2026/);
+    assert.equal(await page.$$eval('.ceo-history-day', rows => rows.length), 2);
     await page.screenshot({ path: '/tmp/ceo-analysis-detail-desktop.png' });
+    await page.evaluate(() => [...document.querySelectorAll('dialog:last-of-type button')].find(node => node.textContent === 'View history ↓').click());
+    assert.ok(await page.$eval('dialog:last-of-type', node => node.querySelector('.ceo-detail-body[tabindex] h3').getBoundingClientRect().top >= node.querySelector('header').getBoundingClientRect().bottom), 'timeline shortcut clears the sticky header');
+    await page.screenshot({ path: '/tmp/ceo-history-desktop.png' });
     assert.equal(await page.$$eval('.ceo-history-item', rows => rows.length), 25);
     await page.evaluate(() => [...document.querySelectorAll('button')].find(node => node.textContent === 'Load more history').click());
     await page.waitForFunction(() => document.querySelectorAll('.ceo-history-item').length === 30);
+    assert.equal(await page.$$eval('.ceo-history-day', rows => rows.length), 2, 'same day continues across pages');
+    await page.select('select[aria-label="History event type"]', 'status_changed');
+    await page.waitForFunction(() => document.querySelectorAll('.ceo-history-item').length === 2);
+    assert.equal(requests.filter(url => url.pathname.endsWith('/history/')).at(-1).searchParams.get('page'), '1');
+    await page.select('select[aria-label="History order"]', 'newest');
+    await page.waitForFunction(() => document.querySelector('.ceo-history-item:first-child')?.textContent.includes('Historical record'));
+    await page.select('select[aria-label="History event type"]', 'test_drive_completed');
+    await page.waitForFunction(() => document.querySelector('dialog:last-of-type .ceo-empty')?.textContent.includes('No events match'));
+    failHistoryOnce = true;
+    await page.select('select[aria-label="History event type"]', '');
+    await page.waitForFunction(() => document.querySelector('.ceo-error')?.textContent.includes('Retry history'));
+    await page.evaluate(() => [...document.querySelectorAll('button')].find(node => node.textContent === 'Retry history').click());
+    await page.waitForFunction(() => document.querySelectorAll('.ceo-history-item').length === 25);
+    assert.match(await page.$eval('.ceo-history-item:first-child', node => node.textContent), /Earlier call 30/);
     assert.ok(requests.filter(url => url.pathname.endsWith('/history/')).every(url => !url.searchParams.has('date_from')));
     await click('button[aria-label="← Back to matching leads"]');
     assert.equal(await page.$$eval('.ceo-analysis-results tbody tr', rows => rows.length), 5);
@@ -149,6 +191,10 @@ const paginate = (items, params) => { const page = Number(params.get('page') || 
     await click('.ceo-analysis-results tbody tr:first-child td:first-child button');
     await page.waitForSelector('.ceo-history-item');
     await page.screenshot({ path: '/tmp/ceo-analysis-detail-mobile.png' });
+    await page.evaluate(() => [...document.querySelectorAll('dialog:last-of-type button')].find(node => node.textContent === 'View history ↓').click());
+    assert.ok(await page.$eval('dialog:last-of-type', node => node.querySelector('.ceo-detail-body[tabindex] h3').getBoundingClientRect().top >= node.querySelector('header').getBoundingClientRect().bottom), 'timeline shortcut clears the sticky header');
+    await page.screenshot({ path: '/tmp/ceo-history-mobile.png' });
+    assert.ok(await page.$eval('dialog:last-of-type', node => node.scrollWidth <= node.clientWidth + 2), 'mobile history has no horizontal overflow');
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => document.querySelectorAll('dialog[open]').length === 1);
     await page.keyboard.press('Escape');
@@ -158,6 +204,6 @@ const paginate = (items, params) => { const page = Number(params.get('page') || 
     await page.waitForFunction(() => !document.querySelector('.ceo-loading'));
     assert.ok(requests.filter(url => url.searchParams.has('refresh')).length > refresh);
     assert.deepEqual(errors, []);
-    console.log('PASS: PS handoff/untouched totals and officer/branch drilldowns, filtered modal links, officer/list pagination, contact details and inline lifetime history, preserved list state on Back/Escape, dashboard filters, refresh, and desktop/mobile layout.');
+    console.log('PASS: stage transitions, cancellation/reopening, unknown history, milestone accuracy, filtering/order/retry, PS handoff/untouched totals and officer/branch drilldowns, filtered modal links, officer/list pagination, contact details and inline lifetime history, preserved list state on Back/Escape, dashboard filters, refresh, and desktop/mobile layout.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
