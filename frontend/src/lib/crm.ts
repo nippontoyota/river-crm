@@ -137,6 +137,7 @@ const colors: Officer["color"][] = ["blue", "green", "violet", "orange"];
 
 export const sourceName = (source: string) => sourceNames[source] || source;
 export const statusName = (status: string) => statusNames[status] || status;
+export const managerStatusName = (status: string) => status.toUpperCase() === "QUALIFIED" ? "Interested" : status.toUpperCase() === "UNQUALIFIED" ? "Not interested" : statusName(status);
 export const sourceClass = (source: string) => sourceName(source).toLowerCase().replaceAll(" ", "-");
 export const toLead = (lead: ApiLead): Lead => ({ ...lead, source: sourceName(lead.source), sourceCode: lead.source, model: lead.model_interest || "—", enquiryDate: lead.enquiry_date, enquiredAt: formatDate(lead.enquiry_date || lead.created_at), statusCode: lead.status, status: statusName(lead.status), category: lead.category, salesOutcome: lead.sales_outcome, nextFollowUp: lead.next_follow_up, callCount: lead.call_count, assignedSoId: lead.assigned_so, assignedSoName: lead.assigned_so_name, assignedPsId: lead.assigned_ps, assignedPsName: lead.assigned_ps_name, needsCreReassignment: lead.needs_cre_reassignment, needsSoReassignment: lead.needs_so_reassignment });
 const toSalesLead = (lead: ApiSalesLead): SalesLead => ({ ...lead, id: lead.id, name: lead.name, phone: lead.phone, source: sourceName(lead.source), sourceCode: lead.source, statusCode: lead.status, status: statusName(lead.status), flagged_to_manager: lead.flagged_to_manager });
@@ -167,13 +168,15 @@ export const createLead = (payload: LeadInput) => api<ApiLead>("/api/leads/", { 
 export async function getCres() { const data = await api<Paginated<ApiOfficer>>("/api/auth/cre-users/"); return data.results; }
 export async function getOfficers(location = "") { const query = location ? `?${new URLSearchParams({ location }).toString()}` : ""; const data = await api<Paginated<ApiOfficer>>(`/api/auth/sales-officers/${query}`); return data.results; }
 export const getAdminAnalytics = () => api<Analytics>("/api/analytics/admin/");
+export const getUnassignedCeCount = () => api<{ count: number }>("/api/leads/unassigned-ce-count/");
+export const exportAllLeads = () => download("/api/leads/export-all/", "incheon-all-leads.csv");
 export const getMyAnalytics = () => api<Metrics>("/api/analytics/me/");
 export async function getMyAnalyticsDashboard(range = "mtd", dateFrom = "", dateTo = "") { const from = toDateInputValue(dateFrom); const to = toDateInputValue(dateTo); const query = new URLSearchParams({ range, ...(from ? { date_from: from } : {}), ...(to ? { date_to: to } : {}) }).toString(); return api<PersonalAnalytics>(`/api/analytics/me/?${query}`); }
 export const exportMyAnalytics = () => download("/api/analytics/me/export/", "incheon-my-analytics.csv");
 export type ManagerSummary = EtbrMetrics & { total: number; untouched: number; contacted: number; open: number; qualified: number; walkin: number; booked: number; retailed: number; lost: number; flagged: number; lead_to_qualified_rate: number; lead_to_retail_rate: number; qualified_to_booked_rate: number; booked_to_retail_rate: number; followups_due: number; stale_untouched: number; delta: Record<string, number> };
 export type ManagerRoleRow = { id: number; name: string; email: string; location: string; total: number; untouched: number; qualified: number; booked: number; retailed: number; lost: number; calls: number; followups: number; last_activity: string | null; conversion_rate: number; qualification_rate: number };
 export type ManagerPerformanceRow = { total: number; qualified: number; booked: number; retailed: number; lost: number; conversion_rate: number };
-export type ManagerPSFollowupRow = { id: number; name: string; email: string; total_leads: number; test_drive: number; unattended: number; f1: number; f2: number; f3: number; f4: number; f5: number };
+export type ManagerPSFollowupRow = { id: number; name: string; email: string; total_leads: number; test_drive: number; unattended: number; overdue: number; f1: number; f2: number; f3: number; f4: number; f5: number };
 export type ManagerPSFollowupLead = { id: number; name: string; phone: string; source: string; created_at: string; model: string; test_drive: string; status: string };
 export type ManagerPSFollowups = { rows: ManagerPSFollowupRow[]; leads: ManagerPSFollowupLead[] };
 export type ManagerFilterOption = { id: number; name: string };

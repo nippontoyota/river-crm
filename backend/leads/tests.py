@@ -1,3 +1,6 @@
+import csv
+from io import StringIO
+
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -26,6 +29,43 @@ class LeadAccessTests(TestCase):
     def register_vehicle(self, lead_id):
         from servicing.models import Vehicle
         Vehicle.objects.create(chassis_number=f"TEST-{lead_id}", model="Indie", related_lead_id=lead_id, created_by=self.admin, customer_name="Rider", customer_phone="9876543210")
+
+    def test_admin_unassigned_ce_count_includes_all_active_leads_without_ce(self):
+        Lead.objects.create(name="PS generated", phone="7006682391", assigned_ps=self.ps_so, generated_by=self.ps_so)
+        Lead.objects.create(name="Needs reassignment", phone="7006682392", needs_cre_reassignment=True)
+        Lead.objects.create(name="Deleted", phone="7006682393", deleted_at=timezone.now())
+        self.client.force_authenticate(self.admin)
+        response = self.client.get("/api/leads/unassigned-ce-count/?status=WON")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 2)
+        Lead.objects.filter(name="PS generated").update(assigned_so=self.first_so)
+        self.assertEqual(self.client.get("/api/leads/unassigned-ce-count/").data["count"], 1)
+        self.client.force_authenticate(self.first_so)
+        self.assertEqual(self.client.get("/api/leads/unassigned-ce-count/").status_code, 403)
+
+    def test_admin_export_contains_every_active_lead_and_its_attributes(self):
+        unassigned = Lead.objects.create(name="=Formula", phone="7006682391", source=Lead.Source.META, status=Lead.Status.LOST, campaign="Autumn", enquiry_date=timezone.localdate(), assigned_ps=self.ps_so)
+        LeadQualification.objects.create(lead=unassigned, variant="Blue", notes="Customer notes")
+        Lead.objects.create(name="Deleted", phone="7006682392", deleted_at=timezone.now())
+        self.client.force_authenticate(self.admin)
+        response = self.client.get("/api/leads/export-all/?page=2&status=FRESH")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/csv", response["Content-Type"])
+        rows = list(csv.DictReader(StringIO(response.content.decode("utf-8"))))
+        self.assertEqual(len(rows), 3)
+        self.assertTrue({field.attname for field in Lead._meta.concrete_fields}.issubset(rows[0]))
+        exported = next(row for row in rows if row["id"] == str(unassigned.id))
+        self.assertEqual(exported["name"], "'=Formula")
+        self.assertEqual(exported["status"], "LOST")
+        self.assertEqual(exported["status_label"], "Lost")
+        self.assertEqual(exported["campaign"], "Autumn")
+        self.assertEqual(exported["enquiry_date"], timezone.localdate().isoformat())
+        self.assertEqual(exported["assigned_ps_id"], str(self.ps_so.id))
+        self.assertEqual(exported["qualification_variant"], "Blue")
+        self.assertEqual(exported["qualification_notes"], "Customer notes")
+        self.assertEqual(set(row["name"] for row in rows), {"Aarav", "Mehak", "'=Formula"})
+        self.client.force_authenticate(self.first_so)
+        self.assertEqual(self.client.get("/api/leads/export-all/").status_code, 403)
 
     def test_sales_officer_only_sees_assigned_leads(self):
         self.client.force_authenticate(self.first_so)

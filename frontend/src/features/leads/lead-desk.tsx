@@ -12,7 +12,7 @@ import { RtoField } from "@/components/rto-field";
 import { ActivityFields } from "@/components/activity-fields";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { assignLead, autoAssignLeads, commitUpload, createLead, deleteLead, distributeFilteredLeads, getAdminAnalytics, getCres, getLeadDetail, getLeadsPage, getOfficers, getSystemConfig, getUpload, logCall, reassignLeads, reviewFollowUp, sourceClass, sourceName, toLead, toOfficer, updateMyLead, type Lead, type LeadDetail, type LeadFilters, type LeadInput, type RtoOption, type Officer, type UploadBatch, uploadLeads } from "@/lib/crm";
+import { assignLead, autoAssignLeads, commitUpload, createLead, deleteLead, distributeFilteredLeads, exportAllLeads, getAdminAnalytics, getCres, getLeadDetail, getLeadsPage, getOfficers, getSystemConfig, getUnassignedCeCount, getUpload, logCall, reassignLeads, reviewFollowUp, sourceClass, sourceName, toLead, toOfficer, updateMyLead, type Lead, type LeadDetail, type LeadFilters, type LeadInput, type RtoOption, type Officer, type UploadBatch, uploadLeads } from "@/lib/crm";
 import { DateInput } from "@/components/date-input";
 import { addDays, formatDate, formatDateTime, parseDate, parseDateTime, todayInIST, toDateInputValue } from "@/lib/dates";
 
@@ -105,6 +105,8 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<any>(null);
+  const [unassignedCeCount, setUnassignedCeCount] = useState<number | null>(null);
+  const [exportingAllLeads, setExportingAllLeads] = useState(false);
   const [allLeadStatus, setAllLeadStatus] = useState<AllLeadStatusFilter>("fresh");
   const [activeLead, setActiveLead] = useState<Lead | null>(null);
   const [leadDetail, setLeadDetail] = useState<LeadDetail | null>(null);
@@ -171,22 +173,24 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
       if (officerMode) { const result = await getLeadsPage(queryString); if (request !== listRequest.current) return; setLeads(result.results); setTotalLeads(result.count); }
       else {
         if (!supportLoaded.current) {
-          const [pool, creRecords, psRecords, analyticsResult] = await Promise.all([getLeadsPage(queryString), getCres(), getOfficers(), getAdminAnalytics()]);
+          const [pool, creRecords, psRecords, analyticsResult, unassigned] = await Promise.all([getLeadsPage(queryString), getCres(), getOfficers(), getAdminAnalytics(), isAdminAllLeads ? getUnassignedCeCount() : Promise.resolve(null)]);
           if (request !== listRequest.current) return;
           setLeads(pool.results); setTotalLeads(pool.count);
           setCreUsers(creRecords.map(officer => toOfficer(officer, analyticsResult.cre.find(item => item.id === officer.id))));
           setPsUsers(psRecords.map(officer => toOfficer(officer, analyticsResult.officers.find(item => item.id === officer.id))));
           setAnalytics(analyticsResult);
+          if (unassigned) setUnassignedCeCount(unassigned.count);
           supportLoaded.current = true;
         } else {
-          const pool = await getLeadsPage(queryString);
+          const [pool, unassigned] = await Promise.all([getLeadsPage(queryString), isAdminAllLeads ? getUnassignedCeCount() : Promise.resolve(null)]);
           if (request !== listRequest.current) return;
           setLeads(pool.results); setTotalLeads(pool.count);
+          if (unassigned) setUnassignedCeCount(unassigned.count);
         }
       }
     } catch (requestError) { if (request === listRequest.current) setError(requestError instanceof Error ? requestError.message : "Unable to load ITS data."); }
     finally { if (request === listRequest.current) setLoading(false); }
-  }, [effectiveActiveFilters, followUpsOnly, leadView, officerMode, page, reassignmentRole, searchFilter]);
+  }, [effectiveActiveFilters, followUpsOnly, isAdminAllLeads, leadView, officerMode, page, reassignmentRole, searchFilter]);
 
   useEffect(() => { const timer = window.setTimeout(() => void refresh(), 0); return () => window.clearTimeout(timer); }, [refresh]);
   useEffect(() => {
@@ -216,10 +220,10 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
   useEffect(() => {
     const open = () => setAddingLead(true);
     const initialQuery = new URLSearchParams(window.location.search).get("q");
-    if (initialQuery) setQuery(initialQuery);
+    const queryTimer = initialQuery ? window.setTimeout(() => setQuery(initialQuery), 0) : null;
     window.addEventListener("incheon:add-lead", open);
     if (!officerMode && new URLSearchParams(window.location.search).get("addLead") === "1") { open(); window.history.replaceState({}, "", "/leads"); }
-    return () => window.removeEventListener("incheon:add-lead", open);
+    return () => { if (queryTimer !== null) window.clearTimeout(queryTimer); window.removeEventListener("incheon:add-lead", open); };
   }, [officerMode]);
 
   const visible = useMemo(() => leads.filter(lead => `${lead.name} ${lead.phone}`.toLowerCase().includes(query.toLowerCase())), [leads, query]);
@@ -299,6 +303,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
       await assignLead(activeLead.id, officer.id);
       setActiveLead(current => current ? { ...current, assignedSoId: officer.id, assignedSoName: officer.name } : current);
       setLeads(current => current.map(lead => lead.id === activeLead.id ? { ...lead, assignedSoId: officer.id, assignedSoName: officer.name } : lead));
+      setUnassignedCeCount(current => current === null ? null : Math.max(0, current - 1));
       setCreUsers(current => current.map(item => item.id === officer.id ? { ...item, assigned: item.assigned + 1 } : item));
       setNotice(`${activeLead.name} assigned to ${officer.name}.`);
     } catch (requestError) {
@@ -394,6 +399,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
       setActiveLead(null); setLeadDetail(null); setEditingCustomer(false);
       setLeads(current => current.filter(lead => lead.id !== activeLead.id));
       setTotalLeads(current => Math.max(0, current - 1));
+      if (!activeLead.assignedSoId) setUnassignedCeCount(current => current === null ? null : Math.max(0, current - 1));
       setNotice(`${deletedName} was deleted.`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Lead could not be deleted.");
@@ -429,6 +435,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
     try {
       const lead = await createLead({ ...newLead, email, enquiry_date: enquiryDate, qualification_input: { variant: newLeadColor, buying_timeline: "", finance_type: "", trade_in: null, test_drive: "", notes: "" } });
       setLeads(current => [toLead(lead), ...current]);
+      if (isAdminAllLeads) setUnassignedCeCount(current => current === null ? null : current + 1);
       setAddingLead(false); setNewLead(emptyLead()); setNewLeadColor(""); setSubmittedLead(lead.name);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Lead could not be added."); }
     finally { setCreatingLead(false); }
@@ -473,6 +480,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
       setLoading(true);
       const pageResult = await getLeadsPage(leadQuery(false, false, effectiveActiveFilters, page, searchFilter, leadView, reassignmentRole));
       setLeads(pageResult.results); setTotalLeads(pageResult.count);
+      if (isAdminAllLeads) void getUnassignedCeCount().then(result => setUnassignedCeCount(result.count)).catch(() => setUnassignedCeCount(null));
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Import failed."); setUpload(await getUpload(upload.id).catch(() => upload)); }
     finally { setImportingUpload(false); setLoading(false); }
   };
@@ -482,12 +490,13 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
   const adminTitle = isAdminAllLeads ? <>All <span>leads.</span></> : <>Lead <span>assignment.</span></>;
   const adminSubtext = isAdminAllLeads ? "Filter and review every lead in ITS." : "Assign fresh unassigned leads to CREs.";
   const adminMetrics = !officerMode && analytics?.summary ? (
-    <section className="admin-leads-metrics">
+    <section className={`admin-leads-metrics${isAdminAllLeads ? " all-leads" : ""}`}>
       <article className="sales-metric blue">
         <span>ALL LEADS</span>
         <strong>{analytics.summary.total_assigned || 0}</strong>
         <small>Total managed leads</small>
       </article>
+      {isAdminAllLeads && <article className="sales-metric orange"><span>NOT ASSIGNED TO CE</span><strong>{unassignedCeCount ?? "…"}</strong><small>Across every lead status</small></article>}
       <article className="sales-metric mint">
         <span>BOOKED</span>
         <strong>{analytics.summary.walkins || 0}</strong>
@@ -509,6 +518,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
     <section className="panel admin-filter-band">
       <section className="lead-toolbar admin-filter-toolbar">
         <label className="search"><span>⌕</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by name or mobile..." /></label>
+        {isAdminAllLeads && <button className="filter" disabled={exportingAllLeads} onClick={async () => { setExportingAllLeads(true); setError(""); try { await exportAllLeads(); } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Unable to export leads."); } finally { setExportingAllLeads(false); } }}>{exportingAllLeads ? "Exporting…" : "↓ Export all leads"}</button>}
         <label title="CSV or XLSX, up to 10 MB and 1,000 leads" className="button filter bulk-upload-button">{uploading ? "Uploading…" : "Bulk Upload"}<input hidden type="file" accept=".xlsx,.csv" disabled={uploading || importingUpload || reviewingUpload} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; void selectFile(file); }} /></label>
         <button className="filter sample-download" onClick={() => downloadLeadSample(sourceOptions.find(item => item !== "WALKIN") || "WALKIN")}>Download sample format</button>
       </section>

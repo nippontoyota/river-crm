@@ -488,15 +488,82 @@
   text-decoration: none;
 }
 
-.manager-tabs {
-  margin-top: 4px;
+.manager-section-jump {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 18px;
+  color: #33413e;
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.manager-tabs button {
-  min-height: 42px;
+.manager-section-jump select {
+  min-height: 40px;
+  min-width: 220px;
+  border: 1px solid var(--sales-outline);
+  border-radius: 6px;
+  background: #fff;
+  padding: 9px 11px;
+  font: inherit;
 }
 
-.manager-overview-grid,
+.manager-section,
+.manager-followups-card {
+  scroll-margin-top: 24px;
+}
+
+.manager-section + .manager-section {
+  margin-top: 18px;
+}
+
+.manager-lost-buckets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.manager-lost-buckets button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  border: 1px solid #dce5e1;
+  border-radius: 8px;
+  background: #fbfdfc;
+  color: #102c28;
+  padding: 12px 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.manager-lost-buckets button.active {
+  border-color: #102c28;
+  background: #e9f7f2;
+}
+
+.manager-lost-buckets strong {
+  color: #a73f16;
+  font-size: 22px;
+}
+
+.manager-lost-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  color: #52615e;
+  font-size: 12px;
+}
+
+.manager-lost-pagination > div {
+  display: flex;
+  gap: 8px;
+}
+
 .manager-two-col {
   display: grid;
   grid-template-columns: 1.25fr .75fr;
@@ -519,242 +586,9 @@
   margin: 0;
 }
 
-.manager-chart-card {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.manager-progression-chart {
-  min-height: 255px;
-  display: grid;
-  align-items: center;
-}
-
-.manager-progression-chart svg {
-  width: 100%;
-  min-width: 480px;
-  overflow: visible;
-}
-
-.manager-chart-grid line {
-  stroke: #dce5e1;
-  stroke-width: 1;
-  stroke-dasharray: 4 6;
-}
-
-.manager-progression-area {
-  fill: #dff2eb;
-  stroke: none;
-}
-
-.manager-progression-line {
-  fill: none;
-  stroke: #102c28;
-  stroke-width: 4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.manager-progression-chart circle {
-  fill: #fff;
-  stroke: #a73f16;
-  stroke-width: 4;
-}
-
-.manager-progression-chart text {
-  text-anchor: middle;
-  font-family: inherit;
-}
-
-.manager-chart-value {
-  fill: #102c28;
-  font-size: 14px;
-  font-weight: 800;
-}
-
-.manager-chart-label {
-  fill: #33413e;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.manager-chart-rate {
-  fill: #7b8884;
-  font-size: 9px;
-}
-
-.manager-monthly-chart {
-  height: 232px;
-  display: flex;
-  justify-content: space-around;
-  gap: 12px;
-  padding: 20px 10px 0;
-  border-bottom: 1px solid #dce5e1;
-  background: repeating-linear-gradient(to bottom, transparent 0, transparent 52px, #edf1ef 53px);
-}
-
-.manager-month-group {
-  min-width: 46px;
-  max-width: 82px;
-  flex: 1;
-  display: grid;
-  grid-template-rows: 190px 24px;
-  gap: 8px;
-  text-align: center;
-}
-
-.manager-month-bars {
-  height: 190px;
-  display: flex;
-  align-items: end;
-  justify-content: center;
-  gap: 3px;
-}
-
-.manager-month-bars > i {
-  position: relative;
-  width: clamp(7px, 1.1vw, 13px);
-  min-height: 0;
-  border-radius: 4px 4px 0 0;
-  background: #102c28;
-}
-
-.manager-month-bars > i span {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 5px);
-  color: #53615d;
-  font-size: 8px;
-  font-style: normal;
-  font-weight: 700;
-  transform: translateX(-50%);
-}
-
-.manager-month-bars .qualified,
-.manager-chart-legend .qualified {
-  background: #489681;
-}
-
-.manager-month-bars .booked,
-.manager-chart-legend .booked {
-  background: #d18747;
-}
-
-.manager-month-bars .retailed,
-.manager-chart-legend .retailed {
-  background: #a73f16;
-}
-
-.manager-month-group small {
-  color: #5f6d69;
-  font-size: 9px;
-  white-space: nowrap;
-}
-
-.manager-chart-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 18px;
-  color: #52615e;
-  font-size: 10px;
-}
-
-.manager-chart-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.manager-chart-legend i {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  background: #102c28;
-}
-
-.manager-chart-empty {
-  min-height: 240px;
-  display: grid;
-  place-items: center;
-  color: #77847f;
-  font-size: 12px;
-}
-
-.manager-overview-grid > .manager-risk-card {
-  grid-column: 1 / -1;
-}
-
-.manager-overview-grid > .manager-risk-card .manager-risk-list {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.manager-funnel-row {
-  display: grid;
-  grid-template-columns: 120px minmax(120px, 1fr) 58px 48px;
-  gap: 12px;
-  align-items: center;
-  padding: 13px 0;
-  border-top: 1px solid #e7ece9;
-}
-
-.manager-funnel-row span,
-.manager-funnel-row small {
-  color: #52615e;
-  font-size: 12px;
-}
-
-.manager-funnel-row div {
-  height: 13px;
-  overflow: hidden;
-  border-radius: 3px;
-  background: #e6edeb;
-}
-
-.manager-funnel-row i {
-  display: block;
-  height: 100%;
-  background: #102c28;
-}
-
-.manager-funnel-row b,
 .manager-rate {
   color: #102c28;
   font-weight: 700;
-}
-
-.manager-risk-list,
-.manager-list {
-  display: grid;
-  gap: 10px;
-}
-
-.manager-risk-list a,
-.manager-list a {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  min-height: 56px;
-  padding: 12px 14px;
-  border: 1px solid #dce5e1;
-  border-radius: 8px;
-  color: #102c28;
-  text-decoration: none;
-  background: #fbfdfc;
-}
-
-.manager-risk-list b {
-  display: block;
-  color: #a73f16;
-  font-size: 24px;
-}
-
-.manager-risk-list span,
-.manager-list small {
-  display: block;
-  color: #52615e;
-  font-size: 12px;
 }
 
 .manager-table-card {
@@ -907,7 +741,8 @@
   color: #5f3dc4;
 }
 
-.manager-followup-count.unattended {
+.manager-followup-count.unattended,
+.manager-followup-count.overdue {
   background: #fff0e4;
   color: #a3441d;
 }
@@ -998,17 +833,8 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .manager-overview-grid,
   .manager-two-col {
     grid-template-columns: 1fr;
-  }
-
-  .manager-overview-grid > .manager-risk-card {
-    grid-column: auto;
-  }
-
-  .manager-overview-grid > .manager-risk-card .manager-risk-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .manager-followups-head {
@@ -1027,29 +853,7 @@
     grid-template-columns: 1fr;
   }
 
-  .manager-funnel-row {
-    grid-template-columns: 1fr 56px;
-  }
-
-  .manager-funnel-row div,
-  .manager-funnel-row small {
-    grid-column: 1 / -1;
-  }
-
-  .manager-progression-chart {
-    overflow-x: auto;
-  }
-
-  .manager-monthly-chart {
-    justify-content: flex-start;
-    overflow-x: auto;
-  }
-
-  .manager-month-group {
-    flex: 0 0 58px;
-  }
-
-  .manager-overview-grid > .manager-risk-card .manager-risk-list {
+  .manager-lost-buckets {
     grid-template-columns: 1fr;
   }
 

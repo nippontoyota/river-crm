@@ -1,8 +1,10 @@
+import csv
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.db import transaction
 from django.db.models import Count, Min, Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -102,6 +104,38 @@ class LeadViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         return Response(LeadDetailSerializer(self.get_object(), context={"request": request}).data)
+
+    @action(detail=False, methods=["get"], url_path="unassigned-ce-count", permission_classes=[IsAdmin])
+    def unassigned_ce_count(self, request):
+        return Response({"count": Lead.objects.filter(deleted_at__isnull=True, assigned_so__isnull=True).count()})
+
+    @action(detail=False, methods=["get"], url_path="export-all", permission_classes=[IsAdmin])
+    def export_all(self, request):
+        lead_fields = Lead._meta.concrete_fields
+        qualification_fields = [field for field in LeadQualification._meta.concrete_fields if field.name not in {"id", "lead"}]
+        headers = [field.attname for field in lead_fields] + ["status_label", "assigned_ce_name", "assigned_ps_name", "generated_by_name"] + [f"qualification_{field.attname}" for field in qualification_fields]
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = 'attachment; filename="incheon-all-leads.csv"'
+        writer = csv.writer(response)
+        writer.writerow(headers)
+
+        def csv_cell(value):
+            if value is None:
+                return ""
+            if hasattr(value, "isoformat"):
+                value = timezone.localtime(value) if isinstance(value, datetime) and timezone.is_aware(value) else value
+                value = value.isoformat()
+            value = str(value)
+            return f"'{value}" if value.lstrip().startswith(("=", "+", "-", "@")) else value
+
+        leads = Lead.objects.filter(deleted_at__isnull=True).select_related("assigned_so", "assigned_ps", "generated_by", "qualification").order_by("id")
+        for lead in leads.iterator(chunk_size=500):
+            qualification = getattr(lead, "qualification", None)
+            values = [getattr(lead, field.attname) for field in lead_fields]
+            values += [lead.get_status_display(), *(user.get_full_name() or user.email if user else "" for user in (lead.assigned_so, lead.assigned_ps, lead.generated_by))]
+            values += [getattr(qualification, field.attname) if qualification else None for field in qualification_fields]
+            writer.writerow([csv_cell(value) for value in values])
+        return response
 
     @action(detail=False, methods=["get"], url_path="customer-lookup", permission_classes=[IsActiveAdminOrCRE])
     def customer_lookup(self, request):

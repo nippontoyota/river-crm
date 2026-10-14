@@ -278,6 +278,10 @@ input[type="radio"] {
   min-width: 0;
 }
 
+.admin-leads-metrics.all-leads {
+  grid-template-columns: repeat(5, minmax(100px, 1fr));
+}
+
 .admin-leads-metrics .sales-metric {
   min-height: 78px;
   padding: 10px 12px;
@@ -459,6 +463,10 @@ input[type="radio"] {
 
   .admin-leads-metrics {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .admin-leads-metrics.all-leads {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .admin-filter-toolbar {
@@ -750,6 +758,10 @@ input[type="radio"] {
   }
 
   .admin-leads-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-leads-metrics.all-leads {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1150,6 +1162,10 @@ input[type="radio"] {
   .admin-leads-metrics,
   .lead-filters-grid,
   .sales-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-leads-metrics.all-leads {
     grid-template-columns: 1fr;
   }
 

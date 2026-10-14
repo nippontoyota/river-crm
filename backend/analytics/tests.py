@@ -43,6 +43,24 @@ class SalesManagerAnalyticsTests(TestCase):
         today = self.client.get("/api/analytics/sales-manager/?range=today")
         self.assertEqual(today.data["summary"]["delta"], {})
 
+    def test_manager_lost_analysis_counts_statuses_and_opens_history(self):
+        today = timezone.localdate()
+        lost = Lead.objects.create(name="Lost branch lead", phone="9000000040", branch="Mount Road", enquiry_date=today, assigned_ps=self.ps, status=Lead.Status.LOST)
+        Lead.objects.create(name="Not interested branch lead", phone="9000000041", branch="Mount Road", enquiry_date=today, status=Lead.Status.UNQUALIFIED)
+        Lead.objects.create(name="Hidden lost lead", phone="9000000042", branch="Other", enquiry_date=today, status=Lead.Status.LOST)
+        CallLog.objects.create(lead=lost, so=self.ps, status=Lead.Status.LOST, outcome="Lost to Competition", remarks="Chose another model")
+        self.client.force_authenticate(self.manager)
+
+        analysis = self.client.get("/api/analytics/sales-manager/?include=lost&range=all")
+        self.assertEqual(analysis.status_code, 200)
+        self.assertEqual(analysis.data["summary"]["lost"], 2)
+        self.assertEqual({row["status"]: row["count"] for row in analysis.data["status"]}, {"LOST": 1, "UNQUALIFIED": 1})
+        leads = self.client.get("/api/leads/manager-leads/?status_group=lost_or_unqualified&range=all")
+        self.assertEqual(leads.data["count"], 2)
+        detail = self.client.get(f"/api/leads/{lost.pk}/")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.data["call_history"][0]["remarks"], "Chose another model")
+
     def test_manager_overview_query_budget_and_partial_sections(self):
         self.client.force_authenticate(self.manager)
 
@@ -93,6 +111,7 @@ class SalesManagerAnalyticsTests(TestCase):
             self.assertEqual(export.status_code, 200)
             self.assertIn(self.ps.email, export.content.decode())
             self.assertNotIn(self.cre.email, export.content.decode())
+            self.assertNotIn("qualif", export.content.decode().lower())
 
         # Existing CE reporting remains available to admins and the CE themselves.
         self.client.force_authenticate(self.admin)
@@ -335,6 +354,28 @@ class SalesManagerAnalyticsTests(TestCase):
         self.assertIn("First follow-up", exported_csv)
         self.assertIn("Unattended", exported_csv)
         self.assertIn(timezone.localtime(first.created_at).strftime("%d/%m/%Y %H:%M"), exported_csv)
+        all_leads_csv = self.client.get(f"/api/analytics/sales-manager/export/?section=ps_followups&range=all&ps={self.ps.id}&bucket=total").content.decode()
+        self.assertIn("Interested", all_leads_csv)
+        self.assertNotIn("QUALIFIED", all_leads_csv)
+
+    def test_ps_followup_overdue_counts_distinct_leads_and_opens_same_bucket(self):
+        now = timezone.now()
+        for hours in (1, 2):
+            FollowUp.objects.create(lead=self.branch_lead, so=self.ps, scheduled_for=now - timedelta(hours=hours))
+        FollowUp.objects.create(lead=self.retailed, so=self.ps, scheduled_for=now - timedelta(hours=1), resolved_at=now)
+        FollowUp.objects.create(lead=self.retailed, so=self.ps, scheduled_for=now + timedelta(hours=1))
+        FollowUp.objects.create(lead=self.retailed, so=self.cre, scheduled_for=now - timedelta(hours=1))
+        FollowUp.objects.create(lead=self.other_branch_lead, so=self.ps, scheduled_for=now - timedelta(hours=1))
+        self.client.force_authenticate(self.manager)
+
+        rows = self.client.get("/api/analytics/sales-manager/ps-followups/?range=all").data["rows"]
+        self.assertEqual(rows[0]["overdue"], 1)
+        bucket = f"range=all&ps={self.ps.pk}&bucket=overdue"
+        leads = self.client.get(f"/api/analytics/sales-manager/ps-followups/?{bucket}").data["leads"]
+        self.assertEqual([lead["id"] for lead in leads], [self.branch_lead.pk])
+        exported = self.client.get(f"/api/analytics/sales-manager/export/?section=ps_followups&{bucket}").content.decode()
+        self.assertIn("Branch lead", exported)
+        self.assertNotIn("Retailed lead", exported)
 
     def test_unattended_and_untouched_use_ps_calls_not_followup_schedules(self):
         # CE activity must not hide a lead the assigned PS has never called.

@@ -26,6 +26,12 @@ def csv_value(value):
     return value
 
 
+def manager_csv_value(key, value):
+    if key == "status":
+        value = {Lead.Status.QUALIFIED: "Interested", Lead.Status.UNQUALIFIED: "Not interested"}.get(value, value)
+    return csv_value(value)
+
+
 def metrics(queryset):
     counts = queryset.aggregate(
         **etbr_aggregates(),
@@ -132,9 +138,11 @@ def ps_followup_queryset(request):
         if priority in {choice for choice, _ in Lead.Category.choices}:
             queryset = queryset.filter(category=priority)
     followup_count = FollowUp.objects.filter(lead_id=OuterRef("pk"), so_id=OuterRef("assigned_ps_id")).values("lead_id").annotate(total=Count("id")).values("total")
+    overdue_followup = FollowUp.objects.filter(lead_id=OuterRef("pk"), so_id=OuterRef("assigned_ps_id"), resolved_at__isnull=True, scheduled_for__lt=timezone.now())
     test_drive_call = CallLog.objects.filter(lead_id=OuterRef("pk"), so_id=OuterRef("assigned_ps_id"), outcome__iexact="Need Test Drive")
     return with_ps_handling(queryset).annotate(
         ps_followup_count=Coalesce(Subquery(followup_count, output_field=IntegerField()), Value(0)),
+        has_overdue_followup=Exists(overdue_followup),
         has_test_drive_call=Exists(test_drive_call),
     )
 
@@ -152,7 +160,7 @@ def ps_followup_payload(request):
         queryset = queryset.filter(assigned_ps_id__in=selected_ids)
 
     bucket = request.query_params.get("bucket", "")
-    allowed_buckets = {"total", "test_drive", "unattended", "f1", "f2", "f3", "f4", "f5"}
+    allowed_buckets = {"total", "test_drive", "unattended", "overdue", "f1", "f2", "f3", "f4", "f5"}
     if bucket:
         if bucket not in allowed_buckets or not primary.isdigit():
             return {"rows": [], "leads": []}
@@ -164,6 +172,8 @@ def ps_followup_payload(request):
             )
         elif bucket == "unattended":
             queryset = queryset.filter(PS_HANDLING_FILTERS["untouched"])
+        elif bucket == "overdue":
+            queryset = queryset.filter(has_overdue_followup=True)
         elif bucket == "f5":
             queryset = queryset.filter(ps_followup_count__gte=5)
         elif bucket.startswith("f"):
@@ -185,12 +195,13 @@ def ps_followup_payload(request):
         return {"rows": [], "leads": leads}
 
     grouped = {}
-    empty_counts = {"total_leads": 0, "test_drive": 0, "unattended": 0, "f1": 0, "f2": 0, "f3": 0, "f4": 0, "f5": 0}
-    for lead in queryset.values("assigned_ps_id", "_ps_called", "ps_followup_count", "qualification__test_drive", "has_test_drive_call"):
+    empty_counts = {"total_leads": 0, "test_drive": 0, "unattended": 0, "overdue": 0, "f1": 0, "f2": 0, "f3": 0, "f4": 0, "f5": 0}
+    for lead in queryset.values("assigned_ps_id", "_ps_called", "ps_followup_count", "qualification__test_drive", "has_test_drive_call", "has_overdue_followup"):
         row = grouped.setdefault(lead["assigned_ps_id"], empty_counts.copy())
         row["total_leads"] += 1
         count = lead["ps_followup_count"]
         row["test_drive"] += int(has_test_drive(lead["qualification__test_drive"], lead["has_test_drive_call"]))
+        row["overdue"] += int(lead["has_overdue_followup"])
         if not lead["_ps_called"]:
             row["unattended"] += 1
         if count >= 5:
@@ -349,6 +360,8 @@ def manager_payload(request):
     if "source" in includes:
         payload["source"] = source_rows(queryset)
         payload["models"] = model_rows(queryset)
+    if "lost" in includes:
+        payload["status"] = list(queryset.filter(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]).values("status").annotate(count=Count("id")).order_by("status"))
     if "ops" in includes:
         payload["status"] = list(queryset.values("status").annotate(count=Count("id")).order_by("-count"))
         payload["categories"] = list(queryset.values("category").annotate(count=Count("id")).order_by("category"))
@@ -493,7 +506,7 @@ class SalesManagerAnalyticsExportView(APIView):
             if rows:
                 keys = list(rows[0].keys())
                 writer.writerow(keys)
-                writer.writerows([[csv_value(row.get(key, "")) for key in keys] for row in rows])
+                writer.writerows([[manager_csv_value(key, row.get(key, "")) for key in keys] for row in rows])
             else:
                 writer.writerow(["No matching PS follow-up records"])
             return response
@@ -503,13 +516,13 @@ class SalesManagerAnalyticsExportView(APIView):
         writer = csv.writer(response)
         rows = data.get(section, [])
         if section in {"ps", "source", "models", "lost_reasons", "stale_leads"} and isinstance(rows, list) and rows:
-            keys = list(rows[0].keys())
+            keys = [key for key in rows[0] if "qualif" not in key]
             writer.writerow(keys)
             for row in rows:
-                writer.writerow([csv_value(row.get(key, "")) for key in keys])
+                writer.writerow([manager_csv_value(key, row.get(key, "")) for key in keys])
         else:
             writer.writerow(["metric", "value"])
             for key, value in data["summary"].items():
-                if key != "delta":
+                if key != "delta" and "qualif" not in key:
                     writer.writerow([key, value])
         return response
