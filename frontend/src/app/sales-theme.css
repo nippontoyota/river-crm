@@ -478,8 +478,7 @@
   font-size: 13px;
 }
 
-.manager-period-note,
-.manager-kpi-heading {
+.manager-period-note {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -494,7 +493,7 @@
 }
 
 .manager-kpi-heading {
-  margin: 16px 0 10px;
+  margin: 18px 0 12px;
 }
 
 .manager-kpi-heading h2 {
@@ -503,26 +502,86 @@
 }
 
 .manager-kpi-heading p {
-  margin: 0;
+  margin: 4px 0 0;
   color: var(--sales-muted);
   font-size: 12px;
 }
 
-.manager-metrics {
+.manager-page .manager-kpi-grid {
+  display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
 }
 
-.manager-metric {
-  min-height: 150px !important;
-  color: inherit;
+.sales-shell .manager-page .manager-kpi-grid .sales-metric {
+  min-width: 0;
+  height: 144px;
+  min-height: 144px !important;
+  padding: 18px 20px !important;
+  border: 1px solid #d9e5df !important;
+  border-top: 3px solid var(--manager-card-accent, #187462) !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  box-shadow: 0 4px 14px #163a2a0a !important;
+  color: #192a25 !important;
+  text-align: left;
+  align-items: flex-start;
+  justify-content: flex-start;
+  font: inherit;
   text-decoration: none;
+}
+
+.sales-shell .manager-page .manager-kpi-grid .sales-metric.blue { --manager-card-accent: #39779b; }
+.sales-shell .manager-page .manager-kpi-grid .sales-metric.violet { --manager-card-accent: #7670a7; }
+.sales-shell .manager-page .manager-kpi-grid .sales-metric.green,
+.sales-shell .manager-page .manager-kpi-grid .sales-metric.booked { --manager-card-accent: #238565; }
+.sales-shell .manager-page .manager-kpi-grid .sales-metric.mint,
+.sales-shell .manager-page .manager-kpi-grid .sales-metric.conversion { --manager-card-accent: #166f73; }
+.sales-shell .manager-page .manager-kpi-grid .sales-metric.untouched { --manager-card-accent: #aa7830; }
+.sales-shell .manager-page .manager-kpi-grid .sales-metric.lost { --manager-card-accent: #b25642; }
+
+.sales-shell .manager-page .manager-kpi-grid .sales-metric span {
+  min-height: 2.5em;
+  color: #52665f !important;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.sales-shell .manager-page .manager-kpi-grid .sales-metric strong {
+  margin-top: 6px;
+  color: #192a25 !important;
+  font-size: clamp(30px, 2.5vw, 38px);
+  line-height: 1;
+}
+
+.sales-shell .manager-page .manager-kpi-grid .sales-metric small {
+  margin-top: auto;
+  padding-top: 10px;
+  color: #687b73 !important;
+  font-size: 11px;
+}
+
+.sales-shell .manager-page .manager-kpi-grid a.sales-metric:hover,
+.sales-shell .manager-page .manager-kpi-grid button.sales-metric:hover {
+  border-color: #8ebcad !important;
+}
+
+.manager-kpi-grid a.sales-metric:focus-visible,
+.manager-kpi-grid button.sales-metric:focus-visible {
+  outline: 3px solid #187462;
+  outline-offset: 2px;
+}
+
+.manager-kpi-grid button.sales-metric {
+  cursor: pointer;
 }
 
 .manager-section-jump {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 4px 0 18px;
+  gap: 14px;
+  margin: 2px 0 22px;
   color: #33413e;
   font-size: 13px;
   font-weight: 700;
@@ -530,7 +589,8 @@
 
 .manager-section-jump select {
   min-height: 40px;
-  min-width: 220px;
+  width: min(320px, 100%);
+  min-width: 0;
   border: 1px solid var(--sales-outline);
   border-radius: 6px;
   background: #fff;
@@ -854,7 +914,7 @@
 }
 
 @media (max-width: 1250px) {
-  .manager-metrics {
+  .manager-page .manager-kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -877,10 +937,16 @@
 }
 
 @media (max-width: 720px) {
-  .manager-metrics,
+  .manager-page .manager-kpi-grid,
   .manager-filter-bar,
   .manager-lead-filters {
     grid-template-columns: 1fr;
+  }
+
+  .manager-section-jump {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .manager-lost-buckets {
