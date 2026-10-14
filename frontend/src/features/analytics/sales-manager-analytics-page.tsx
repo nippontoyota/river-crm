@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { exportSalesManagerAnalytics, getLeadDetail, getManagerLeads, getSalesManagerAnalytics, getSalesManagerPSFollowups, getSystemConfig, managerStatusName, sourceName, type Lead, type LeadDetail, type ManagerAnalytics, type ManagerFilterOption, type ManagerPerformanceRow, type ManagerPSFollowupRow, type ManagerRoleRow } from "@/lib/crm";
 import { DateInput } from "@/components/date-input";
-import { formatDateTime, todayInIST, toDateInputValue } from "@/lib/dates";
+import { formatDate, formatDateTime, todayInIST, toDateInputValue } from "@/lib/dates";
 
 const sections = [
   ["overview", "Lost lead analysis"],
@@ -44,7 +44,7 @@ function PerformanceTable({ title, section, labelKey, rows, filters, onExport }:
   return <article className="panel manager-table-card"><header className="manager-card-head"><div><p className="eyebrow">CONVERSION MIX</p><h2>{title}</h2></div><button className="filter" onClick={() => onExport(section)}>Export CSV</button></header><div className="manager-table-scroll"><table className="sales-table manager-table"><thead><tr><th>{labelKey === "source" ? "Source" : "Model"}</th><th>Total</th><th>Booked</th><th>Retailed</th><th>Lost</th><th>Conv.</th></tr></thead><tbody>{rows.length ? rows.map(row => { const name = String(row[labelKey] || "Unknown"); const filter: Record<string, string> = labelKey === "source" ? { source: name } : { model: name }; const clickable = labelKey === "source" || name !== "Model not set"; const href = leadHref(filters, filter); return <tr className={clickable ? "manager-clickable-row" : ""} key={name} role={clickable ? "link" : undefined} tabIndex={clickable ? 0 : undefined} onClick={clickable ? () => router.push(href) : undefined} onKeyDown={clickable ? event => { if (event.key === "Enter") router.push(href); } : undefined}><td><b>{labelKey === "source" ? sourceName(name) : name}</b></td><td>{row.total}</td><td>{row.booked}</td><td>{row.retailed}</td><td>{row.lost}</td><td><span className="manager-rate">{row.conversion_rate}%</span></td></tr>; }) : <tr><td colSpan={6} className="sales-empty">No rows for this period.</td></tr>}</tbody></table></div></article>;
 }
 
-function LostLeadAnalysis({ total, status, filters }: { total: number; status: ManagerAnalytics["status"]; filters: Record<string, string> }) {
+function LostLeadAnalysis({ total, status, filters, refreshKey }: { total: number; status: ManagerAnalytics["status"]; filters: Record<string, string>; refreshKey: number }) {
   const [selected, setSelected] = useState<"all" | "LOST" | "UNQUALIFIED">("all");
   const [pageNumber, setPageNumber] = useState(1);
   const [page, setPage] = useState<{ count: number; next: string | null; previous: string | null; results: Lead[] } | null>(null);
@@ -70,7 +70,7 @@ function LostLeadAnalysis({ total, status, filters }: { total: number; status: M
       .catch(err => { if (active) setError(err instanceof Error ? err.message : "Unable to load lost leads."); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [baseQuery, pageNumber, selected]);
+  }, [baseQuery, pageNumber, refreshKey, selected]);
 
   const openHistory = async (id: number) => {
     const request = ++detailRequest.current;
@@ -102,7 +102,7 @@ const psFollowupColumns = [
   ["f5", "F5", "f5"],
 ] as const;
 
-function PSFollowupsSection({ filters, primaryPs, setPrimaryPs, officers }: { filters: Record<string, string>; primaryPs: string; setPrimaryPs: (value: string) => void; officers: ManagerFilterOption[] }) {
+function PSFollowupsSection({ filters, primaryPs, setPrimaryPs, officers, refreshKey }: { filters: Record<string, string>; primaryPs: string; setPrimaryPs: (value: string) => void; officers: ManagerFilterOption[]; refreshKey: number }) {
   const sectionRef = useRef<HTMLElement>(null);
   const [enabled, setEnabled] = useState(false);
   const [comparePs, setComparePs] = useState("");
@@ -122,7 +122,7 @@ function PSFollowupsSection({ filters, primaryPs, setPrimaryPs, officers }: { fi
     observer.observe(sectionRef.current);
     return () => observer.disconnect();
   }, []);
-  useEffect(() => { if (!enabled) return; const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [enabled, load]);
+  useEffect(() => { if (!enabled) return; const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [enabled, load, refreshKey]);
   const close = () => { setBucket(null); setCustomers([]); setDetail(null); };
   const openBucket = async (psRow: ManagerPSFollowupRow, key: string, label: string) => {
     setBucket({ ps: psRow, key, label }); setDetail(null); setCustomers([]); setModalLoading(true); setError("");
@@ -147,6 +147,7 @@ function PSFollowupsSection({ filters, primaryPs, setPrimaryPs, officers }: { fi
 }
 
 export function SalesManagerAnalyticsPage() {
+  const router = useRouter();
   const [range, setRange] = useState("mtd");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -167,24 +168,35 @@ export function SalesManagerAnalyticsPage() {
   const params = useMemo(() => ({ range, ...(range === "custom" && validDateFrom ? { date_from: validDateFrom } : {}), ...(range === "custom" && validDateTo ? { date_to: validDateTo } : {}), ...(source ? { source } : {}), ...(model ? { model } : {}), ...(ps ? { ps } : {}) }), [model, ps, range, source, validDateFrom, validDateTo]);
   const followupFilters = useMemo<Record<string, string>>(() => ({ range, ...(range === "custom" && validDateFrom ? { date_from: validDateFrom } : {}), ...(range === "custom" && validDateTo ? { date_to: validDateTo } : {}), ...(source ? { source } : {}), ...(model ? { model } : {}) }), [model, range, source, validDateFrom, validDateTo]);
   const drilldownFilters: Record<string, string> = { ...(["today", "mtd"].includes(range) && data?.date_from ? { date_from: String(data.date_from), date_to: String(data.date_to || data.date_from) } : {}), ...(range === "custom" && validDateFrom && data?.date_from ? { date_from: String(data.date_from) } : {}), ...(range === "custom" && validDateTo && data?.date_to ? { date_to: String(data.date_to) } : {}), ...(source ? { source } : {}), ...(model ? { model } : {}), ...(ps ? { ps } : {}) };
-  const load = useCallback(async () => { const request = ++requestId.current; setLoading(true); setError(""); try { const result = await getSalesManagerAnalytics({ ...params, include: "filters,ps,source,lost" }); if (request === requestId.current) { setData(result); setDataVersion(version => version + 1); } } catch (err) { if (request === requestId.current) setError(err instanceof Error ? err.message : "Unable to load sales manager analytics."); } finally { if (request === requestId.current) setLoading(false); } }, [params]);
+  const load = useCallback(async (fresh = false) => { const request = ++requestId.current; setLoading(true); setError(""); try { const result = await getSalesManagerAnalytics({ ...params, include: "filters,ps,source,lost", ...(fresh ? { refresh: "1" } : {}) }); if (request === requestId.current) { setData(result); setDataVersion(version => version + 1); } } catch (err) { if (request === requestId.current) setError(err instanceof Error ? err.message : "Unable to load sales manager analytics."); } finally { if (request === requestId.current) setLoading(false); } }, [params]);
   useEffect(() => { void getSystemConfig().then(config => setConfiguredSources(config.lists.sources || ["WALKIN"])).catch(() => setConfiguredSources(["WALKIN"])); }, []);
-  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
+  useEffect(() => { const timer = window.setTimeout(() => void load(range === "mtd"), 0); return () => window.clearTimeout(timer); }, [load, range]);
+  useEffect(() => {
+    if (range !== "mtd") return;
+    const refreshVisible = () => { if (document.visibilityState === "visible") void load(true); };
+    const timer = window.setInterval(refreshVisible, 60_000);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshVisible); };
+  }, [load, range]);
   const sources = configuredSources;
   const models = data?.filters?.models || data?.models.map(row => row.model).filter(modelName => modelName !== "Model not set") || [];
   const psOptions = data?.filters?.ps || data?.ps || [];
   const exportSection = (section: string) => { setError(""); void exportSalesManagerAnalytics(section, params).catch(err => setError(err instanceof Error ? err.message : "Export failed.")); };
   return <section className="page manager-page">
-    <div className="sales-hero manager-hero"><div><p className="eyebrow">SALES MANAGER</p><h1>Branch analytics <span>{data?.branch || ""}</span></h1><p className="subtext">Branch lead intake, PS/SO performance and conversion, and sales follow-ups.</p></div><div className="sales-hero-actions"><select className="filter" value={range} onChange={event => setRange(event.target.value)}><option value="mtd">MTD vs previous MTD</option><option value="today">Today</option><option value="custom">Date range</option><option value="all">All time</option></select>{range === "custom" && <><DateInput className="date-input-filter" value={dateFrom} max={historicalFromMax} onChange={setDateFrom} ariaLabel="Analytics start date, DD/MM/YYYY" /><DateInput className="date-input-filter" value={dateTo} min={dateFrom || undefined} max={today} onChange={setDateTo} ariaLabel="Analytics end date, DD/MM/YYYY" /></>}<button className="filter" onClick={() => void load()}>Refresh</button></div></div>
+    <div className="sales-hero manager-hero"><div><p className="eyebrow">SALES MANAGER</p><h1>Branch analytics <span>{data?.branch || ""}</span></h1><p className="subtext">Branch lead intake, PS/SO performance and conversion, and sales follow-ups.</p></div><div className="sales-hero-actions"><select className="filter" value={range} onChange={event => setRange(event.target.value)}><option value="mtd">MTD vs previous MTD</option><option value="today">Today</option><option value="custom">Date range</option><option value="all">All time</option></select>{range === "custom" && <><DateInput className="date-input-filter" value={dateFrom} max={historicalFromMax} onChange={setDateFrom} ariaLabel="Analytics start date, DD/MM/YYYY" /><DateInput className="date-input-filter" value={dateTo} min={dateFrom || undefined} max={today} onChange={setDateTo} ariaLabel="Analytics end date, DD/MM/YYYY" /></>}<button className="filter" onClick={() => void load(true)} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button></div></div>
     {error && <div className="empty-state">{error}</div>}
     {loading && !data ? <div className="panel sales-analytics-loading">Loading branch analytics...</div> : data && <>
       <section className="manager-filter-bar panel"><label>Source<select value={source} onChange={event => setSource(event.target.value)}><option value="">All sources</option>{sources.map(item => <option value={item} key={item}>{sourceName(item)}</option>)}</select></label><label>Model<select value={model} onChange={event => setModel(event.target.value)}><option value="">All models</option>{models.map(item => <option value={item} key={item}>{item}</option>)}</select></label><label>PS/SO<select value={ps} onChange={event => setPs(event.target.value)}><option value="">All PS/SO</option>{psOptions.map(row => <option value={row.id} key={row.id}>{row.name}</option>)}</select></label></section>
-      <EtbrTiles data={data.summary} /><section className="sales-metrics manager-metrics">{[["Total leads", data.summary.total, "total"], ["Untouched by PS", data.summary.untouched, "untouched"], ["Booked", data.summary.booked, "booked"], ["Retailed", data.summary.retailed, "retailed"], ["Lost", data.summary.lost, "lost"], ["Lead to retail", `${data.summary.lead_to_retail_rate}%`, "conversion"]].map(([label, value, key]) => <Link prefetch={false} className="sales-metric manager-metric" key={key} href={leadHref(drilldownFilters, metricFilters[String(key)] || {})}><span>{label}</span><strong>{value}</strong><small>{data.range === "mtd" ? `${metricDelta(data.summary.delta?.[String(key)] as number)} vs prev MTD` : "Selected period"}</small></Link>)}</section>
+      <div className="manager-period-note"><span>{data.range === "mtd" ? "Month to date" : data.range === "today" ? "Today" : data.range === "all" ? "All time" : "Selected dates"}{data.date_from ? ` · ${formatDate(data.date_from)}–${formatDate(data.date_to)}` : ""}</span><span>{data.range === "mtd" ? "Refreshes every minute while open · " : ""}Updated {formatDateTime(data.generated_at)}{loading ? " · Refreshing…" : ""}</span></div>
+      <div className="manager-kpi-heading"><h2>Lead journey</h2><p>Progress for leads enquired in this period. Booked includes leads later retailed.</p></div>
+      <EtbrTiles data={data.summary} actions={{ etbr_enquired: () => router.push(leadHref(drilldownFilters)), etbr_retailed: () => router.push(leadHref(drilldownFilters, { sales_outcome: "RETAILED" })) }} />
+      <div className="manager-kpi-heading"><h2>Current position</h2><p>Booked here excludes retailed leads; lost includes not interested.</p></div>
+      <section className="sales-metrics manager-metrics">{[["Untouched by PS", data.summary.untouched, "untouched", "Assigned PS has logged no calls"], ["Currently booked", data.summary.booked, "booked", "Excludes retailed leads"], ["Lost / not interested", data.summary.lost, "lost", "Closed without a sale"], ["Lead to retail", `${data.summary.lead_to_retail_rate}%`, "conversion", "Retailed ÷ all enquiries"]].map(([label, value, key, description]) => <Link prefetch={false} className="sales-metric manager-metric" key={key} href={leadHref(drilldownFilters, metricFilters[String(key)] || {})}><span>{label}</span><strong>{value}</strong><small>{description}</small><small>{data.range === "mtd" ? `${metricDelta(data.summary.delta?.[String(key)] as number)}${key === "conversion" ? " pp" : ""} vs previous MTD` : "Selected period"}</small></Link>)}</section>
       <label className="manager-section-jump">Jump to section<select defaultValue="" onChange={event => { document.getElementById(`manager-section-${event.currentTarget.value}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); event.currentTarget.value = ""; }}><option value="" disabled>Choose a section</option>{sections.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-      <LostLeadAnalysis key={`${new URLSearchParams(drilldownFilters)}:${dataVersion}`} total={data.summary.lost} status={data.status} filters={drilldownFilters} />
+      <LostLeadAnalysis key={new URLSearchParams(drilldownFilters).toString()} total={data.summary.lost} status={data.status} filters={drilldownFilters} refreshKey={dataVersion} />
       <section id="manager-section-ps" className="manager-section"><RoleTable rows={data.ps} filters={drilldownFilters} onExport={exportSection} /></section>
       <section id="manager-section-source" className="manager-two-col manager-section"><PerformanceTable title="Source conversion" section="source" labelKey="source" rows={data.source} filters={drilldownFilters} onExport={exportSection} /><PerformanceTable title="Model conversion" section="models" labelKey="model" rows={data.models} filters={drilldownFilters} onExport={exportSection} /></section>
-      <PSFollowupsSection filters={followupFilters} primaryPs={ps} setPrimaryPs={setPs} officers={psOptions} />
+      <PSFollowupsSection filters={followupFilters} primaryPs={ps} setPrimaryPs={setPs} officers={psOptions} refreshKey={dataVersion} />
     </>}
   </section>;
 }

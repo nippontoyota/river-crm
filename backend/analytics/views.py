@@ -477,7 +477,7 @@ class ReceptionistAnalyticsView(APIView):
 class SalesManagerAnalyticsView(APIView):
     permission_classes = [IsSalesManager]
 
-    @cache_analytics("sales-manager-ps-calls")
+    @cache_analytics("sales-manager-ps-calls", max_ttl=60)
     def get(self, request):
         return Response(manager_payload(request))
 

@@ -199,6 +199,21 @@ class SalesManagerAnalyticsTests(TestCase):
         self.assertEqual(expired.data["summary"]["total"], first.data["summary"]["total"] + 1)
 
     @override_settings(CACHE_TTL_SECONDS=10)
+    def test_sales_manager_refresh_bypasses_cached_mtd(self):
+        cache.clear()
+        self.client.force_authenticate(self.manager)
+        first = self.client.get("/api/analytics/sales-manager/?range=mtd&include=filters,ps,source,lost")
+        Lead.objects.create(name="New MTD lead", phone="9000000099", branch="Mount Road", enquiry_date=timezone.localdate())
+
+        cached = self.client.get("/api/analytics/sales-manager/?range=mtd&include=filters,ps,source,lost")
+        refreshed = self.client.get("/api/analytics/sales-manager/?range=mtd&include=filters,ps,source,lost&refresh=1")
+
+        self.assertEqual(cached["X-Cache"], "HIT")
+        self.assertEqual(cached.data["summary"]["total"], first.data["summary"]["total"])
+        self.assertEqual(refreshed["X-Cache"], "BYPASS")
+        self.assertEqual(refreshed.data["summary"]["total"], first.data["summary"]["total"] + 1)
+
+    @override_settings(CACHE_TTL_SECONDS=10)
     def test_cache_failure_fails_open(self):
         cache.clear()
         self.client.force_authenticate(self.manager)

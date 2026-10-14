@@ -478,8 +478,38 @@
   font-size: 13px;
 }
 
+.manager-period-note,
+.manager-kpi-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+
+.manager-period-note {
+  margin: 0 0 16px;
+  color: var(--sales-muted);
+  font-size: 12px;
+}
+
+.manager-kpi-heading {
+  margin: 16px 0 10px;
+}
+
+.manager-kpi-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.manager-kpi-heading p {
+  margin: 0;
+  color: var(--sales-muted);
+  font-size: 12px;
+}
+
 .manager-metrics {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .manager-metric {
@@ -825,7 +855,7 @@
 
 @media (max-width: 1250px) {
   .manager-metrics {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .manager-filter-bar,
