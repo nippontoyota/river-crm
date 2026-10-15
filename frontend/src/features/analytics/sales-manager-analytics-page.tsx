@@ -9,13 +9,6 @@ import { exportSalesManagerAnalytics, getLeadDetail, getManagerLeads, getSalesMa
 import { DateInput } from "@/components/date-input";
 import { formatDate, formatDateTime, todayInIST, toDateInputValue } from "@/lib/dates";
 
-const sections = [
-  ["overview", "Lost lead analysis"],
-  ["ps", "PS/SO performance"],
-  ["source", "Source and model"],
-  ["followups", "PS Followups"],
-] as const;
-
 const metricFilters: Record<string, Record<string, string>> = {
   untouched: { ps_handling: "untouched" },
   booked: { sales_outcome: "BOOKED" },
@@ -192,11 +185,10 @@ export function SalesManagerAnalyticsPage() {
       <section className="manager-kpi-grid" aria-label="Lead journey metrics"><EtbrTiles embedded data={data.summary} actions={{ etbr_enquired: () => router.push(leadHref(drilldownFilters)), etbr_retailed: () => router.push(leadHref(drilldownFilters, { sales_outcome: "RETAILED" })) }} /></section>
       <div className="manager-kpi-heading"><h2>Current position</h2><p>Booked here excludes retailed leads; lost includes not interested.</p></div>
       <section className="manager-kpi-grid" aria-label="Current position metrics">{[["Untouched by PS", data.summary.untouched, "untouched", "Assigned PS has logged no calls"], ["Currently booked", data.summary.booked, "booked", "Excludes retailed leads"], ["Lost / not interested", data.summary.lost, "lost", "Closed without a sale"], ["Lead to retail", `${data.summary.lead_to_retail_rate}%`, "conversion", "Retailed ÷ all enquiries"]].map(([label, value, key, description]) => <Link prefetch={false} className={`sales-metric manager-metric ${key}`} key={key} title={String(description)} href={leadHref(drilldownFilters, metricFilters[String(key)] || {})}><span>{label}</span><strong>{value}</strong><small>{data.range === "mtd" ? `${metricDelta(data.summary.delta?.[String(key)] as number)}${key === "conversion" ? " pp" : ""} vs previous MTD` : "Selected period"}</small></Link>)}</section>
-      <div className="manager-section-jump"><label htmlFor="manager-section-picker">Jump to section</label><select id="manager-section-picker" defaultValue="" onChange={event => { document.getElementById(`manager-section-${event.currentTarget.value}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); event.currentTarget.value = ""; }}><option value="" disabled>Choose a section</option>{sections.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></div>
-      <LostLeadAnalysis key={new URLSearchParams(drilldownFilters).toString()} total={data.summary.lost} status={data.status} filters={drilldownFilters} refreshKey={dataVersion} />
       <section id="manager-section-ps" className="manager-section"><RoleTable rows={data.ps} filters={drilldownFilters} onExport={exportSection} /></section>
-      <section id="manager-section-source" className="manager-two-col manager-section"><PerformanceTable title="Source conversion" section="source" labelKey="source" rows={data.source} filters={drilldownFilters} onExport={exportSection} /><PerformanceTable title="Model conversion" section="models" labelKey="model" rows={data.models} filters={drilldownFilters} onExport={exportSection} /></section>
+      <section id="manager-section-source" className="manager-section"><PerformanceTable title="Source conversion" section="source" labelKey="source" rows={data.source} filters={drilldownFilters} onExport={exportSection} /></section>
       <PSFollowupsSection filters={followupFilters} primaryPs={ps} setPrimaryPs={setPs} officers={psOptions} refreshKey={dataVersion} />
+      <LostLeadAnalysis key={new URLSearchParams(drilldownFilters).toString()} total={data.summary.lost} status={data.status} filters={drilldownFilters} refreshKey={dataVersion} />
     </>}
   </section>;
 }

@@ -577,27 +577,6 @@
   cursor: pointer;
 }
 
-.manager-section-jump {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: 2px 0 22px;
-  color: #33413e;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.manager-section-jump select {
-  min-height: 40px;
-  width: min(320px, 100%);
-  min-width: 0;
-  border: 1px solid var(--sales-outline);
-  border-radius: 6px;
-  background: #fff;
-  padding: 9px 11px;
-  font: inherit;
-}
-
 .manager-section,
 .manager-followups-card {
   scroll-margin-top: 24px;
@@ -652,12 +631,6 @@
 .manager-lost-pagination > div {
   display: flex;
   gap: 8px;
-}
-
-.manager-two-col {
-  display: grid;
-  grid-template-columns: 1.25fr .75fr;
-  gap: 18px;
 }
 
 .manager-card-head {
@@ -718,6 +691,10 @@
 .manager-followups-card {
   margin-top: 18px;
   overflow: hidden;
+}
+
+.manager-lost-analysis {
+  margin-top: 18px;
 }
 
 .manager-followups-head,
@@ -923,10 +900,6 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .manager-two-col {
-    grid-template-columns: 1fr;
-  }
-
   .manager-followups-head {
     display: grid;
   }
@@ -941,12 +914,6 @@
   .manager-filter-bar,
   .manager-lead-filters {
     grid-template-columns: 1fr;
-  }
-
-  .manager-section-jump {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 8px;
   }
 
   .manager-lost-buckets {
