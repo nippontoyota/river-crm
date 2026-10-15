@@ -35,7 +35,6 @@ const adminLinks = [
   ["/call-center", "Call center review", "☎"],
   ["/services", "Services", "⚒"],
   ["/feedback", "Feedback", "◷"],
-  ["/business-controls", "Targets & finance", "◫"],
   ["/analytics", "Analytics", "◱"],
   ["/ce-analytics", "CE analytics", "☎"],
   ["/complaints", "Complaints", "⚑"],
