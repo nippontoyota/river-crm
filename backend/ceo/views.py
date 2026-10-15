@@ -22,6 +22,7 @@ from leads.models import Lead, SystemConfig
 from leads.rtos import KERALA_RTO_CHOICES
 from leads.choices import activity_children, unique_choices
 from .filters import DIMENSIONS, ROLES, ReportFilters
+from .ce_performance import ce_performance
 from .finance import FinanceInput, TargetInput, save_finance, save_target, target_data
 from .models import FinancialEntry, Milestone, OperationEvent, SalesTarget
 from .lead_analysis import classified_leads
@@ -122,6 +123,8 @@ class CEOReportView(CEOView):
     @cache_analytics("ceo-operational-report-ps-handling", max_ttl=60)
     def get(self, request, section="overview"):
         filters = ReportFilters(request.query_params)
+        if section == "ce-performance":
+            return Response(ce_performance(filters))
         if section == "overview":
             payload = summary(filters)
             payload["branches"] = segment_rows(filters)
@@ -246,7 +249,9 @@ def csv_cell(value):
 class CEOExportView(CEOView):
     def get(self, request, section):
         filters = ReportFilters(request.query_params)
-        if section == "leads":
+        if section == "ce-performance":
+            rows = iter(ce_performance(filters)["results"])
+        elif section == "leads":
             queryset = filters.leads().order_by(lead_sort(request.query_params), "-id")
             def lead_export():
                 for offset in range(0, queryset.count(), 500):

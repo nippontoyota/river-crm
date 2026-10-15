@@ -27,6 +27,7 @@ const serviceLinks = [["/services", "Services", "⚒"]] as const;
 const ceoLinks = [
   ["/services", "Services", "⚒"],
   ["/ceo/feedback", "Feedback", "◷"], ["/ceo", "Overview", "◱"], ["/ceo/branches", "Branches", "▦"], ["/ceo/people", "People", "◬"],
+  ["/ceo/ce-analytics", "CE analytics", "☎"],
   ["/ceo/leads", "Leads & follow-ups", "☷"], ["/ceo/markets", "Markets", "◎"], ["/ceo/operations", "Complaints", "◫"],
 ] as const;
 const feedbackLinks = [["/feedback", "Feedback calls", "◷"]] as const;
@@ -36,6 +37,7 @@ const adminLinks = [
   ["/feedback", "Feedback", "◷"],
   ["/business-controls", "Targets & finance", "◫"],
   ["/analytics", "Analytics", "◱"],
+  ["/ce-analytics", "CE analytics", "☎"],
   ["/complaints", "Complaints", "⚑"],
   ["/team", "Users", "◬"],
   ["/lists", "Lists", "▤"],
