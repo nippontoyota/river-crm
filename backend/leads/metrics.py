@@ -1,4 +1,4 @@
-from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models import Count, Exists, OuterRef, Q, Subquery
 
 from .models import CallLog, Lead
 
@@ -30,3 +30,22 @@ def ps_handling_counts():
         "passed_to_ps": Count("pk", filter=PS_HANDLING_FILTERS["passed"], distinct=True),
         "untouched_by_ps": Count("pk", filter=PS_HANDLING_FILTERS["untouched"], distinct=True),
     }
+
+
+def lost_reason_groups(queryset):
+    """Count each closed lost lead under its latest recorded loss reason."""
+    lost_statuses = (Lead.Status.LOST, Lead.Status.UNQUALIFIED)
+    loss_call = CallLog.objects.filter(lead_id=OuterRef("pk"), status__in=lost_statuses).order_by("-created_at", "-pk")
+    leads = queryset.filter(status__in=lost_statuses).annotate(
+        loss_outcome=Subquery(loss_call.values("outcome")[:1]),
+        loss_remarks=Subquery(loss_call.values("remarks")[:1]),
+    ).values_list("pk", "status", "loss_outcome", "loss_remarks")
+    groups = {}
+    for lead_id, status, outcome, remarks in leads:
+        first_line = (remarks or "").splitlines()[0].strip() if remarks else ""
+        recorded = first_line.split(":", 1)[1].strip() if first_line.casefold().startswith("lost reason:") else ""
+        reason = recorded or (outcome if outcome and outcome.upper() not in {"LOST", "UNQUALIFIED"} else "")
+        reason = reason[0].upper() + reason[1:] if reason else "Not interested" if status == Lead.Status.UNQUALIFIED else "Reason not recorded"
+        group = groups.setdefault(reason.casefold(), {"reason": reason, "ids": []})
+        group["ids"].append(lead_id)
+    return sorted(groups.values(), key=lambda group: (-len(group["ids"]), group["reason"].casefold()))

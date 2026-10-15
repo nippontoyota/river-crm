@@ -21,7 +21,7 @@ from notifications.models import Notification
 from notifications.serializers import WhatsAppAgreementSerializer
 from notifications.whatsapp import may_record_agreement, save_agreement
 from .outcomes import CLOSED_STATUSES, is_closed, outcome_policy, validate_milestone_change
-from .metrics import PS_HANDLING_FILTERS, etbr_aggregates, with_ps_handling
+from .metrics import PS_HANDLING_FILTERS, etbr_aggregates, lost_reason_groups, with_ps_handling
 from .phone_lock import guard_manual_phone, lock_phones
 from .serializers import CustomerLookupSerializer, validate_configured_choice
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
@@ -299,6 +299,9 @@ class LeadViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(status=Lead.Status.FRESH, created_at__date__lte=timezone.localdate() - timedelta(days=3))
         if request.query_params.get("status_group") == "lost_or_unqualified":
             queryset = queryset.filter(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED])
+        if reason := request.query_params.get("lost_reason"):
+            ids = next((group["ids"] for group in lost_reason_groups(queryset) if group["reason"].casefold() == reason.casefold()), [])
+            queryset = queryset.filter(pk__in=ids)
         page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page if page is not None else queryset, many=True)
         if page is not None:

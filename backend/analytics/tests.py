@@ -85,7 +85,7 @@ class SalesManagerAnalyticsTests(TestCase):
     def test_manager_lost_analysis_counts_statuses_and_opens_history(self):
         today = timezone.localdate()
         lost = Lead.objects.create(name="Lost branch lead", phone="9000000040", branch="Mount Road", enquiry_date=today, assigned_ps=self.ps, status=Lead.Status.LOST)
-        Lead.objects.create(name="Not interested branch lead", phone="9000000041", branch="Mount Road", enquiry_date=today, status=Lead.Status.UNQUALIFIED)
+        uninterested = Lead.objects.create(name="Not interested branch lead", phone="9000000041", branch="Mount Road", enquiry_date=today, status=Lead.Status.UNQUALIFIED)
         Lead.objects.create(name="Hidden lost lead", phone="9000000042", branch="Other", enquiry_date=today, status=Lead.Status.LOST)
         CallLog.objects.create(lead=lost, so=self.ps, status=Lead.Status.LOST, outcome="Lost to Competition", remarks="Chose another model")
         self.client.force_authenticate(self.manager)
@@ -94,11 +94,40 @@ class SalesManagerAnalyticsTests(TestCase):
         self.assertEqual(analysis.status_code, 200)
         self.assertEqual(analysis.data["summary"]["lost"], 2)
         self.assertEqual({row["status"]: row["count"] for row in analysis.data["status"]}, {"LOST": 1, "UNQUALIFIED": 1})
+        self.assertEqual({row["reason"]: row["count"] for row in analysis.data["lost_reasons"]}, {"Lost to Competition": 1, "Not interested": 1})
         leads = self.client.get("/api/leads/manager-leads/?status_group=lost_or_unqualified&range=all")
         self.assertEqual(leads.data["count"], 2)
+        competition = self.client.get("/api/leads/manager-leads/?status_group=lost_or_unqualified&lost_reason=Lost%20to%20Competition")
+        self.assertEqual([row["id"] for row in competition.data["results"]], [lost.pk])
+        not_interested = self.client.get("/api/leads/manager-leads/?status_group=lost_or_unqualified&lost_reason=Not%20interested")
+        self.assertEqual([row["id"] for row in not_interested.data["results"]], [uninterested.pk])
         detail = self.client.get(f"/api/leads/{lost.pk}/")
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.data["call_history"][0]["remarks"], "Chose another model")
+
+    def test_lost_reasons_use_latest_loss_call_and_match_filtered_drilldown(self):
+        today = timezone.localdate()
+        just_enquired = Lead.objects.create(name="Just enquired", phone="9000000050", branch="Mount Road", enquiry_date=today, status=Lead.Status.LOST)
+        competition = Lead.objects.create(name="Competitor", phone="9000000051", branch="Mount Road", enquiry_date=today, status=Lead.Status.LOST)
+        no_reason = Lead.objects.create(name="No reason", phone="9000000052", branch="Mount Road", enquiry_date=today, status=Lead.Status.LOST)
+        older = Lead.objects.create(name="Older lost lead", phone="9000000053", branch="Mount Road", enquiry_date=today - timedelta(days=40), status=Lead.Status.LOST)
+        Lead.objects.create(name="Other branch competitor", phone="9000000054", branch="Other", enquiry_date=today, status=Lead.Status.LOST)
+        CallLog.objects.create(lead=just_enquired, so=self.cre, status=Lead.Status.LOST, outcome="LOST", remarks="Lost reason: Lost to competition\nEarlier call")
+        CallLog.objects.create(lead=just_enquired, so=self.cre, status=Lead.Status.LOST, outcome="LOST", remarks="Lost reason: Just enquired\nCustomer only asked for a quote")
+        CallLog.objects.create(lead=competition, so=self.ps, status=Lead.Status.LOST, outcome="Lost to Competition", remarks="Bought elsewhere")
+        CallLog.objects.create(lead=older, so=self.ps, status=Lead.Status.LOST, outcome="Dropped")
+        self.client.force_authenticate(self.manager)
+
+        analysis = self.client.get("/api/analytics/sales-manager/?include=lost&range=today")
+        self.assertEqual(analysis.data["summary"]["lost"], 3)
+        self.assertEqual({row["reason"]: row["count"] for row in analysis.data["lost_reasons"]}, {
+            "Just enquired": 1, "Lost to Competition": 1, "Reason not recorded": 1,
+        })
+        for reason, expected_id in (("Just enquired", just_enquired.pk), ("Lost to Competition", competition.pk), ("Reason not recorded", no_reason.pk)):
+            with self.subTest(reason=reason):
+                leads = self.client.get("/api/leads/manager-leads/", {"status_group": "lost_or_unqualified", "lost_reason": reason, "date_from": today.isoformat(), "date_to": today.isoformat()})
+                self.assertEqual(leads.data["count"], 1)
+                self.assertEqual(leads.data["results"][0]["id"], expected_id)
 
     def test_manager_overview_query_budget_and_partial_sections(self):
         self.client.force_authenticate(self.manager)

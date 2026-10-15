@@ -648,9 +648,32 @@
   background: #e9f7f2;
 }
 
+.manager-lost-buckets button span {
+  display: grid;
+  gap: 4px;
+}
+
+.manager-lost-buckets button small {
+  color: #687875;
+  font-size: 12px;
+}
+
 .manager-lost-buckets strong {
   color: #a73f16;
   font-size: 22px;
+}
+
+.manager-lost-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+}
+
+.manager-lost-detail-head h3 {
+  margin: 0;
+  font-size: 16px;
 }
 
 .manager-lost-pagination {

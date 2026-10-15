@@ -37,27 +37,23 @@ function PerformanceTable({ title, section, labelKey, rows, filters, onExport }:
   return <article className="panel manager-table-card"><header className="manager-card-head"><div><p className="eyebrow">CONVERSION MIX</p><h2>{title}</h2></div><button className="filter" onClick={() => onExport(section)}>Export CSV</button></header><div className="manager-table-scroll"><table className="sales-table manager-table"><thead><tr><th>{labelKey === "source" ? "Source" : "Color"}</th><th>Total</th><th>Booked</th><th>Retailed</th><th>Lost</th><th>Conv.</th></tr></thead><tbody>{rows.length ? rows.map(row => { const name = String(row[labelKey] || "Unknown"); const clickable = labelKey === "source" || name !== "Color not set"; const href = leadHref(filters, { [labelKey]: name }); return <tr className={clickable ? "manager-clickable-row" : ""} key={name} role={clickable ? "link" : undefined} tabIndex={clickable ? 0 : undefined} onClick={clickable ? () => router.push(href) : undefined} onKeyDown={clickable ? event => { if (event.key === "Enter") router.push(href); } : undefined}><td><b>{labelKey === "source" ? sourceName(name) : name}</b></td><td>{row.total}</td><td>{row.booked}</td><td>{row.retailed}</td><td>{row.lost}</td><td><span className="manager-rate">{row.conversion_rate}%</span></td></tr>; }) : <tr><td colSpan={6} className="sales-empty">No rows for this period.</td></tr>}</tbody></table></div></article>;
 }
 
-function LostLeadAnalysis({ total, status, filters, refreshKey }: { total: number; status: ManagerAnalytics["status"]; filters: Record<string, string>; refreshKey: number }) {
-  const [selected, setSelected] = useState<"all" | "LOST" | "UNQUALIFIED">("all");
+function LostLeadAnalysis({ total, reasons, filters, refreshKey }: { total: number; reasons: ManagerAnalytics["lost_reasons"]; filters: Record<string, string>; refreshKey: number }) {
+  const [selected, setSelected] = useState<string | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [page, setPage] = useState<{ count: number; next: string | null; previous: string | null; results: Lead[] } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [openLeadId, setOpenLeadId] = useState<number | null>(null);
   const [detail, setDetail] = useState<LeadDetail | null>(null);
   const [detailError, setDetailError] = useState("");
   const detailRequest = useRef(0);
   const baseQuery = new URLSearchParams(filters).toString();
-  const buckets = [
-    { key: "all", label: "All lost leads", count: total },
-    { key: "LOST", label: "Lost", count: status.find(row => row.status === "LOST")?.count || 0 },
-    { key: "UNQUALIFIED", label: "Not interested", count: status.find(row => row.status === "UNQUALIFIED")?.count || 0 },
-  ] as const;
-
   useEffect(() => {
+    if (!selected) return;
     let active = true;
     const query = new URLSearchParams(baseQuery);
-    query.set(selected === "all" ? "status_group" : "status", selected === "all" ? "lost_or_unqualified" : selected);
+    query.set("status_group", "lost_or_unqualified");
+    query.set("lost_reason", selected);
     query.set("page", String(pageNumber));
     void getManagerLeads(query.toString()).then(result => { if (active) { setPage(result); setError(""); } })
       .catch(err => { if (active) setError(err instanceof Error ? err.message : "Unable to load lost leads."); })
@@ -74,11 +70,12 @@ function LostLeadAnalysis({ total, status, filters, refreshKey }: { total: numbe
   const closeHistory = () => { detailRequest.current += 1; setOpenLeadId(null); setDetail(null); };
 
   return <section id="manager-section-overview" className="panel manager-lost-analysis manager-section">
-    <header className="manager-card-head"><div><p className="eyebrow">OVERVIEW</p><h2>Lost lead analysis</h2><p className="subtext">Select a status to see its leads, then open a lead to review its history.</p></div></header>
-    <div className="manager-lost-buckets">{buckets.map(bucket => <button key={bucket.key} type="button" className={selected === bucket.key ? "active" : ""} aria-pressed={selected === bucket.key} onClick={() => { if (selected === bucket.key) return; setSelected(bucket.key); setPageNumber(1); setPage(null); setLoading(true); }}><span>{bucket.label}</span><strong>{bucket.count}</strong></button>)}</div>
+    <header className="manager-card-head"><div><p className="eyebrow">OVERVIEW</p><h2>Lost lead analysis</h2><p className="subtext">{total} lost {total === 1 ? "lead" : "leads"} in this period. Select a reason to see its leads and their history.</p></div></header>
+    {reasons.length ? <div className="manager-lost-buckets">{reasons.map(({ reason, count }) => <button key={reason} type="button" className={selected === reason ? "active" : ""} aria-pressed={selected === reason} onClick={() => { setSelected(selected === reason ? null : reason); setPageNumber(1); setPage(null); setError(""); setLoading(selected !== reason); }}><span><b>{reason}</b><small>{total ? Math.round(count / total * 100) : 0}% of lost leads</small></span><strong>{count}</strong></button>)}</div> : <p className="subtext">No lost leads match these filters.</p>}
+    {selected && <><div className="manager-lost-detail-head"><h3>{selected} · {page?.count ?? reasons.find(row => row.reason === selected)?.count ?? 0} leads</h3><button type="button" className="filter" onClick={() => { setSelected(null); setPage(null); setError(""); }}>Close</button></div>
     {error && <p className="manager-followups-error" role="alert">{error}</p>}
     <div className="manager-table-scroll"><table className="sales-table manager-table"><thead><tr><th>Lead</th><th>Customer</th><th>PS/SO</th><th>Status</th><th>Enquiry</th><th>History</th></tr></thead><tbody>{loading ? <tr><td colSpan={6} className="sales-empty">Loading lost leads...</td></tr> : error ? <tr><td colSpan={6} className="sales-empty">Unable to load lost leads.</td></tr> : page?.results.length ? page.results.map(lead => <tr key={lead.id}><td>#{String(lead.id).padStart(6, "0")}</td><td><b>{lead.name}</b><small>{lead.phone}</small></td><td>{lead.assignedPsName || "—"}</td><td><span className={`sales-status ${lead.statusCode.toLowerCase()}`}>{managerStatusName(lead.statusCode)}</span></td><td>{lead.enquiredAt || "—"}</td><td><button type="button" className="sales-row-action" onClick={() => void openHistory(lead.id)}>Open history</button></td></tr>) : <tr><td colSpan={6} className="sales-empty">No lost leads match these filters.</td></tr>}</tbody></table></div>
-    {page && (page.previous || page.next) && <div className="manager-lost-pagination"><span>Page {pageNumber} · {page.count} leads</span><div><button type="button" className="filter" disabled={!page.previous || loading} onClick={() => { setPageNumber(current => current - 1); setPage(null); setLoading(true); }}>Previous</button><button type="button" className="filter" disabled={!page.next || loading} onClick={() => { setPageNumber(current => current + 1); setPage(null); setLoading(true); }}>Next</button></div></div>}
+    {page && (page.previous || page.next) && <div className="manager-lost-pagination"><span>Page {pageNumber} · {page.count} leads</span><div><button type="button" className="filter" disabled={!page.previous || loading} onClick={() => { setPageNumber(current => current - 1); setPage(null); setLoading(true); }}>Previous</button><button type="button" className="filter" disabled={!page.next || loading} onClick={() => { setPageNumber(current => current + 1); setPage(null); setLoading(true); }}>Next</button></div></div>}</>}
     {openLeadId !== null && <div className="modal-layer" role="presentation"><section className="modal sales-detail-modal manager-detail-modal" role="dialog" aria-modal="true" aria-labelledby="manager-lost-history-title"><button className="modal-close" onClick={closeHistory} aria-label="Close">×</button>{detail ? <><header className="sales-detail-header"><div><p className="eyebrow">LEAD HISTORY</p><h2 id="manager-lost-history-title">{detail.name}</h2><p className="subtext">{detail.phone} · {managerStatusName(detail.statusCode)} · {detail.assignedPsName || "No PS assigned"}</p></div></header><div className="sales-detail-scroll"><section className="sales-history"><h3>Call history</h3>{detail.callHistory.length ? detail.callHistory.map(call => <div className="sales-history-row" key={call.id}><span className="history-dot" /><div><b>{managerStatusName(call.outcome || call.status)}</b><small>{call.remarks || "No remarks"}</small><small>By {call.so_name || "—"} · {formatDateTime(call.created_at)}</small></div></div>) : <p className="subtext">No calls recorded.</p>}</section><section className="sales-history"><h3>Follow-ups</h3>{detail.followUpHistory.length ? detail.followUpHistory.map(item => <div className="sales-history-row" key={item.id}><span className="history-dot follow" /><div><b>{formatDateTime(item.scheduled_for)}</b><small>{item.resolved_at ? `Resolved ${formatDateTime(item.resolved_at)}` : "Open"}</small></div></div>) : <p className="subtext">No follow-ups recorded.</p>}</section><section className="sales-history"><h3>Activity history</h3>{detail.auditHistory.length ? detail.auditHistory.map((item, index) => <div className="sales-history-row" key={index}><span className="history-dot" /><div><b>{item.event.replaceAll("_", " ")}</b><small>{item.actor || "System"} · {formatDateTime(item.created_at)}</small></div></div>) : <p className="subtext">No activity recorded.</p>}</section></div></> : <div className="sales-detail-scroll"><h2 id="manager-lost-history-title">Lead history</h2><p role={detailError ? "alert" : undefined}>{detailError || "Loading lead history..."}</p></div>}</section></div>}
   </section>;
 }
@@ -188,7 +185,7 @@ export function SalesManagerAnalyticsPage() {
       <section id="manager-section-ps" className="manager-section"><RoleTable rows={data.ps} filters={drilldownFilters} onExport={exportSection} /></section>
       <section id="manager-section-source" className="manager-two-col manager-section"><PerformanceTable title="Source conversion" section="source" labelKey="source" rows={data.source} filters={drilldownFilters} onExport={exportSection} /><PerformanceTable title="Color conversion" section="colors" labelKey="color" rows={data.colors} filters={drilldownFilters} onExport={exportSection} /></section>
       <PSFollowupsSection filters={followupFilters} primaryPs={ps} setPrimaryPs={setPs} officers={psOptions} refreshKey={dataVersion} />
-      <LostLeadAnalysis key={new URLSearchParams(drilldownFilters).toString()} total={data.summary.lost} status={data.status} filters={drilldownFilters} refreshKey={dataVersion} />
+      <LostLeadAnalysis key={new URLSearchParams(drilldownFilters).toString()} total={data.summary.lost} reasons={data.lost_reasons} filters={drilldownFilters} refreshKey={dataVersion} />
     </>}
   </section>;
 }

@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 from accounts.models import User
 from accounts.permissions import IsAdmin, IsSalesManager
 from analytics.cache import cache_analytics
-from leads.metrics import PS_HANDLING_FILTERS, etbr_aggregates, with_ps_handling
+from leads.metrics import PS_HANDLING_FILTERS, etbr_aggregates, lost_reason_groups, with_ps_handling
 from leads.models import CallLog, FollowUp, Lead, LeadAudit
 
 
@@ -380,10 +380,12 @@ def manager_payload(request):
         payload["colors"] = color_rows(queryset)
     if "lost" in includes:
         payload["status"] = list(queryset.filter(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]).values("status").annotate(count=Count("id")).order_by("status"))
+        payload["lost_reasons"] = [{"reason": group["reason"], "count": len(group["ids"])} for group in lost_reason_groups(queryset)]
     if "ops" in includes:
         payload["status"] = list(queryset.values("status").annotate(count=Count("id")).order_by("-count"))
         payload["categories"] = list(queryset.values("category").annotate(count=Count("id")).order_by("category"))
-        payload["lost_reasons"] = list(CallLog.objects.filter(lead__in=queryset.filter(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]), outcome__gt="").values("outcome").annotate(count=Count("id")).order_by("-count", "outcome"))
+        if "lost" not in includes:
+            payload["lost_reasons"] = [{"reason": group["reason"], "count": len(group["ids"])} for group in lost_reason_groups(queryset)]
         payload["stale_leads"] = list(queryset.filter(status=Lead.Status.FRESH, created_at__date__lte=stale_since).order_by("created_at").values("id", "name", "phone", "source", "model_interest", "created_at")[:20])
     if "filters" in includes:
         pairs = list(queryset.values("source", "model_interest", "assigned_ps_id").distinct())
