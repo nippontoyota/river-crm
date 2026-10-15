@@ -1,7 +1,6 @@
 "use client";
 import { useCrmRefresh } from "@/lib/use-crm-refresh";
 
-import Link from "next/link";
 import { EtbrTiles } from "@/components/etbr-tiles";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -43,7 +42,6 @@ export function AnalyticsPage({ personal = false }: { personal?: boolean }) {
 
   return <section className="page">
     <div className="page-heading"><div><p className="eyebrow">{personal ? "MY RESULTS" : "PIPELINE INTELLIGENCE"}</p><h1>{personal ? <>Your work, <span>in focus.</span></> : <>Turn every enquiry into a <span>clear next step.</span></>}</h1></div></div>
-    {!personal && <p><Link className="filter" href="/ce-analytics">CE calls, qualification & follow-ups →</Link></p>}
     {error && <div className="empty-state">{error}</div>}
     {!personal && <EtbrTiles data={analytics?.summary} />}<section className="analytics-grid">
       <article className="panel table-panel"><header className="panel-heading"><div><p className="eyebrow">{personal ? "MY PERFORMANCE" : "PS/SO PERFORMANCE"}</p><h2>{personal ? "Your conversion rate" : "PS/SO performance"}</h2></div></header><div className="table-scroll"><table><thead><tr><th>Officer</th><th>Assigned</th><th>Called</th><th>Untouched by owner</th><th>Qualified</th><th>Booked</th><th>Won</th><th>Rate</th></tr></thead><tbody>{rows.length ? rows.map(officer => <tr key={officer.id}><td>{personal ? <b>{officer.name}</b> : <button className="analytics-officer-link" disabled={historyLoading === officer.id} onClick={() => void openHistory(officer)}><b>{historyLoading === officer.id ? "Loading history…" : officer.name}</b>{officer.lifecycle_status && officer.lifecycle_status !== "ACTIVE" && <small className={`account-state ${officer.lifecycle_status.toLowerCase()}`}>{officer.lifecycle_status === "DELETED" ? "Deleted" : "Disabled"}</small>}</button>}</td><td>{officer.total_assigned}</td><td>{officer.total_called}</td><td>{officer.untouched ?? 0}</td><td>{officer.qualified}</td><td>{officer.booked}</td><td>{officer.won}</td><td><span className="status qualified">{officer.conversion_rate}%</span></td></tr>) : <tr><td colSpan={8}>No analytics available yet.</td></tr>}</tbody></table></div></article>
