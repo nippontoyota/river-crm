@@ -291,7 +291,9 @@ def segment_rows(filters, dimension="branch"):
 
 
 def people_queryset(filters):
-    qs = User.objects.filter(role__in=ROLES)
+    qs = User.objects.filter(role__in=ROLES).exclude(
+        Q(deleted_at__isnull=False) & (Q(first_name__istartswith="test") | Q(last_name__istartswith="test"))
+    )
     if filters.params.get("role"):
         qs = qs.filter(role=filters.params["role"])
     if filters.employee:

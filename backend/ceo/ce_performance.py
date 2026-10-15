@@ -11,7 +11,9 @@ from leads.models import CallLog, LeadAudit
 def ce_performance(filters):
     # Ownership is current; activity belongs to the actor, even after reassignment.
     leads = filters.base_leads(employee=False)
-    users = User.objects.filter(role=User.Role.CRE).order_by("first_name", "last_name", "email")
+    users = User.objects.filter(role=User.Role.CRE).exclude(
+        Q(deleted_at__isnull=False) & (Q(first_name__istartswith="test") | Q(last_name__istartswith="test"))
+    ).order_by("first_name", "last_name", "email")
     calls = filters.period(CallLog.objects.filter(lead_id__in=leads.values("pk")), "created_at__date")
     handoffs = filters.period(LeadAudit.objects.filter(
         lead_id__in=leads.values("pk"), event="assigned_ps", after__assigned_ps__isnull=False,

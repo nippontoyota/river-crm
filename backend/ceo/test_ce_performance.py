@@ -122,3 +122,18 @@ class CEPerformanceTests(TestCase):
             self.client.force_authenticate(user)
             for path in ("ce-performance", "export/ce-performance"):
                 self.assertEqual(self.client.get(f"/api/ceo/{path}/").status_code, 403)
+
+    def test_deleted_test_accounts_are_hidden_but_real_former_staff_remain(self):
+        hidden = User.objects.create_user(
+            email="deleted-test-ce@example.com", role="CRE", first_name="testCE",
+            is_active=False, deleted_at=timezone.now(),
+        )
+        former = User.objects.create_user(
+            email="former-ce@example.com", role="CRE", first_name="Minjumol", last_name="M",
+            is_active=False, deleted_at=timezone.now(),
+        )
+
+        data = self.report()
+        ids = {row["id"] for row in data["results"]}
+        self.assertNotIn(hidden.pk, ids)
+        self.assertIn(former.pk, ids)

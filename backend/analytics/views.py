@@ -421,8 +421,11 @@ class AdminAnalyticsView(APIView):
         queryset = Lead.objects.filter(deleted_at__isnull=True)
         source = list(queryset.values("source").annotate(total=Count("id"), qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)), won=Count("id", filter=Q(status=Lead.Status.WON))).order_by("source"))
         source = merge_choice_counts(source, "source")
-        cre = team_metrics(User.objects.filter(role=User.Role.CRE), "assigned_leads")
-        officers = team_metrics(User.objects.filter(role=User.Role.SALES_OFFICER), "ps_leads")
+        visible_users = User.objects.exclude(
+            Q(deleted_at__isnull=False) & (Q(first_name__istartswith="test") | Q(last_name__istartswith="test"))
+        )
+        cre = team_metrics(visible_users.filter(role=User.Role.CRE), "assigned_leads")
+        officers = team_metrics(visible_users.filter(role=User.Role.SALES_OFFICER), "ps_leads")
         return Response({"summary": metrics(queryset), "source": source, "cre": cre, "officers": officers, "generated_at": timezone.now()})
 
 

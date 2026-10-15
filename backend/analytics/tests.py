@@ -231,6 +231,23 @@ class SalesManagerAnalyticsTests(TestCase):
         self.assertEqual(personal["X-Cache"], "BYPASS")
         self.assertEqual(reception["X-Cache"], "BYPASS")
 
+    def test_admin_analytics_hide_deleted_test_accounts_only(self):
+        hidden = User.objects.create_user(
+            email="deleted-test-analytics@example.com", role=User.Role.SALES_OFFICER,
+            first_name="testSO", is_active=False, deleted_at=timezone.now(),
+        )
+        former = User.objects.create_user(
+            email="former-analytics@example.com", role=User.Role.SALES_OFFICER,
+            first_name="Minjumol", last_name="M", is_active=False, deleted_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get("/api/analytics/admin/?refresh=1")
+
+        ids = {row["id"] for row in response.data["officers"]}
+        self.assertNotIn(hidden.pk, ids)
+        self.assertIn(former.pk, ids)
+
     @override_settings(CACHE_TTL_SECONDS=10)
     def test_analytics_cache_hit_is_identical_and_runs_no_queries(self):
         cache.clear()

@@ -1,6 +1,9 @@
 from io import StringIO
+from importlib import import_module
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.apps import apps
 from django.contrib.auth.models import Group
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -15,6 +18,29 @@ from notifications.tasks import create_due_follow_up_notifications
 from uploads.models import UploadBatch, UploadRow
 
 from .models import User, UserLifecycleEvent
+
+
+class DeletedTestAccountCleanupTests(TestCase):
+    def test_cleanup_only_hard_deletes_already_deleted_test_accounts(self):
+        deleted_test = User.objects.create_user(
+            "deleted-test@example.com", role=User.Role.CRE, first_name="testCE", last_name="test",
+            is_active=False, deleted_at=timezone.now(),
+        )
+        UserLifecycleEvent.objects.create(user=deleted_test, action=UserLifecycleEvent.Action.DELETED)
+        active_test = User.objects.create_user(
+            "active-test@example.com", role=User.Role.CRE, first_name="testActive",
+        )
+        former_employee = User.objects.create_user(
+            "former@example.com", role=User.Role.CRE, first_name="Minjumol", last_name="M",
+            is_active=False, deleted_at=timezone.now(),
+        )
+
+        migration = import_module("accounts.migrations.0014_purge_deleted_test_accounts")
+        migration.purge_deleted_test_accounts(apps, SimpleNamespace(connection=SimpleNamespace(alias="default")))
+
+        self.assertFalse(User.objects.filter(pk=deleted_test.pk).exists())
+        self.assertTrue(User.objects.filter(pk=active_test.pk).exists())
+        self.assertTrue(User.objects.filter(pk=former_employee.pk).exists())
 
 
 class UserPasswordEditTests(TestCase):
