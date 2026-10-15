@@ -8,6 +8,8 @@ from rest_framework.exceptions import ValidationError
 
 from accounts.models import User
 from leads.models import Lead
+from leads.choices import choice_q
+from django.db.models.fields.json import KeyTextTransform
 from .models import Milestone, OperationEvent
 
 ROLES = {"CRE", "SO", "RECEPTIONIST", "SALES_MANAGER", "COMPLAINTS"}
@@ -84,7 +86,7 @@ class ReportFilters:
         for key in DIMENSIONS:
             value = self.params.get(key)
             if value:
-                queryset = queryset.filter(**{prefix + key: "" if value == "__unknown__" else value})
+                queryset = queryset.filter(choice_q(prefix + key, "" if value == "__unknown__" else value))
         return queryset
 
     def base_leads(self, include_archived=False, dimensions=True, employee=True):
@@ -203,7 +205,7 @@ class ReportFilters:
                 queryset = queryset.filter(branch__in=["" if b == "__unknown__" else b for b in self.branches])
             for key in DIMENSIONS:
                 if self.params.get(key):
-                    queryset = queryset.filter(**{f"snapshot__{key}": "" if self.params[key] == "__unknown__" else self.params[key]})
+                    queryset = queryset.filter(choice_q(KeyTextTransform(key, "snapshot"), "" if self.params[key] == "__unknown__" else self.params[key]))
             queryset = queryset.filter(lead_id__in=self.base_leads(dimensions=False, employee=False).values("id"))
         if self.employee:
             queryset = queryset.filter(actor=self.employee)

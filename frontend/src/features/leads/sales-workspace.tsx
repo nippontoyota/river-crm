@@ -1,5 +1,7 @@
 "use client";
 
+import { matchingChoice, uniqueChoices } from "@/lib/choices";
+
 import { FeedbackRequestForm } from "@/features/feedback/feedback-requests";
 
 import { VehiclePanel } from "@/features/servicing/vehicle-panel";
@@ -61,8 +63,7 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const emptyLead = (): LeadInput => ({ name: "", phone: "", email: "", source: "WALKIN", source_label: "", campaign: "", model_interest: "", city: "", rto: "", branch: "", enquiry_date: formatDate(new Date()) });
 
 const optionsWithCurrent = (options: string[], current = "") => {
-  const value = current.trim();
-  return value && !options.includes(value) ? [value, ...options] : options;
+  return uniqueChoices([current, ...options]);
 };
 
 function formatFollowUp(value: string | null) {
@@ -116,7 +117,7 @@ function ChoiceRow({ options, value, onChange }: { options: string[]; value: str
 function LeadEditPanel({ fields, config, loading, error, onChange, onClose, onSave, saving }: { fields: LeadFields; config: SystemConfig | null; loading: boolean; error: string; onChange: (fields: LeadFields) => void; onClose: () => void; onSave: () => void; saving: boolean }) {
   const update = (field: keyof LeadFields, value: string | null) => onChange({ ...fields, [field]: value });
   const lists = config?.lists || {};
-  const options = (values: string[] = [], current: string, label = (value: string) => value) => optionsWithCurrent(values, current).map(value => <option value={value} key={value}>{label(value)}{!values.includes(value) ? " (retired)" : ""}</option>);
+  const options = (values: string[] = [], current: string, label = (value: string) => value) => optionsWithCurrent(values, current).map(value => <option value={value} key={value}>{label(value)}{!matchingChoice(value, values) ? " (retired)" : ""}</option>);
   return <div className="modal-layer sales-edit-layer" role="presentation"><section className="modal sales-detail-modal sales-edit-modal" role="dialog" aria-modal="true" aria-labelledby="sales-edit-title">
     <header className="sales-detail-header"><div><p className="eyebrow">CUSTOMER INFORMATION</p><h2 id="sales-edit-title">Edit lead details</h2><p className="subtext">Update the customer record saved in ITS.</p></div><button className="modal-close" onClick={onClose} aria-label="Close">×</button></header>
     <form onSubmit={event => { event.preventDefault(); onSave(); }}>
@@ -268,11 +269,10 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
       if (!draft.call_status) return setNotice("Choose Connected or Not Connected.");
       if (!selectedPsOutcome) return setNotice("Choose an available call outcome.");
       if (!draft.remarks.trim()) return setNotice("Remarks are required.");
-      const nextStatus = selectedPsOutcome.status;
       if (autoNextDayFollowUpOutcomes.has(draft.call_outcome)) {
         followUpAt = followUpIso(draft.follow_up_at || tomorrowFollowUpDay());
         if (!followUpAt) return setNotice("Choose a valid follow-up date.");
-      } else if (["PENDING", "WALKIN", "CALLBACK"].includes(nextStatus)) {
+      } else if (selectedPsOutcome.requires_follow_up) {
         if (!draft.follow_up_at) return setNotice("Choose a follow-up date for this outcome.");
         followUpAt = followUpIso(draft.follow_up_at);
         if (!followUpAt) return setNotice("Choose a valid follow-up date.");
@@ -318,7 +318,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
       });
       setDetail(null);
       setDraft(null);
-      setNotice(!isPs && draft.call_outcome === "QUALIFIED" ? `${updated.name} qualified · Assigned PS/SO: ${updated.assignedPsName || "Not assigned"}.` : "Lead updated and follow-up history saved."); await loadDashboard();
+      setNotice(!isPs && draft.call_outcome === "QUALIFIED" ? `${updated.name} qualified · Assigned PS/SO: ${updated.assignedPsName || "Not assigned"}.` : selectedPsOutcome?.requires_follow_up ? "Lead updated and follow-up history saved." : "Lead update saved."); await loadDashboard();
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Lead update could not be saved.";
       setError(message);
@@ -378,7 +378,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const selectCallOutcome = (call_outcome: string) => setDraft(current => current ? { ...current, call_outcome, status: statusOptions[call_outcome]?.[0] || "", follow_up_at: autoNextDayFollowUpOutcomes.has(call_outcome) ? formatDate(tomorrowFollowUpDay()) : "" } : current);
   const choose = <K extends keyof Draft>(field: K, value: Draft[K]) => setDraft(current => current ? { ...current, [field]: value } : current);
   const chooseQualification = (field: keyof LeadQualification, value: string | boolean | null) => setDraft(current => current ? { ...current, qualification: { ...current.qualification, [field]: value } } : current);
-  const submitLabel = draft?.call_outcome === "QUALIFIED" ? "Qualify Lead" : draft?.call_outcome === "LOST" ? "Mark as Lost" : draft?.call_outcome === "PENDING" ? "Mark as Pending" : draft?.call_outcome === "BOOKED" ? "Book Follow-up" : draft?.call_outcome === "RETAILED" ? "Mark Retailed" : "Save follow-up";
+  const submitLabel = draft?.call_outcome === "QUALIFIED" ? "Qualify Lead" : draft?.call_outcome === "LOST" ? "Mark as Lost" : draft?.call_outcome === "PENDING" ? "Mark as Pending" : draft?.call_outcome === "BOOKED" ? "Book Follow-up" : draft?.call_outcome === "RETAILED" ? "Mark Retailed" : selectedPsOutcome?.requires_follow_up ? "Save follow-up" : "Save";
   const visibleSections = isPs ? sections.filter(item => !["all", "fresh", "pending"].includes(item.key)) : sections;
   const psVisibleSections = allLeadsOnly ? psAllSections : [];
   const metrics: { label: string; value: number; tone: string; section: Section; href?: string }[] = isPs

@@ -1,6 +1,7 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 from leads.models import Lead
+from leads.choices import choice_q
 from .models import ServiceRequest
 
 
@@ -22,7 +23,7 @@ def visible_requests(user):
     if user.role == "CRE":
         return rows.filter(created_by=user)
     if user.role == "SERVICE" and user.location.strip():
-        return rows.filter(branch__iexact=user.location.strip()).exclude(status="RECORDED")
+        return rows.filter(choice_q("branch", user.location)).exclude(status="RECORDED")
     if user.role == "SO":
         return rows.filter(vehicle__related_lead__in=visible_leads(user))
     return rows.none()

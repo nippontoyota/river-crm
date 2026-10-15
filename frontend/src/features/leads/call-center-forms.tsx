@@ -1,5 +1,7 @@
 "use client";
 
+import { uniqueChoices } from "@/lib/choices";
+
 import { useEffect, useState, type FormEvent } from "react";
 import { getOfficers, sourceName, statusName, type SystemConfig } from "@/lib/crm";
 import { getSharedLead, recordInteraction, updateSharedLead, stateName, type Interaction, type SharedDetail, type SharedComplaint, type SharedService } from "@/lib/call-center";
@@ -85,7 +87,7 @@ export function SharedLeadEditor({ lead, config, onSaved, onCancel }: { lead: Sh
     return () => { current = false; };
   }, [showPs, psBranch]);
   const set = (key: keyof typeof values, value: string) => setValues(old => ({ ...old, [key]: value }));
-  const options = (items: string[] | undefined, current: string) => [...new Set([current, ...items || []].filter(Boolean))].map(value => <option key={value} value={value}>{value}</option>);
+  const options = (items: string[] | undefined, current: string) => uniqueChoices([current, ...items || []]).map(value => <option key={value} value={value}>{value}</option>);
   return <form className="sales-form-card call-center-form" onSubmit={async event => {
     event.preventDefault(); if (busy) return;
     const data = new FormData(event.currentTarget); setBusy(true); setError("");

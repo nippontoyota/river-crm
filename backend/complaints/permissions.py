@@ -1,5 +1,6 @@
 from rest_framework.permissions import BasePermission
 
+from leads.choices import choice_q
 from accounts.models import User
 from .models import Complaint
 
@@ -10,7 +11,7 @@ def visible_complaints(user):
         queryset = queryset.filter(logged_by=user)
     if user.role in {User.Role.RECEPTIONIST, User.Role.COMPLAINTS}:
         branch = user.location.strip()
-        queryset = queryset.filter(branch__iexact=branch) if branch else queryset.none()
+        queryset = queryset.filter(choice_q("branch", branch)) if branch else queryset.none()
     return queryset
 
 

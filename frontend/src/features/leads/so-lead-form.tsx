@@ -2,6 +2,7 @@
 
 import { RtoField } from "@/components/rto-field";
 import { ActivityFields } from "@/components/activity-fields";
+import { matchingChoice } from "@/lib/choices";
 
 import { useEffect, useState, type FormEvent } from "react";
 import { DateInput } from "@/components/date-input";
@@ -19,7 +20,7 @@ export function SOLeadForm({ user, onClose, onCreated }: { user: CurrentUser; on
   const sources = config?.lists.sources || [];
   const rtos = config?.rto_options || [];
   const branch = user.location?.trim() || "";
-  const validBranch = Boolean(branch && config?.lists.branches?.includes(branch));
+  const validBranch = Boolean(branch && matchingChoice(branch, config?.lists.branches || []));
 
   useEffect(() => {
     void getSystemConfig().then(setConfig).catch(() => setError("Unable to load form options. Close the form and try again."));

@@ -1,4 +1,5 @@
 from django.conf import settings
+from leads.choices import choice_q
 from django.contrib.auth import get_user_model
 from django.middleware.csrf import get_token
 from rest_framework import permissions, status, viewsets
@@ -124,9 +125,9 @@ class SalesOfficerViewSet(RoleUserViewSet):
             queryset = queryset.filter(is_active=True)
         if self.request.user.role == get_user_model().Role.RECEPTIONIST:
             branch = self.request.user.location.strip()
-            queryset = queryset.filter(location__iexact=branch) if branch else queryset.none()
+            queryset = queryset.filter(choice_q("location", branch)) if branch else queryset.none()
         if location := self.request.query_params.get("location"):
-            queryset = queryset.filter(location__iexact=location.strip())
+            queryset = queryset.filter(choice_q("location", location))
         return queryset
 
 class UserViewSet(viewsets.ModelViewSet):

@@ -1,5 +1,7 @@
 "use client";
 
+import { choiceKey, uniqueChoices } from "@/lib/choices";
+
 import { useCallback, useEffect, useMemo, useRef, useState, FormEvent } from "react";
 import { cacheCurrentUser, createUser, disableUser, enableUser, getCachedCurrentUser, getOffboardingImpact, getSystemConfig, getUsers, permanentlyDeleteUser, updateUser, updateUserBranch, type CurrentUser, type OffboardingImpact, type OffboardingRoute } from "@/lib/crm";
 
@@ -197,7 +199,7 @@ export function TeamPage() {
   };
 
   const branchLabel = (user: CurrentUser) => user.role === "FEEDBACK" ? "Call center" : user.location?.trim() || "No branch";
-  const branchOptions = useMemo(() => Array.from(new Set([...branches, ...users.filter(user => user.role !== "FEEDBACK").map(user => user.location?.trim()).filter(Boolean) as string[]])).sort(), [branches, users]);
+  const branchOptions = useMemo(() => uniqueChoices([...branches, ...users.filter(user => user.role !== "FEEDBACK").map(user => user.location?.trim()).filter(Boolean) as string[]]).sort(), [branches, users]);
   const filteredUsers = users.filter(user => {
     const isActive = user.is_active !== false;
     const branch = user.role === "FEEDBACK" ? "" : user.location?.trim();
@@ -206,7 +208,7 @@ export function TeamPage() {
     if (statusFilter === "DISABLED" && isActive) return false;
     if (roleFilter !== "ALL" && user.role !== roleFilter) return false;
     if (branchFilter === noBranch && branch) return false;
-    if (branchFilter !== "ALL" && branchFilter !== noBranch && branch !== branchFilter) return false;
+    if (branchFilter !== "ALL" && branchFilter !== noBranch && choiceKey(branch || "") !== choiceKey(branchFilter)) return false;
     return !query.trim() || text.includes(query.trim().toLowerCase());
   });
 

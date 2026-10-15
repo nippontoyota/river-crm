@@ -7,6 +7,7 @@ from accounts.models import User
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from .outcomes import PS_CALL_OUTCOME_STATUS_OPTIONS, outcome_policy, validate_sales_call
 from .rtos import KERALA_RTO_CHOICES
+from .choices import activity_children, choice_key, matching_choice, unique_choices
 
 def normalize_sources(values):
     sources = [Lead.Source.WALKIN]
@@ -24,7 +25,7 @@ def normalize_sources(values):
 def configured_values(name):
     lists = SystemConfig.objects.filter(id=1).values_list("lists", flat=True).first() or {}
     values = [str(value).strip() for value in lists.get(name, []) if str(value).strip()] if isinstance(lists.get(name, []), list) else []
-    return normalize_sources(values) if name == "sources" else values
+    return normalize_sources(values) if name == "sources" else unique_choices(values)
 
 
 def configured_source(value):
@@ -39,15 +40,20 @@ def validate_configured_source(value, current=""):
     source = configured_source(value)
     if source:
         return source
-    if current and value == current:
-        return value
+    if current and choice_key(value) == choice_key(current):
+        return current
     raise serializers.ValidationError("Choose a lead source from Admin Lists.")
 
 
 def validate_configured_choice(value, list_name, label, current=""):
     value = (value or "").strip()
     allowed = configured_values(list_name)
-    if value and value != current and value not in allowed:
+    match = matching_choice(value, allowed)
+    if match:
+        return match
+    if current and choice_key(value) == choice_key(current):
+        return current
+    if value:
         raise serializers.ValidationError(f"Choose a {label} from Admin Lists.")
     return value
 
@@ -57,15 +63,21 @@ def validate_activity_pair(attrs, current=None):
         return attrs
     activity = attrs.get("activity", getattr(current, "activity", ""))
     sub_activity = attrs.get("sub_activity", getattr(current, "sub_activity", ""))
-    if current and activity != current.activity and "sub_activity" not in attrs:
+    if current and choice_key(activity) != choice_key(current.activity) and "sub_activity" not in attrs:
         attrs["sub_activity"] = sub_activity = ""
-    if current and (activity, sub_activity) == (current.activity, current.sub_activity):
+    if current and (choice_key(activity), choice_key(sub_activity)) == (choice_key(current.activity), choice_key(current.sub_activity)):
         return attrs  # Retired options remain editable on historical records.
     lists = SystemConfig.objects.filter(id=1).values_list("lists", flat=True).first() or {}
-    if activity and activity not in lists.get("activities", []):
+    matched_activity = matching_choice(activity, lists.get("activities", []))
+    if activity and not matched_activity:
         raise serializers.ValidationError({"activity": "Choose an activity from Admin Lists."})
-    if sub_activity and (not activity or sub_activity not in lists.get("subActivities", {}).get(activity, [])):
+    matched_child = matching_choice(sub_activity, activity_children(lists, activity))
+    if sub_activity and (not activity or not matched_child):
         raise serializers.ValidationError({"sub_activity": "Choose a sub-activity belonging to the selected activity."})
+    if "activity" in attrs:
+        attrs["activity"] = matched_activity
+    if "sub_activity" in attrs:
+        attrs["sub_activity"] = matched_child
     return attrs
 
 
@@ -484,21 +496,33 @@ class SystemConfigSerializer(serializers.ModelSerializer):
         activities = value.get("activities", [])
         if not isinstance(activities, list) or any(not isinstance(item, str) or not item.strip() or len(item.strip()) > 160 for item in activities):
             raise serializers.ValidationError("Activities must be non-empty names of at most 160 characters.")
-        activities = list(dict.fromkeys(item.strip() for item in activities))
+        activities = unique_choices(activities)
         sub_activities = value.get("subActivities", {})
         if not isinstance(sub_activities, dict):
             raise serializers.ValidationError("Sub-activities must be grouped by activity.")
         cleaned = {}
         for parent, children in sub_activities.items():
-            if parent not in activities or not isinstance(children, list) or any(not isinstance(item, str) or not item.strip() or len(item.strip()) > 160 for item in children):
+            parent = matching_choice(parent, activities)
+            if not parent or not isinstance(children, list) or any(not isinstance(item, str) or not item.strip() or len(item.strip()) > 160 for item in children):
                 raise serializers.ValidationError("Each sub-activity must have a configured parent and a name of at most 160 characters.")
-            cleaned[parent] = list(dict.fromkeys(item.strip() for item in children))
-        return {**value, "sources": normalized, "activities": activities, "subActivities": cleaned}
+            cleaned[parent] = unique_choices([*cleaned.get(parent, []), *children])
+        result = {**value, "sources": normalized, "activities": activities, "subActivities": cleaned}
+        for name in ("branches", "models", "colorVariants"):
+            if name in value:
+                if not isinstance(value[name], list) or any(not isinstance(item, str) or not item.strip() for item in value[name]):
+                    raise serializers.ValidationError(f"{name} must be a list of non-empty names.")
+                result[name] = unique_choices(value[name])
+        return result
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
         lists = dict(data.get("lists") or {})
         lists["sources"] = normalize_sources(lists.get("sources", []))
+        for name in ("branches", "activities", "models", "colorVariants"):
+            if name in lists:
+                lists[name] = unique_choices(lists[name])
+        parents = unique_choices([*lists.get("activities", []), *lists.get("subActivities", {})])
+        lists["subActivities"] = {parent: activity_children(lists, parent) for parent in parents}
         data["lists"] = lists
         return data
 

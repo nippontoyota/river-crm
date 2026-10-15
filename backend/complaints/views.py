@@ -1,5 +1,6 @@
 from django.db import transaction
 from ceo.tracking import complaint_event
+from leads.choices import choice_q
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q
 from django.db.models.functions import TruncDate
 from django.utils import timezone
@@ -47,7 +48,7 @@ class ComplaintViewSet(ModelViewSet):
         if params.get("priority"):
             queryset = queryset.filter(priority=params["priority"])
         if params.get("source"):
-            queryset = queryset.filter(source=params["source"])
+            queryset = queryset.filter(choice_q("source", params["source"]))
         if params.get("date_from"):
             queryset = queryset.filter(created_at__date__gte=params["date_from"])
         if params.get("date_to"):

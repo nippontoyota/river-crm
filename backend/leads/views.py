@@ -23,6 +23,7 @@ from notifications.whatsapp import may_record_agreement, save_agreement
 from .outcomes import CLOSED_STATUSES, is_closed, outcome_policy, validate_milestone_change
 from .metrics import PS_HANDLING_FILTERS, etbr_aggregates, lost_reason_groups, with_ps_handling
 from .phone_lock import guard_manual_phone, lock_phones
+from .choices import choice_q
 from .serializers import CustomerLookupSerializer, validate_configured_choice
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from .serializers import CALL_OUTCOME_STATUS_OPTIONS, PS_CALL_OUTCOME_STATUS_OPTIONS, AssignmentSerializer, BulkDistributeSerializer, FollowUpReviewSerializer, FollowUpSerializer, LeadDetailSerializer, LeadSerializer, LeadUpdateSerializer, PSAssignmentSerializer, SOLeadCreateSerializer, SOLeadListSerializer, SOLeadUpdateSerializer, SystemConfigSerializer
@@ -39,20 +40,23 @@ FORWARD_TRANSITIONS = {
 
 def apply_lead_filters(queryset, filters):
     if value := filters.get("source"):
-        queryset = queryset.filter(source=value)
+        queryset = queryset.filter(choice_q("source", value))
     if value := filters.get("status"):
         queryset = queryset.filter(status=value)
     if value := filters.get("branch"):
-        queryset = queryset.filter(branch__iexact=value.strip())
+        queryset = queryset.filter(choice_q("branch", value))
     if value := filters.get("sales_outcome"):
         queryset = queryset.filter(sales_outcome=value)
     if filters.get("service_eligible") == "true":
         queryset = queryset.filter(Q(sales_outcome__in=["BOOKED", "RETAILED"]) | Q(status__in=["WALKIN", "WON"]))
     for key, field in (("model", "model_interest"), ("city", "city"), ("campaign", "campaign")):
         if value := filters.get(key):
-            queryset = queryset.filter(**{f"{field}__icontains": value})
+            queryset = queryset.filter(**{f"{field}__icontains": value.strip()})
+    for key in ("activity", "sub_activity"):
+        if value := filters.get(key):
+            queryset = queryset.filter(choice_q(key, value))
     if value := filters.get("color"):
-        queryset = queryset.filter(qualification__variant__iexact=value)
+        queryset = queryset.filter(choice_q("qualification__variant", value))
     if value := filters.get("source_label"):
         queryset = queryset.filter(Q(source_label__icontains=value) | Q(campaign__icontains=value))
     if value := filters.get("q"):
@@ -82,7 +86,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         if not self.request.user.is_admin and self.request.user.role == User.Role.CRE:
             queryset = queryset.filter(assigned_so=self.request.user)
         elif not self.request.user.is_admin and self.request.user.role == User.Role.SALES_MANAGER:
-            queryset = queryset.filter(branch__iexact=self.request.user.location.strip()) if self.request.user.location.strip() else queryset.none()
+            queryset = queryset.filter(choice_q("branch", self.request.user.location)) if self.request.user.location.strip() else queryset.none()
         elif not self.request.user.is_admin:
             queryset = queryset.filter(assigned_ps=self.request.user)
         elif self.request.query_params.get("unassigned") == "true":
@@ -388,7 +392,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         if value := request.query_params.get("category"):
             queryset = queryset.filter(category=value.upper())
         if value := request.query_params.get("source"):
-            queryset = queryset.filter(source=value)
+            queryset = queryset.filter(choice_q("source", value))
         if value := request.query_params.get("q"):
             queryset = queryset.filter(Q(name__icontains=value) | Q(phone__icontains=value) | Q(campaign__icontains=value) | Q(model_interest__icontains=value) | Q(branch__icontains=value))
         leads = queryset.select_related("assigned_ps").distinct().order_by("-enquiry_date", "-created_at").only(

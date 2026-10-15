@@ -136,6 +136,33 @@ class ProcessorTests(TestCase):
         self.assertEqual(Lead.objects.count(), 1)
         self.assertEqual(self.client.get('/api/leads/?page=1&status=FRESH').status_code, 200)
 
+    def test_mixed_case_lists_import_meta_without_reconfiguring_connection(self):
+        SystemConfig.objects.filter(pk=1).update(lists={"sources": ["Meta"], "models": ["Indie"],
+            "branches": ["Kochi"], "activities": ["Bank Display"], "subActivities": {"Bank Display": ["Launch"]}})
+        connection_fields = ('name', 'origin', 'source', 'secret_ref', 'activated_at', 'enabled', 'paused_reason')
+        connection_before = Connection.objects.values(*connection_fields).get(pk=self.connection.pk)
+        form_before = IntakeForm.objects.values().get(pk=self.form.pk)
+        receipt = self.receipt()
+
+        def graph(connection, path, params):
+            result = self.graph(connection, path, params)
+            if 'field_data' in result:
+                result['field_data'].extend({'name': key, 'values': [value]} for key, value in {
+                    'model_interest': ' INDIE ', 'branch': 'kochi', 'activity': 'bank display', 'sub_activity': 'LAUNCH'}.items())
+            return result
+
+        with patch('intake.meta.graph', side_effect=graph), patch('intake.tasks.graph', side_effect=graph):
+            self.run_processor()
+        receipt.refresh_from_db()
+        self.assertEqual(receipt.state, 'IMPORTED')
+        lead = receipt.lead
+        self.assertEqual((lead.source, lead.model_interest, lead.branch, lead.activity, lead.sub_activity),
+                         ('META', 'Indie', 'Kochi', 'Bank Display', 'Launch'))
+        self.assertEqual(Connection.objects.values(*connection_fields).get(pk=self.connection.pk), connection_before)
+        self.assertEqual(IntakeForm.objects.values().get(pk=self.form.pk), form_before)
+        response = self.client.get('/api/leads/', {'source': ' meta '})
+        self.assertEqual([row['id'] for row in response.data['results']], [lead.pk])
+
     def test_idle_processor_and_old_scheduler_never_poll_meta(self):
         with patch('intake.meta.graph') as graph:
             self.run_processor()

@@ -14,6 +14,7 @@ from rest_framework.exceptions import ValidationError
 from leads.models import Lead, SystemConfig
 from leads.serializers import configured_source
 from leads.rtos import normalize_rto
+from leads.choices import activity_children, matching_choice
 
 FIELDS = ('name', 'phone', 'email', 'model_interest', 'city', 'pincode', 'rto', 'profession', 'branch', 'enquiry_date', 'campaign', 'source_label', 'activity', 'sub_activity')
 COMPONENTS = ('first_name', 'last_name')
@@ -169,14 +170,18 @@ def validate_customer(values, excel=False):
             options = lists.get(name, [])
             if not options:
                 errors[field] = f'Configuration required: add {name} in Admin Lists.'
-            elif data[field] not in options:
+            elif not (matched := matching_choice(data[field], options)):
                 errors[field] = f'Choose an approved option from {name} in Admin Lists.'
+            else:
+                data[field] = matched
     if data['sub_activity']:
-        options = lists.get('subActivities', {}).get(data['activity'], [])
+        options = activity_children(lists, data['activity'])
         if not options:
             errors['sub_activity'] = 'Configuration required: add sub-activities for the selected activity.'
-        elif data['sub_activity'] not in options:
+        elif not (matched := matching_choice(data['sub_activity'], options)):
             errors['sub_activity'] = 'Choose a sub-activity belonging to the selected activity.'
+        else:
+            data['sub_activity'] = matched
     if excel:
         source = configured_source(data['source'])
         if not source:

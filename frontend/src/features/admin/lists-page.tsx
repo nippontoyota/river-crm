@@ -2,6 +2,7 @@
 
 import { useEffect, useState, FormEvent } from "react";
 import { getSystemConfig, sourceName, updateSystemConfig, type SystemConfig } from "@/lib/crm";
+import { choiceKey, matchingChoice, uniqueChoices } from "@/lib/choices";
 
 type ListName = Exclude<keyof SystemConfig["lists"], "subActivities">;
 type ListEdit = { name: keyof SystemConfig["lists"]; item: string; parent?: string };
@@ -47,7 +48,7 @@ export function ListsPage() {
   const handleAdd = async (listName: ListName, value: string) => {
     if (!value.trim() || !config) return;
     const currentList = config.lists[listName] || [];
-    if (currentList.includes(value.trim())) return; // Duplicate
+    if (matchingChoice(value, currentList)) return;
     
     const newLists = { ...config.lists, [listName]: [...currentList, value.trim()] };
     return saveLists(newLists);
@@ -74,7 +75,7 @@ export function ListsPage() {
     const value = editValue.trim();
     if (!value) { setEditError("Enter a name."); return; }
     const items = name === "subActivities" ? config.lists.subActivities?.[parent] || [] : config.lists[name] || [];
-    const key = (text: string) => name === "sources" ? text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "") : text.toLowerCase();
+    const key = (text: string) => name === "sources" ? choiceKey(text).replace(/[^\p{L}\p{N}]/gu, "") : choiceKey(text);
     if (items.some(other => other !== item && key(other) === key(value))) {
       setEditError("This name already exists in the list.");
       return;
@@ -171,7 +172,7 @@ export function ListsPage() {
             event.preventDefault();
             if (!config || !activity || !subActivity.trim() || saving) return;
             const children = config.lists.subActivities?.[activity] || [];
-            if (await saveLists({ ...config.lists, subActivities: { ...config.lists.subActivities, [activity]: Array.from(new Set([...children, subActivity.trim()])) } })) setSubActivity("");
+            if (await saveLists({ ...config.lists, subActivities: { ...config.lists.subActivities, [activity]: uniqueChoices([...children, subActivity.trim()]) } })) setSubActivity("");
           }}><input aria-label="New sub-activity" required maxLength={160} placeholder="e.g. Roadshow at Kochi" value={subActivity} onChange={event => setSubActivity(event.target.value)} disabled={!activity || saving || Boolean(editing)} /><button className="button primary" disabled={!activity || saving || Boolean(editing)}>Add</button></form>
           <ul className="list-items">{(config?.lists.subActivities?.[activity] || []).map(item => renderItem("subActivities", item, activity))}</ul>
         </article>

@@ -1,6 +1,9 @@
 from datetime import timedelta
+from importlib import import_module
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.apps import apps
 from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
@@ -49,9 +52,10 @@ class OutcomePolicyTests(TestCase):
                     with self.subTest(state=state, completed=completed, call_status=call_status, outcome=outcome):
                         lead = self.lead(state, completed)
                         policy = self.client.get(f"/api/leads/{lead.pk}/").data["outcome_policy"]
-                        allowed = state not in {"WON", "LOST", "UNQUALIFIED"} and outcome != "Need SO Call" and not (completed and outcome == "Need Test Drive") and not (state == "WALKIN" and outcome == "Booking Done")
+                        options = {item["label"]: item for item in policy["outcomes"][call_status]}
+                        allowed = state not in {"WON", "LOST", "UNQUALIFIED"} and outcome != "Need SO Call" and not (completed and outcome == "Need Test Drive") and not (state == "WALKIN" and outcome in {"Booking Done", "Already Booked"})
                         self.assertEqual(outcome in [item["label"] for item in policy["outcomes"][call_status]], allowed)
-                        data = self.payload(call_status, outcome, expected_status not in {"WON", "LOST"})
+                        data = self.payload(call_status, outcome, options[outcome]["requires_follow_up"] if allowed else expected_status not in {"WON", "LOST"})
                         response = self.update(lead, data)
                         self.assertEqual(response.status_code, 200 if allowed else 400, response.data)
                         lead.refresh_from_db()
@@ -116,6 +120,55 @@ class OutcomePolicyTests(TestCase):
         self.assertEqual(self.update(lead, self.payload(outcome="Not Interested", follow_up=False)).status_code, 200)
         self.assertFalse(lead.follow_ups.filter(resolved_at__isnull=True).exists())
         self.assertEqual(self.update(self.lead("WALKIN"), self.payload(outcome="Retail Done", follow_up=False)).status_code, 200)
+
+    def test_already_booked_is_a_booking_without_a_follow_up(self):
+        lead = self.lead()
+        policy = self.client.get(f"/api/leads/{lead.pk}/").data["outcome_policy"]
+        option = next(item for item in policy["outcomes"]["Connected"] if item["label"] == "Already Booked")
+        self.assertEqual(option, {
+            "label": "Already Booked", "status": "WALKIN", "sales_outcome": "BOOKED",
+            "tone": "qualified", "requires_follow_up": False,
+        })
+
+        response = self.update(lead, self.payload(outcome="Already Booked", follow_up=False))
+
+        self.assertEqual(response.status_code, 200, response.data)
+        lead.refresh_from_db()
+        self.assertEqual((lead.status, lead.sales_outcome), (Lead.Status.WALKIN, Lead.SalesOutcome.BOOKED))
+        self.assertEqual(lead.call_logs.get().status, Lead.Status.WALKIN)
+        self.assertFalse(lead.follow_ups.exists())
+        self.assertEqual(Lead.objects.filter(pk=lead.pk).aggregate(**etbr_aggregates())["etbr_booked"], 1)
+
+    def test_already_booked_data_correction_preserves_later_losses(self):
+        mistaken = self.lead("LOST")
+        mistaken_call = CallLog.objects.create(
+            lead=mistaken, so=self.so, call_status="Connected", outcome="Already Booked",
+            status=Lead.Status.LOST, remarks="Booked here.",
+        )
+        later_lost = self.lead("LOST")
+        older_call = CallLog.objects.create(
+            lead=later_lost, so=self.so, call_status="Connected", outcome="Already Booked",
+            status=Lead.Status.LOST, remarks="Booked here before cancellation.",
+        )
+        CallLog.objects.create(
+            lead=later_lost, so=self.so, call_status="Connected", outcome="Dropped",
+            status=Lead.Status.LOST, remarks="Later cancelled.",
+        )
+
+        migration = import_module("leads.migrations.0022_already_booked_is_booking")
+        migration.reclassify_already_booked(apps, SimpleNamespace(connection=SimpleNamespace(alias="default")))
+
+        mistaken.refresh_from_db()
+        later_lost.refresh_from_db()
+        mistaken_call.refresh_from_db()
+        older_call.refresh_from_db()
+        self.assertEqual((mistaken.status, mistaken.sales_outcome), (Lead.Status.WALKIN, Lead.SalesOutcome.BOOKED))
+        self.assertEqual((later_lost.status, later_lost.sales_outcome), (Lead.Status.LOST, Lead.SalesOutcome.LOST))
+        self.assertEqual((mistaken_call.status, older_call.status), (Lead.Status.WALKIN, Lead.Status.WALKIN))
+        self.assertEqual(set(mistaken.milestones.values_list("kind", flat=True)), {"B"})
+        self.assertEqual(set(later_lost.milestones.values_list("kind", flat=True)), {"B"})
+        event = mistaken.operation_events.get(source_key=f"call:{mistaken_call.pk}")
+        self.assertEqual((event.after["status"], event.snapshot["status"]), ("WALKIN", "WALKIN"))
 
     def test_completion_idempotency_closed_leads_and_stale_outcomes(self):
         lead = self.lead()

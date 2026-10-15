@@ -1,4 +1,5 @@
 from django.db import IntegrityError, transaction
+from leads.choices import choice_q
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -34,7 +35,7 @@ def event(row, actor, action_name, note="", before=None):
     record_service_event(item)
     recipients = set()
     if action_name in {"forward", "transfer", "created"} and row.status != "RECORDED":
-        recipients.update(User.objects.filter(role="SERVICE", location__iexact=row.branch, is_active=True, deleted_at__isnull=True).values_list("id", flat=True))
+        recipients.update(User.objects.filter(choice_q("location", row.branch), role="SERVICE", is_active=True, deleted_at__isnull=True).values_list("id", flat=True))
     if row.created_by.role == "CRE" and row.created_by.is_active and not row.created_by.deleted_at and action_name not in {"note", "updated", "created"}:
         recipients.add(row.created_by_id)
     Notification.objects.bulk_create([Notification(user_id=user_id, service_request=row, kind="SERVICE_UPDATE",
@@ -119,7 +120,7 @@ class ServiceRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
         if state := params.get("status"):
             rows = rows.filter(status=state)
         if branch := params.get("branch"):
-            rows = rows.filter(branch__iexact=branch.strip())
+            rows = rows.filter(choice_q("branch", branch))
         if q := params.get("q", "").strip():
             rows = rows.filter(Q(vehicle__chassis_number__icontains=q) | Q(customer_snapshot__customer_name__icontains=q) | Q(customer_snapshot__customer_phone__icontains=q) | Q(issue__icontains=q) | Q(id=int(q[4:]) if q.upper().startswith("SRV-") and q[4:].isdigit() else -1))
         for key, lookup in (("date_from", "created_at__date__gte"), ("date_to", "created_at__date__lte")):

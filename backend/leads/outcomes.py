@@ -14,7 +14,7 @@ CONNECTED = {
     "Exchange Issue": "PENDING", "Booking Done": "WALKIN", "Retail Done": "WON",
     "Call Me Back": "CALLBACK", "Need time": "PENDING", "Need SO Call": "PENDING",
     "Need More Details": "PENDING", "Discount Issue": "PENDING",
-    "Not Interested": "LOST", "Already Booked": "LOST", "Lost to Competition": "LOST",
+    "Not Interested": "LOST", "Already Booked": "WALKIN", "Lost to Competition": "LOST",
     "Finance Rejected": "LOST", "Dropped": "LOST", "Lost to co-dealer": "LOST",
 }
 NOT_CONNECTED = {
@@ -49,7 +49,7 @@ def outcome_policy(lead, user):
                     continue
                 if label == "Need Test Drive" and lead.test_drive_completed_at:
                     continue
-                if label == "Booking Done" and is_booked(lead):
+                if label in {"Booking Done", "Already Booked"} and is_booked(lead):
                     continue
                 sales_outcome = {"WON": "RETAILED", "LOST": "LOST", "WALKIN": "BOOKED"}.get(state, "PENDING")
                 if is_booked(lead) and sales_outcome == "PENDING":
@@ -57,7 +57,7 @@ def outcome_policy(lead, user):
                 groups[call_status].append({
                     "label": label, "status": state, "sales_outcome": sales_outcome,
                     "tone": "lost" if state == "LOST" else "qualified",
-                    "requires_follow_up": state not in CLOSED_STATUSES,
+                    "requires_follow_up": state not in CLOSED_STATUSES and label != "Already Booked",
                 })
     return {
         "can_update": can_update,
@@ -91,7 +91,7 @@ def validate_sales_call(lead, user, attrs):
         if not timezone.now() < follow_up <= timezone.now() + timedelta(days=3):
             raise ValidationError({"follow_up_at": "Choose a future follow-up within the next 3 days."})
     elif follow_up:
-        raise ValidationError({"follow_up_at": "Closed outcomes cannot have a follow-up."})
+        raise ValidationError({"follow_up_at": "This outcome cannot have a follow-up."})
     validate_retail_vehicle(lead, attrs)
     return attrs
 

@@ -3,7 +3,7 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 
 from django.db.models import Count, Exists, IntegerField, Max, OuterRef, Q, Subquery, Value
-from django.db.models.functions import Coalesce, NullIf, TruncMonth
+from django.db.models.functions import Coalesce, NullIf, Trim, TruncMonth
 from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -15,6 +15,8 @@ from accounts.permissions import IsAdmin, IsSalesManager
 from analytics.cache import cache_analytics
 from leads.metrics import PS_HANDLING_FILTERS, etbr_aggregates, lost_reason_groups, with_ps_handling
 from leads.models import CallLog, FollowUp, Lead, LeadAudit
+from leads.choices import choice_q, merge_choice_counts, unique_choices
+from leads.serializers import configured_values
 
 
 def csv_value(value):
@@ -117,13 +119,13 @@ def manager_base_queryset(request, include_ps=True):
     branch = request.user.location.strip()
     if not branch:
         return Lead.objects.none()
-    queryset = Lead.objects.filter(deleted_at__isnull=True, branch__iexact=branch)
+    queryset = Lead.objects.filter(choice_q("branch", branch), deleted_at__isnull=True)
     if value := request.query_params.get("source"):
-        queryset = queryset.filter(source=value)
+        queryset = queryset.filter(choice_q("source", value))
     if value := request.query_params.get("model"):
-        queryset = queryset.filter(model_interest__icontains=value)
+        queryset = queryset.filter(model_interest__icontains=value.strip())
     if value := request.query_params.get("color"):
-        queryset = queryset.filter(qualification__variant__iexact=value)
+        queryset = queryset.filter(choice_q("qualification__variant", value))
     if value := request.query_params.get("category"):
         queryset = queryset.filter(category=value)
     if value := request.query_params.get("status"):
@@ -212,7 +214,7 @@ def ps_followup_payload(request):
             row[f"f{count}"] += 1
 
     branch = request.user.location.strip()
-    users = User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True).filter(Q(location__iexact=branch) | Q(id__in=grouped))
+    users = User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True).filter(choice_q("location", branch) | Q(id__in=grouped))
     if selected_ids:
         users = users.filter(id__in=selected_ids)
     rows = [{"id": user.id, "name": user.get_full_name() or user.email, "email": user.email, **grouped.get(user.id, empty_counts)} for user in users.order_by("first_name", "last_name", "email")]
@@ -251,6 +253,7 @@ def with_deltas(current, previous):
 
 def source_rows(queryset):
     rows = list(queryset.values("source").annotate(total=Count("id"), qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)), booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)), retailed=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.RETAILED)), lost=Count("id", filter=Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]))).order_by("-total", "source"))
+    rows = merge_choice_counts(rows, "source", configured_values("sources"))
     for row in rows:
         row["conversion_rate"] = percent(row["retailed"], row["total"])
     return rows
@@ -258,6 +261,7 @@ def source_rows(queryset):
 
 def model_rows(queryset):
     rows = list(queryset.values("model_interest").annotate(total=Count("id"), qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)), booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)), retailed=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.RETAILED)), lost=Count("id", filter=Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]))).order_by("-total", "model_interest"))
+    rows = merge_choice_counts(rows, "model_interest", configured_values("models"))
     for row in rows:
         row["model"] = row.pop("model_interest") or "Model not set"
         row["conversion_rate"] = percent(row["retailed"], row["total"])
@@ -265,8 +269,9 @@ def model_rows(queryset):
 
 
 def color_rows(queryset):
-    color = Coalesce(NullIf("qualification__variant", Value("")), Value("Color not set"))
+    color = Coalesce(NullIf(Trim("qualification__variant"), Value("")), Value("Color not set"))
     rows = list(queryset.annotate(color=color).values("color").annotate(total=Count("id"), qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)), booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)), retailed=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.RETAILED)), lost=Count("id", filter=Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]))).order_by("-total", "color"))
+    rows = merge_choice_counts(rows, "color", configured_values("colorVariants"))
     for row in rows:
         row["conversion_rate"] = percent(row["retailed"], row["total"])
     return rows
@@ -274,13 +279,13 @@ def color_rows(queryset):
 
 def role_rows(users, lead_relation, branch, start, end, scoped_leads=None):
     untouched_leads = with_ps_handling(Lead.objects.all()).filter(PS_HANDLING_FILTERS["untouched"])
-    lead_filter = Q(**{f"{lead_relation}__deleted_at__isnull": True, f"{lead_relation}__branch__iexact": branch})
+    lead_filter = Q(**{f"{lead_relation}__deleted_at__isnull": True}) & choice_q(f"{lead_relation}__branch", branch)
     if start:
         lead_filter &= Q(**{f"{lead_relation}__enquiry_date__gte": start})
     if end:
         lead_filter &= Q(**{f"{lead_relation}__enquiry_date__lte": end})
-    call_filter = Q(call_logs__lead__deleted_at__isnull=True, call_logs__lead__branch__iexact=branch)
-    follow_filter = Q(follow_ups__lead__deleted_at__isnull=True, follow_ups__lead__branch__iexact=branch)
+    call_filter = Q(call_logs__lead__deleted_at__isnull=True) & choice_q("call_logs__lead__branch", branch)
+    follow_filter = Q(follow_ups__lead__deleted_at__isnull=True) & choice_q("follow_ups__lead__branch", branch)
     if start:
         call_filter &= Q(call_logs__created_at__date__gte=start)
         follow_filter &= Q(follow_ups__scheduled_for__date__gte=start)
@@ -340,7 +345,7 @@ def manager_payload(request):
     summary = with_deltas(summary_for(queryset, stale_since), previous)
     followups = {"due": 0, "overdue": 0, "by_owner": []}
     if "overview" in includes:
-        due_followups = FollowUp.objects.filter(so__role=User.Role.SALES_OFFICER, resolved_at__isnull=True, lead__deleted_at__isnull=True, lead__branch__iexact=branch, scheduled_for__date__lte=today)
+        due_followups = FollowUp.objects.filter(choice_q("lead__branch", branch), so__role=User.Role.SALES_OFFICER, resolved_at__isnull=True, lead__deleted_at__isnull=True, scheduled_for__date__lte=today)
         if start:
             due_followups = due_followups.filter(scheduled_for__date__gte=start)
         if end:
@@ -390,10 +395,10 @@ def manager_payload(request):
     if "filters" in includes:
         pairs = list(queryset.values("source", "model_interest", "assigned_ps_id").distinct())
         owner_ids = {row["assigned_ps_id"] for row in pairs if row["assigned_ps_id"]}
-        users = User.objects.filter(is_active=True, role=User.Role.SALES_OFFICER).filter(Q(location__iexact=branch) | Q(id__in=owner_ids)).order_by("first_name", "last_name", "email")
+        users = User.objects.filter(is_active=True, role=User.Role.SALES_OFFICER).filter(choice_q("location", branch) | Q(id__in=owner_ids)).order_by("first_name", "last_name", "email")
         payload["filters"] = {
-            "source": sorted({row["source"] for row in pairs if row["source"]}),
-            "models": sorted({row["model_interest"] for row in pairs if row["model_interest"]}),
+            "source": sorted(unique_choices(row["source"] for row in pairs)),
+            "models": sorted(unique_choices(row["model_interest"] for row in pairs)),
             "cre": [],  # Retain the response shape for older clients without exposing CE data.
             "ps": [{"id": user.id, "name": user.get_full_name() or user.email} for user in users],
         }
@@ -407,6 +412,7 @@ class AdminAnalyticsView(APIView):
     def get(self, request):
         queryset = Lead.objects.filter(deleted_at__isnull=True)
         source = list(queryset.values("source").annotate(total=Count("id"), qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)), won=Count("id", filter=Q(status=Lead.Status.WON))).order_by("source"))
+        source = merge_choice_counts(source, "source")
         cre = team_metrics(User.objects.filter(role=User.Role.CRE), "assigned_leads")
         officers = team_metrics(User.objects.filter(role=User.Role.SALES_OFFICER), "ps_leads")
         return Response({"summary": metrics(queryset), "source": source, "cre": cre, "officers": officers, "generated_at": timezone.now()})
@@ -442,6 +448,8 @@ class MyAnalyticsView(APIView):
         summary["conversion_rate"] = round((summary["retailed"] / summary["total"]) * 100, 1) if summary["total"] else 0
         source = list(queryset.values("source").annotate(total=Count("id"), qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)), booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)), retailed=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.RETAILED))).order_by("-total"))
         models = list(queryset.values("model_interest").annotate(total=Count("id"), qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)), booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED))).order_by("-total"))
+        source = merge_choice_counts(source, "source")
+        models = merge_choice_counts(models, "model_interest")
         monthly = list(queryset.annotate(month=TruncMonth("enquiry_date")).values("month").annotate(total=Count("id"), qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)), booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)), retailed=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.RETAILED))).order_by("month"))
         return Response({"range": date_range, "summary": summary, "status_counts": status_counts, "source": source, "models": models, "monthly": monthly, "generated_at": timezone.now()})
 
@@ -466,10 +474,10 @@ class ReceptionistAnalyticsView(APIView):
         today = timezone.localdate()
         # Find leads created by this receptionist today
         created_lead_ids = LeadAudit.objects.filter(actor=request.user, event="created", created_at__date=today).values_list("lead_id", flat=True)
-        queryset = Lead.objects.filter(id__in=created_lead_ids, deleted_at__isnull=True, source=Lead.Source.WALKIN)
+        queryset = Lead.objects.filter(choice_q("source", Lead.Source.WALKIN), id__in=created_lead_ids, deleted_at__isnull=True)
         branch = request.user.location.strip()
-        queryset = queryset.filter(branch__iexact=branch) if branch else queryset.none()
-        summary = queryset.aggregate(**etbr_aggregates(), total=Count("id"), walkin=Count("id", filter=Q(source=Lead.Source.WALKIN)))
+        queryset = queryset.filter(choice_q("branch", branch)) if branch else queryset.none()
+        summary = queryset.aggregate(**etbr_aggregates(), total=Count("id"), walkin=Count("id", filter=choice_q("source", Lead.Source.WALKIN)))
         total = summary["total"]
         walkins = summary["walkin"]
         digital = total - walkins

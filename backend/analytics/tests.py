@@ -105,6 +105,25 @@ class SalesManagerAnalyticsTests(TestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.data["call_history"][0]["remarks"], "Chose another model")
 
+    def test_already_booked_is_counted_as_booked_and_excluded_from_lost_analysis(self):
+        lead = Lead.objects.create(
+            name="Already booked customer", phone="9000000046", branch="Mount Road",
+            enquiry_date=timezone.localdate(), assigned_so=self.cre, assigned_ps=self.ps,
+            status=Lead.Status.QUALIFIED,
+        )
+        self.client.force_authenticate(self.ps)
+        saved = self.client.patch(f"/api/leads/{lead.pk}/so-update/", {
+            "call_status": "Connected", "call_outcome": "Already Booked", "remarks": "Booked at this dealership.",
+        }, format="json")
+        self.assertEqual(saved.status_code, 200, saved.data)
+
+        self.client.force_authenticate(self.manager)
+        analysis = self.client.get("/api/analytics/sales-manager/?include=overview,lost&range=today")
+        self.assertEqual(analysis.data["summary"]["booked"], 1)
+        self.assertEqual(analysis.data["summary"]["lost"], 0)
+        self.assertEqual(analysis.data["lost_reasons"], [])
+        self.assertFalse(FollowUp.objects.filter(lead=lead).exists())
+
     def test_lost_reasons_use_latest_loss_call_and_match_filtered_drilldown(self):
         today = timezone.localdate()
         just_enquired = Lead.objects.create(name="Just enquired", phone="9000000050", branch="Mount Road", enquiry_date=today, status=Lead.Status.LOST)

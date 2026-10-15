@@ -2,7 +2,7 @@ from calendar import monthrange
 from datetime import timedelta
 from decimal import Decimal
 
-from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, Q, Sum
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, Min, Q, Sum
 from django.db.models.functions import Lower, Trim, TruncMonth
 from django.utils import timezone
 
@@ -15,6 +15,7 @@ from .models import FinancialEntry, Milestone, OperationEvent, SaleAccount, Sale
 from .tracking import branch_key
 from .lead_analysis import lead_analysis
 from leads.metrics import ps_handling_counts, with_ps_handling
+from leads.choices import choice_key
 
 KINDS = "ETBR"
 TARGET_FIELDS = ("enquiries", "test_drives", "bookings", "retails")
@@ -247,14 +248,20 @@ def segment_rows(filters, dimension="branch"):
     qs = filters.milestones()
     if filters.mode == "cohort":
         field = "lead__" + dimension
-    qs = qs.annotate(group_key=Lower(Trim(field)) if dimension == "branch" else F(field))
+    qs = qs.annotate(group_key=Lower(Trim(field)))
     rows = {row["group_key"] or "": row for row in qs.values("group_key").annotate(
+        group_label=Min(Trim(field)),
         **{kind: Count("lead_id", filter=Q(kind=kind), distinct=True) for kind in KINDS}).order_by()}
-    current = filters.base_leads().annotate(group_key=Lower(Trim(dimension)) if dimension == "branch" else F(dimension)).values("group_key").annotate(
+    current = filters.base_leads().annotate(group_key=Lower(Trim(dimension))).values("group_key").annotate(
+        group_label=Min(Trim(dimension)),
         current_leads=Count("id", distinct=True), current_booked=Count("id", filter=Q(sales_outcome="BOOKED"), distinct=True),
         current_lost=Count("id", filter=Q(status__in=["LOST", "UNQUALIFIED"]), distinct=True),
         overdue=Count("id", filter=Q(follow_ups__resolved_at__isnull=True, follow_ups__scheduled_for__lt=timezone.now()) & ~Q(status__in=CLOSED), distinct=True))
     labels = branch_options() if dimension == "branch" else {}
+    if dimension in {"source", "activity", "sub_activity", "model_interest"}:
+        lists = SystemConfig.objects.filter(pk=1).values_list("lists", flat=True).first() or {}
+        options = [child for children in lists.get("subActivities", {}).values() for child in children] if dimension == "sub_activity" else lists.get({"source": "sources", "activity": "activities", "model_interest": "models"}[dimension], [])
+        labels = {choice_key(value): str(value).strip() for value in options}
     for row in current:
         key = row["group_key"] or ""
         rows.setdefault(key, {"group_key": key, **dict.fromkeys(KINDS, 0)}).update(row)
@@ -263,11 +270,12 @@ def segment_rows(filters, dimension="branch"):
             if not filters.branches or key in filters.branches:
                 rows.setdefault(key, {"group_key": key, **dict.fromkeys(KINDS, 0)})
     # Cohort conversion uses intersection with enquiries for this segment.
-    cohort = filters.period(filters.base_leads(), "enquiry_date").annotate(group_key=Lower(Trim(dimension)) if dimension == "branch" else F(dimension))
+    cohort = filters.period(filters.base_leads(), "enquiry_date").annotate(group_key=Lower(Trim(dimension)))
     cohort_counts = {r["group_key"] or "": r for r in with_ps_handling(cohort).values("group_key").annotate(total=Count("id", distinct=True), retails=Count("id", filter=Q(milestones__kind="R"), distinct=True), **ps_handling_counts())}
     for key, row in rows.items():
         counts = cohort_counts.get(key, {})
-        row.update(key=key or "__unknown__", label=labels.get(key, key) or "Not recorded", conversion=ratio(counts.get("retails", 0), counts.get("total", 0)),
+        label = labels.get(key, row.pop("group_label", "") or key)
+        row.update(key=(key if dimension == "branch" else label) or "__unknown__", label=label or "Not recorded", conversion=ratio(counts.get("retails", 0), counts.get("total", 0)),
                    passed_to_ps=counts.get("passed_to_ps", 0), untouched_by_ps=counts.get("untouched_by_ps", 0))
         if dimension == "branch":
             row["targets"] = None  # Populated in one grouped query below.

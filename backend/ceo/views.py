@@ -20,6 +20,7 @@ from analytics.cache import cache_analytics
 from complaints.models import Complaint
 from leads.models import Lead, SystemConfig
 from leads.rtos import KERALA_RTO_CHOICES
+from leads.choices import activity_children, unique_choices
 from .filters import DIMENSIONS, ROLES, ReportFilters
 from .finance import FinanceInput, TargetInput, save_finance, save_target, target_data
 from .models import FinancialEntry, Milestone, OperationEvent, SalesTarget
@@ -107,14 +108,14 @@ class CEOOptionsView(CEOView):
     def get(self, request):
         branches = branch_options()
         lists = (SystemConfig.objects.filter(pk=1).values_list("lists", flat=True).first() or {})
-        options = {key: sorted(set(Lead.objects.exclude(**{key: ""}).values_list(key, flat=True))) for key in DIMENSIONS if key not in {"rto", "activity", "sub_activity"}}
+        options = {key: sorted(unique_choices([*lists.get({"source": "sources", "model_interest": "models"}.get(key, key), []), *Lead.objects.exclude(**{key: ""}).values_list(key, flat=True)])) for key in DIMENSIONS if key not in {"rto", "activity", "sub_activity"}}
         users = User.objects.filter(role__in=ROLES).order_by("first_name", "email")
         return Response({"branches": [{"value": key, "label": value} for key, value in sorted(branches.items())] + [{"value": "__unknown__", "label": "Not recorded"}],
             "employees": [{"id": u.id, "name": u.history_display_name, "role": u.role, "branch": u.location.strip().casefold(), "lifecycle": u.lifecycle_status} for u in users],
             "roles": [{"value": value, "label": label} for value, label in User.Role.choices if value in ROLES],
             "rtos": [{"value": code, "label": f"{code.replace('-', '')} - {name}"} for code, name in KERALA_RTO_CHOICES],
             "statuses": [{"value": value, "label": label} for value, label in Lead.Status.choices],
-            "activities": lists.get("activities", []), "sub_activities": lists.get("subActivities", {}), **options})
+            "activities": unique_choices(lists.get("activities", [])), "sub_activities": {parent: activity_children(lists, parent) for parent in unique_choices(lists.get("activities", []))}, **options})
 
 
 class CEOReportView(CEOView):
