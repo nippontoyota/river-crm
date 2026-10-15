@@ -3,7 +3,7 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 
 from django.db.models import Count, Exists, IntegerField, Max, OuterRef, Q, Subquery, Value
-from django.db.models.functions import Coalesce, TruncMonth
+from django.db.models.functions import Coalesce, NullIf, TruncMonth
 from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -122,6 +122,8 @@ def manager_base_queryset(request, include_ps=True):
         queryset = queryset.filter(source=value)
     if value := request.query_params.get("model"):
         queryset = queryset.filter(model_interest__icontains=value)
+    if value := request.query_params.get("color"):
+        queryset = queryset.filter(qualification__variant__iexact=value)
     if value := request.query_params.get("category"):
         queryset = queryset.filter(category=value)
     if value := request.query_params.get("status"):
@@ -262,7 +264,15 @@ def model_rows(queryset):
     return rows
 
 
-def role_rows(users, lead_relation, branch, start, end):
+def color_rows(queryset):
+    color = Coalesce(NullIf("qualification__variant", Value("")), Value("Color not set"))
+    rows = list(queryset.annotate(color=color).values("color").annotate(total=Count("id"), qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)), booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)), retailed=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.RETAILED)), lost=Count("id", filter=Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]))).order_by("-total", "color"))
+    for row in rows:
+        row["conversion_rate"] = percent(row["retailed"], row["total"])
+    return rows
+
+
+def role_rows(users, lead_relation, branch, start, end, scoped_leads=None):
     untouched_leads = with_ps_handling(Lead.objects.all()).filter(PS_HANDLING_FILTERS["untouched"])
     lead_filter = Q(**{f"{lead_relation}__deleted_at__isnull": True, f"{lead_relation}__branch__iexact": branch})
     if start:
@@ -277,6 +287,11 @@ def role_rows(users, lead_relation, branch, start, end):
     if end:
         call_filter &= Q(call_logs__created_at__date__lte=end)
         follow_filter &= Q(follow_ups__scheduled_for__date__lte=end)
+    if scoped_leads is not None:
+        lead_ids = scoped_leads.values("pk")
+        lead_filter &= Q(**{f"{lead_relation}__pk__in": lead_ids})
+        call_filter &= Q(call_logs__lead__pk__in=lead_ids)
+        follow_filter &= Q(follow_ups__lead__pk__in=lead_ids)
     rows = []
     for user in users.annotate(
         total=Count(lead_relation, filter=lead_filter, distinct=True),
@@ -349,17 +364,20 @@ def manager_payload(request):
         "branch": branch,
         "summary": summary,
         "funnel": funnel,
-        "cre": [], "ps": [], "source": [], "models": [], "status": [], "categories": [], "monthly": [],
+        "cre": [], "ps": [], "source": [], "models": [], "colors": [], "status": [], "categories": [], "monthly": [],
         "followups": followups, "lost_reasons": [], "stale_leads": [],
         "generated_at": timezone.now(),
     }
     if "overview" in includes:
         payload["monthly"] = list(queryset.annotate(month=TruncMonth("enquiry_date")).values("month").annotate(total=Count("id"), qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)), booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)), retailed=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.RETAILED))).order_by("month"))
     if "ps" in includes:
-        payload["ps"] = role_rows(User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True), "ps_leads", branch, start, end)
+        filtered_leads = scoped if any(request.query_params.get(key) for key in ("source", "model", "color", "category", "status", "ps")) else None
+        payload["ps"] = role_rows(User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True), "ps_leads", branch, start, end, filtered_leads)
     if "source" in includes:
         payload["source"] = source_rows(queryset)
         payload["models"] = model_rows(queryset)
+    if "source" in includes or "colors" in includes:
+        payload["colors"] = color_rows(queryset)
     if "lost" in includes:
         payload["status"] = list(queryset.filter(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]).values("status").annotate(count=Count("id")).order_by("status"))
     if "ops" in includes:
@@ -515,7 +533,7 @@ class SalesManagerAnalyticsExportView(APIView):
         response["Content-Disposition"] = f'attachment; filename="incheon-sales-manager-{section}.csv"'
         writer = csv.writer(response)
         rows = data.get(section, [])
-        if section in {"ps", "source", "models", "lost_reasons", "stale_leads"} and isinstance(rows, list) and rows:
+        if section in {"ps", "source", "models", "colors", "lost_reasons", "stale_leads"} and isinstance(rows, list) and rows:
             keys = [key for key in rows[0] if "qualif" not in key]
             writer.writerow(keys)
             for row in rows:

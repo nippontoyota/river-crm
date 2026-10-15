@@ -43,6 +43,45 @@ class SalesManagerAnalyticsTests(TestCase):
         today = self.client.get("/api/analytics/sales-manager/?range=today")
         self.assertEqual(today.data["summary"]["delta"], {})
 
+    def test_color_conversion_groups_missing_colors_and_supports_export_and_drilldown(self):
+        today = timezone.localdate()
+        LeadQualification.objects.create(lead=self.branch_lead, variant="Blue")
+        LeadQualification.objects.create(lead=self.retailed, variant="Blue")
+        LeadQualification.objects.create(lead=self.other_branch_lead, variant="Red")
+        self.branch_lead.sales_outcome = Lead.SalesOutcome.BOOKED
+        self.branch_lead.save(update_fields=["sales_outcome"])
+        blank = Lead.objects.create(name="Blank color", phone="9000000043", branch="Mount Road", enquiry_date=today, assigned_ps=self.ps)
+        LeadQualification.objects.create(lead=blank, variant="")
+        CallLog.objects.create(lead=blank, so=self.ps, status=Lead.Status.FRESH)
+        Lead.objects.create(name="No qualification", phone="9000000044", branch="Mount Road", enquiry_date=today)
+        old = Lead.objects.create(name="Old blue", phone="9000000045", branch="Mount Road", enquiry_date=today - timedelta(days=40))
+        LeadQualification.objects.create(lead=old, variant="Blue")
+        self.client.force_authenticate(self.manager)
+
+        response = self.client.get("/api/analytics/sales-manager/?range=today&include=source")
+        colors = {row["color"]: row for row in response.data["colors"]}
+        self.assertEqual(set(colors), {"Blue", "Color not set"})
+        self.assertEqual((colors["Blue"]["total"], colors["Blue"]["booked"], colors["Blue"]["retailed"], colors["Blue"]["conversion_rate"]), (2, 1, 1, 50.0))
+        self.assertEqual(colors["Color not set"]["total"], 2)
+        self.assertEqual(self.client.get("/api/analytics/sales-manager/?range=today&include=colors").data["colors"], response.data["colors"])
+        filtered = self.client.get("/api/analytics/sales-manager/?range=today&include=ps,source,lost&color=Blue")
+        self.assertEqual(filtered.data["summary"]["total"], 2)
+        self.assertEqual([row["color"] for row in filtered.data["colors"]], ["Blue"])
+        self.assertEqual(sum(row["total"] for row in filtered.data["source"]), 2)
+        self.assertEqual(filtered.data["ps"][0]["total"], 2)
+        self.assertEqual(filtered.data["ps"][0]["calls"], 1)
+        self.assertEqual(self.client.get("/api/analytics/sales-manager/ps-followups/?range=today&color=Blue").data["rows"][0]["total_leads"], 2)
+
+        export = self.client.get("/api/analytics/sales-manager/export/?range=today&section=colors")
+        self.assertEqual(export.status_code, 200)
+        self.assertIn("color,total", export.content.decode())
+        self.assertIn("Blue,2", export.content.decode())
+        self.assertNotIn("Red", export.content.decode())
+
+        drilldown = self.client.get(f"/api/leads/manager-leads/?color=Blue&date_from={today}&date_to={today}")
+        self.assertEqual(drilldown.data["count"], 2)
+        self.assertEqual(self.client.get("/api/leads/manager-leads/?color=Red").data["count"], 0)
+
     def test_manager_lost_analysis_counts_statuses_and_opens_history(self):
         today = timezone.localdate()
         lost = Lead.objects.create(name="Lost branch lead", phone="9000000040", branch="Mount Road", enquiry_date=today, assigned_ps=self.ps, status=Lead.Status.LOST)

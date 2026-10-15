@@ -668,6 +668,12 @@
   gap: 8px;
 }
 
+.manager-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .manager-card-head {
   display: flex;
   justify-content: space-between;
@@ -729,7 +735,7 @@
 }
 
 .manager-lead-filters {
-  grid-template-columns: 1.4fr repeat(6, minmax(120px, .75fr)) auto;
+  grid-template-columns: 1.4fr repeat(7, minmax(120px, .75fr)) auto;
   align-items: end;
 }
 
@@ -957,6 +963,10 @@
 @media (max-width: 1050px) {
   .manager-page .manager-kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .manager-two-col {
+    grid-template-columns: 1fr;
   }
 }
 

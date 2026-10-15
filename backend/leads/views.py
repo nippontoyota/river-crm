@@ -51,6 +51,8 @@ def apply_lead_filters(queryset, filters):
     for key, field in (("model", "model_interest"), ("city", "city"), ("campaign", "campaign")):
         if value := filters.get(key):
             queryset = queryset.filter(**{f"{field}__icontains": value})
+    if value := filters.get("color"):
+        queryset = queryset.filter(qualification__variant__iexact=value)
     if value := filters.get("source_label"):
         queryset = queryset.filter(Q(source_label__icontains=value) | Q(campaign__icontains=value))
     if value := filters.get("q"):
