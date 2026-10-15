@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { FeedbackManagement } from "./feedback-requests";
 import { FeedbackIssuePanel } from "./feedback-issue";
 import { getCurrentUser, type CurrentUser } from "@/lib/crm";
@@ -12,17 +12,24 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : "
 const label = (value: string) => value.replaceAll("_", " ").toLowerCase();
 
 export function FeedbackDesk({ currentUser }: { currentUser?: CurrentUser }) {
-  const router = useRouter();
   const pathname = usePathname();
   const search = useSearchParams();
   const query = search.toString();
   const params = new URLSearchParams(query);
+  const reportParams = new URLSearchParams(query);
+  for (const key of ["kind", "bucket", "q", "page", "task", "backlog"]) reportParams.delete(key);
+  const reportQuery = reportParams.toString();
+  const taskParams = new URLSearchParams(query);
+  taskParams.delete("task");
+  const taskQuery = taskParams.toString();
   const [user, setUser] = useState(currentUser);
   const [options, setOptions] = useState<FeedbackOptions | null>(null);
   const [report, setReport] = useState<FeedbackReport | null>(null);
   const [page, setPage] = useState<FeedbackPage | null>(null);
+  const [pageQuery, setPageQuery] = useState("");
   const [detail, setDetail] = useState<FeedbackDetail | null>(null);
   const [error, setError] = useState("");
+  const [reportError, setReportError] = useState("");
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState(0);
   const [exporting, setExporting] = useState(false);
@@ -35,14 +42,15 @@ export function FeedbackDesk({ currentUser }: { currentUser?: CurrentUser }) {
   const manager = admin || user?.role === "SALES_MANAGER";
   const monitor = user?.role !== "FEEDBACK";
   const update = (values: Record<string, string | null>) => {
-    const next = new URLSearchParams(query);
+    const next = new URLSearchParams(window.location.search);
     if (!("page" in values)) next.delete("page");
     for (const [key, value] of Object.entries(values)) { next.delete(key); if (value) next.set(key, value); }
-    router.replace(`${pathname}?${next}`, { scroll: false });
+    // These filters only drive client API reads; avoid a server route navigation on every tap.
+    window.history.replaceState(null, "", `${pathname}?${next}`);
   };
   const showTasks = (values: Record<string, string | null>) => {
     setSearchText("");
-    update({ q: null, ...values });
+    update({ q: null, task: null, ...values });
     window.requestAnimationFrame(() => queueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
   useEffect(() => {
@@ -56,15 +64,28 @@ export function FeedbackDesk({ currentUser }: { currentUser?: CurrentUser }) {
     const controller = new AbortController();
     const refresh = () => {
       setLoading(true);
-      void Promise.all([getFeedback(query, controller.signal), getFeedbackReport(query, controller.signal)])
-        .then(([tasks, data]) => { setPage(tasks); setReport(data); setError(""); })
-        .catch(e => { if (e.name !== "AbortError") { setError(errorText(e)); setPage(null); setReport(null); } })
+      void getFeedback(taskQuery, controller.signal)
+        .then(tasks => { if (!controller.signal.aborted) { setPage(tasks); setPageQuery(taskQuery); setError(""); } })
+        .catch(e => { if (!controller.signal.aborted && e.name !== "AbortError") { setError(errorText(e)); setPage(null); } })
         .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     };
     refresh();
     const timer = window.setInterval(refresh, 30000);
     return () => { controller.abort(); window.clearInterval(timer); };
-  }, [query, version]);
+  }, [taskQuery, version]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setReport(null);
+    setReportError("");
+    const refreshReport = () => {
+      void getFeedbackReport(reportQuery, controller.signal)
+        .then(data => { if (!controller.signal.aborted) { setReport(data); setReportError(""); } })
+        .catch(e => { if (!controller.signal.aborted && e.name !== "AbortError") setReportError(errorText(e)); });
+    };
+    refreshReport();
+    const timer = window.setInterval(refreshReport, 30000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [reportQuery, version]);
   useEffect(() => {
     const controller = new AbortController();
     if (taskId) void getFeedbackDetail(taskId, controller.signal).then(setDetail).catch(e => { if (e.name !== "AbortError") { setDetail(null); setError(errorText(e)); } });
@@ -73,6 +94,8 @@ export function FeedbackDesk({ currentUser }: { currentUser?: CurrentUser }) {
   const refresh = () => { setVersion(v => v + 1); window.dispatchEvent(new Event("feedback:changed")); };
   const exportRows = async () => { setExporting(true); try { await exportFeedback(query); } catch (e) { setError(errorText(e)); } finally { setExporting(false); } };
   const chooseBucket = (bucket: string, kind?: string, backlog = false) => showTasks({ bucket, kind: kind || null, backlog: backlog ? "true" : null });
+  const selected = (kind: string, bucket: string, backlog = false) => (params.get("kind") || "") === kind && (params.get("bucket") || "") === bucket && (params.get("backlog") === "true") === backlog;
+  const visiblePage = pageQuery === taskQuery ? page : null;
 
   return <section className="page feedback-page">
     <header className="feedback-heading"><div><p className="eyebrow">CUSTOMER EXPERIENCE · {monitor ? "FEEDBACK REPORTING" : "CALL CENTER"}</p><h1>{monitor ? "Feedback performance" : "Customer feedback calls"}</h1><p className="subtext">Test drive. Booking. Ownership. Service. {monitor ? "Follow every stage of customer feedback." : "Your customer calls, ready when they’re due."}</p></div><button className="filter" onClick={refresh} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button></header>
@@ -83,25 +106,25 @@ export function FeedbackDesk({ currentUser }: { currentUser?: CurrentUser }) {
       {monitor && <label>Caller<select value={params.get("caller") || ""} onChange={e => update({ caller: e.target.value })}><option value="">All callers</option><option value="unassigned">Unassigned</option>{options?.callers.map(c => <option key={c.id} value={c.id}>{c.name}{c.active ? "" : " · Inactive"}</option>)}</select></label>}
       <button className="filter feedback-export" disabled={exporting} onClick={() => void exportRows()}>{exporting ? "Exporting…" : "Export CSV"}</button>
     </div>
-    {error && <p className="feedback-error" role="alert">{error}</p>}
+    {(error || reportError) && <p className="feedback-error" role="alert">{error || reportError}</p>}
     {report && <>
-      <div className="feedback-backlog"><b>Current backlog <small>All due dates</small></b>{["due", "overdue", ...(monitor ? ["unassigned"] : [])].map(bucket => <button key={bucket} onClick={() => chooseBucket(bucket, undefined, true)}><strong>{report.backlog[bucket as "due"]}</strong>{feedbackBuckets[bucket]}</button>)}<span>{report.activity.attempts} attempts · {report.activity.customers} customers<small>Call activity in selected period</small></span></div>
+      <div className="feedback-backlog"><b>Current backlog <small>All due dates</small></b>{["due", "overdue", ...(monitor ? ["unassigned"] : [])].map(bucket => <button key={bucket} aria-pressed={selected("", bucket, true)} onClick={() => chooseBucket(bucket, undefined, true)}><strong>{report.backlog[bucket as "due"]}</strong>{feedbackBuckets[bucket]}</button>)}<span>{report.activity.attempts} attempts · {report.activity.customers} customers<small>Call activity in selected period</small></span></div>
       <div className="feedback-type-grid">{report.types.map(type => <article key={type.kind} className={`feedback-type-card ${type.kind.toLowerCase()}`}>
-        <header><button className="feedback-type-heading" onClick={() => showTasks({ kind: type.kind, bucket: null, backlog: null })}><b>{type.kind}</b><span>{feedbackNames[type.kind]}</span></button></header>
-        <div className="feedback-type-total"><button onClick={() => showTasks({ kind: type.kind, bucket: null, backlog: null })}>{type.total}<small>total calls</small></button><button className="feedback-completion" onClick={() => chooseBucket("completed", type.kind)}><b>{type.completion_rate}%</b> completed</button></div>
+        <header><button className="feedback-type-heading" aria-pressed={selected(type.kind, "")} onClick={() => showTasks({ kind: type.kind, bucket: null, backlog: null })}><b>{type.kind}</b><span>{feedbackNames[type.kind]}</span></button></header>
+        <div className="feedback-type-total"><button aria-pressed={selected(type.kind, "")} onClick={() => showTasks({ kind: type.kind, bucket: null, backlog: null })}>{type.total}<small>total calls</small></button><button className="feedback-completion" aria-pressed={selected(type.kind, "completed")} onClick={() => chooseBucket("completed", type.kind)}><b>{type.completion_rate}%</b> completed</button></div>
         <button className="feedback-progress" aria-label={`Show completed ${type.kind} feedback calls`} onClick={() => chooseBucket("completed", type.kind)}><progress max={type.total || 1} value={type.completed} /></button>
-        <div className="feedback-type-counts">{["completed", "due", "overdue", "upcoming", "unreachable", "declined", "invalid_number", ...(monitor ? ["unassigned"] : [])].map(bucket => <button key={bucket} onClick={() => chooseBucket(bucket, type.kind)}><b>{type[bucket as "completed"]}</b><span>{feedbackBuckets[bucket]}</span></button>)}</div>
+        <div className="feedback-type-counts">{["completed", "due", "overdue", "upcoming", "unreachable", "declined", "invalid_number", ...(monitor ? ["unassigned"] : [])].map(bucket => <button key={bucket} aria-label={`${type.kind}: ${feedbackBuckets[bucket]}`} aria-pressed={selected(type.kind, bucket)} onClick={() => chooseBucket(bucket, type.kind)}><b>{type[bucket as "completed"]}</b><span>{feedbackBuckets[bucket]}</span></button>)}</div>
       </article>)}</div>
       <p className="feedback-caption">{report.customers} distinct customers · {report.summary.completed} of {report.summary.total} calls completed · {report.summary.on_time} completed on time. On-time totals exclude historical catch-up.</p>
       <p className="feedback-caption">{monitor ? "Feedback" : "Your feedback"} covers {report.coverage.leads_with_feedback} of {report.coverage.all_leads} leads {monitor ? "in the selected branch scope" : "across all branches"}, across all dates since launch{options ? ` on ${formatDate(options.activated_at)}` : ""}. Sales-lead coverage excludes service, requested feedback, and historical catch-up.</p>
     </>}
     {report && !admin && <section className="panel feedback-quality"><h2>Customer satisfaction</h2><p>{report.summary.average_satisfaction?.toFixed(1) || "—"} / 5 from {report.summary.rated} ratings · Not provided is excluded.</p><div className="feedback-actions">{report.satisfaction.map(row => <span key={row.rating}>{row.rating} stars: <b>{row.count}</b></span>)}<button className="filter" onClick={() => update({ bucket: "issues", backlog: "true" })}>View unresolved issues</button><span>{report.unresolved_issues} unresolved across all dates</span></div><p>{report.origins.HISTORICAL.total} historical catch-up calls · {report.origins.MANUAL.total} requested calls</p></section>}
     {manager && !admin && <FeedbackManagement admin={false} changed={refresh} version={version} />}
-    <section ref={queueRef} className="panel feedback-queue"><header><div><h2>{params.get("backlog") === "true" ? "Current backlog · all due dates" : "Feedback calls"}</h2><p className="subtext">{page?.count ?? 0} calls {params.get("backlog") === "true" ? "across all due dates" : "in the selected period"}</p></div><form onSubmit={e => { e.preventDefault(); update({ q: searchText }); }}><input aria-label="Search customer or phone" placeholder="Customer name or phone" value={searchText} onChange={e => setSearchText(e.target.value)} /><button className="filter">Search</button></form></header>
+    <section ref={queueRef} className="panel feedback-queue" aria-busy={loading}><header><div><h2>{params.get("backlog") === "true" ? "Current backlog · all due dates" : "Feedback calls"}</h2><p className="subtext" role="status">{!visiblePage && loading ? "Loading matching calls…" : `${visiblePage?.count ?? 0} calls ${params.get("backlog") === "true" ? "across all due dates" : "in the selected period"}`} · {params.get("kind") || "All types"} · {feedbackBuckets[params.get("bucket") || ""] || "All statuses"}</p></div><form onSubmit={e => { e.preventDefault(); update({ q: searchText }); }}><input aria-label="Search customer or phone" placeholder="Customer name or phone" value={searchText} onChange={e => setSearchText(e.target.value)} /><button className="filter">Search</button></form></header>
       <div className="feedback-queue-filters"><div className="feedback-tabs" role="group" aria-label="Feedback type">{["", ...Object.keys(feedbackNames)].map(kind => <button key={kind} aria-pressed={(params.get("kind") || "") === kind} onClick={() => update({ kind })}>{kind || "All types"}</button>)}</div><label>Origin<select value={params.get("origin") || ""} onChange={e => update({ origin: e.target.value })}><option value="">All origins</option><option value="AUTOMATIC">Automatic</option><option value="MANUAL">Requested feedback</option><option value="HISTORICAL">Historical catch-up</option></select></label><label>Status<select value={params.get("bucket") || ""} onChange={e => update({ bucket: e.target.value })}><option value="">All statuses</option>{Object.entries(feedbackBuckets).filter(([key]) => monitor || key !== "unassigned").map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>{params.get("backlog") === "true" && <button className="filter" onClick={() => update({ backlog: null })}>Use selected date period</button>}</div>
-      <div className="feedback-table-scroll"><table className="feedback-table"><thead><tr><th>Customer</th><th>Type / lead stage</th><th>Branch / caller</th><th>Next call</th><th>Feedback status</th><th>Action</th></tr></thead><tbody>{page?.results.map(task => <tr key={task.id}><td><button className="feedback-text-button" onClick={() => update({ task: String(task.id) })}>{task.customer}</button><small>{task.phone} · {task.model || "Model not recorded"}</small></td><td><span className={`feedback-tag ${task.kind.toLowerCase()}`}>{task.kind}</span><small>{task.service_ticket || `${label(task.sales_outcome)} · ${label(task.lead_status)}`}</small>{task.origin === "HISTORICAL" && <small>Historical catch-up</small>}</td><td>{task.branch || "No branch"}<small>{task.caller_name}</small>{task.unassigned_reason && <small>{task.unassigned_reason}</small>}</td><td>{task.status === "OPEN" ? formatDateTime(task.next_call_at) : "—"}<small>Original: {formatDateTime(task.original_due_at)}</small></td><td><span className={`feedback-status ${task.status.toLowerCase()}`}>{label(task.status)}</span><small>{task.unsuccessful_attempts}/3 unsuccessful attempts</small>{task.issue_status && <small>Issue: {label(task.issue_status)}</small>}</td><td><button className="filter" onClick={() => update({ task: String(task.id) })}>Open call</button></td></tr>)}</tbody></table></div>
-      {!page?.results.length && <div className="empty-state">{loading ? "Loading feedback calls…" : "No calls match these filters. Completed test drives, bookings, retails, and resolved service requests generate calls automatically."}</div>}
-      <footer className="feedback-pagination"><button className="filter" disabled={!page?.previous} onClick={() => update({ page: String(Math.max(1, Number(params.get("page") || 1) - 1)) })}>Previous</button><span>Page {params.get("page") || 1}</span><button className="filter" disabled={!page?.next} onClick={() => update({ page: String(Number(params.get("page") || 1) + 1) })}>Next</button></footer>
+      <div className="feedback-table-scroll"><table className="feedback-table"><thead><tr><th>Customer</th><th>Type / lead stage</th><th>Branch / caller</th><th>Next call</th><th>Feedback status</th><th>Action</th></tr></thead><tbody>{visiblePage?.results.map(task => <tr key={task.id}><td><button className="feedback-text-button" onClick={() => update({ task: String(task.id) })}>{task.customer}</button><small>{task.phone} · {task.model || "Model not recorded"}</small></td><td><span className={`feedback-tag ${task.kind.toLowerCase()}`}>{task.kind}</span><small>{task.service_ticket || `${label(task.sales_outcome)} · ${label(task.lead_status)}`}</small>{task.origin === "HISTORICAL" && <small>Historical catch-up</small>}</td><td>{task.branch || "No branch"}<small>{task.caller_name}</small>{task.unassigned_reason && <small>{task.unassigned_reason}</small>}</td><td>{task.status === "OPEN" ? formatDateTime(task.next_call_at) : "—"}<small>Original: {formatDateTime(task.original_due_at)}</small></td><td><span className={`feedback-status ${task.status.toLowerCase()}`}>{label(task.status)}</span><small>{task.unsuccessful_attempts}/3 unsuccessful attempts</small>{task.issue_status && <small>Issue: {label(task.issue_status)}</small>}</td><td><button className="filter" onClick={() => update({ task: String(task.id) })}>Open call</button></td></tr>)}</tbody></table></div>
+      {!visiblePage?.results.length && <div className="empty-state">{loading ? "Loading feedback calls…" : "No calls match these filters. Completed test drives, bookings, retails, and resolved service requests generate calls automatically."}</div>}
+      <footer className="feedback-pagination"><button className="filter" disabled={!visiblePage?.previous} onClick={() => update({ page: String(Math.max(1, Number(params.get("page") || 1) - 1)) })}>Previous</button><span>Page {params.get("page") || 1}</span><button className="filter" disabled={!visiblePage?.next} onClick={() => update({ page: String(Number(params.get("page") || 1) + 1) })}>Next</button></footer>
     </section>
     {monitor && report && <section className="panel feedback-comparisons"><h2>Branch and caller performance</h2><p className="subtext">Selected original due-date period. Select a row to view its calls.</p><div className="feedback-table-scroll"><table className="feedback-table"><thead><tr><th>Branch</th><th>Caller</th><th>Total</th><th>Completed</th><th>Completion</th><th>Overdue</th><th>Unreachable</th><th>Rating</th><th>Unresolved issues</th><th>Historical</th></tr></thead><tbody>{report.comparisons.map(row => <tr key={`${row.branch}-${row.assigned_to_id}`}><td>{row.branch || "No branch"}</td><td><button className="feedback-text-button" onClick={() => update({ branch: row.branch || "__unknown__", caller: row.assigned_to_id ? String(row.assigned_to_id) : "unassigned", kind: null, bucket: null, backlog: null })}>{[row.assigned_to__first_name, row.assigned_to__last_name].filter(Boolean).join(" ") || row.assigned_to__email || "Unassigned"}</button></td><td>{row.total}</td><td>{row.completed}</td><td>{row.total ? (100 * row.completed / row.total).toFixed(1) : 0}%</td><td>{row.overdue}</td><td>{row.unreachable}</td><td>{row.average_satisfaction?.toFixed(1) || "—"}</td><td>{row.unresolved_issues}</td><td>{row.historical}</td></tr>)}</tbody></table></div>{!report.comparisons.length && <p className="empty-state">No feedback tasks in this reporting period.</p>}</section>}
     {detail && taskId === detail.id && user && <FeedbackCallDialog key={detail.id} task={detail} user={user} options={options} canReassign={manager} close={() => update({ task: null })} saved={task => { setDetail(task); refresh(); }} />}
