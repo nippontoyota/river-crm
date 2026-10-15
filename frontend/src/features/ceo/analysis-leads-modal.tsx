@@ -39,6 +39,7 @@ export function AnalysisLeadsModal({ query, title, options, onClose }: { query: 
     <Drawer centered wide title={`${title}${data ? ` · ${count(data.count)}` : ""}`} closeLabel="← Back to analysis" onClose={onClose}>
       <div className="ceo-detail-body ceo-analysis-results">
         <p className="ceo-context-line">Matching leads within your dashboard filters. Select a customer to see their details and full history.</p>
+        {params.has("ce_metric") && <p className="ceo-context-line">Filtered by the current CE’s activity since allocation. The stage below shows the lead’s current stage, including later PS updates.{params.get("ce_metric") === "calls" ? " Each customer is listed once; Calls logged can be higher because it includes repeat calls." : ""}</p>}
         <div className="ceo-table-tools">
           <SearchField value={search} onSearch={value => { setError(""); setSearch(value); setPage(1); }} />
           <button disabled={loading || exporting} onClick={() => void exportLeads()}>{exporting ? "Exporting…" : "Export CSV ↓"}</button>
@@ -48,6 +49,7 @@ export function AnalysisLeadsModal({ query, title, options, onClose }: { query: 
           { key: "name", title: "Customer" },
           { key: "phone", title: "Mobile", render: row => <a href={`tel:${text(row.phone, "")}`}>{text(row.phone)}</a> },
           { key: "branch", title: "Branch" },
+          ...(params.has("ce_metric") ? [{ key: "cre", title: "CE" }] : []),
           { key: "next_follow_up", title: "Next date", render: row => formatDate(text(row.next_follow_up, "")) || "Not scheduled" },
           { key: "analysis_status", title: "Latest outcome" },
           { key: "status", title: "Stage", render: row => <Badge value={row.status} /> },

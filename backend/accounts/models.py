@@ -1,9 +1,17 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+from django.db.models.functions import Trim
 
 
 class UserManager(BaseUserManager):
     use_in_migrations = True
+
+    def for_reporting(self):
+        return self.get_queryset().annotate(
+            _report_first=Trim("first_name"), _report_last=Trim("last_name"),
+        ).exclude(models.Q(deleted_at__isnull=False) & (
+            models.Q(_report_first__istartswith="test") | models.Q(_report_last__istartswith="test")
+        ))
 
     def create_user(self, email, password=None, **extra_fields):
         if not email:

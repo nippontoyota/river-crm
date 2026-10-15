@@ -110,7 +110,7 @@ class CEOOptionsView(CEOView):
         branches = branch_options()
         lists = (SystemConfig.objects.filter(pk=1).values_list("lists", flat=True).first() or {})
         options = {key: sorted(unique_choices([*lists.get({"source": "sources", "model_interest": "models"}.get(key, key), []), *Lead.objects.exclude(**{key: ""}).values_list(key, flat=True)])) for key in DIMENSIONS if key not in {"rto", "activity", "sub_activity"}}
-        users = User.objects.filter(role__in=ROLES).order_by("first_name", "email")
+        users = User.objects.for_reporting().filter(role__in=ROLES).order_by("first_name", "email")
         return Response({"branches": [{"value": key, "label": value} for key, value in sorted(branches.items())] + [{"value": "__unknown__", "label": "Not recorded"}],
             "employees": [{"id": u.id, "name": u.history_display_name, "role": u.role, "branch": u.location.strip().casefold(), "lifecycle": u.lifecycle_status} for u in users],
             "roles": [{"value": value, "label": label} for value, label in User.Role.choices if value in ROLES],

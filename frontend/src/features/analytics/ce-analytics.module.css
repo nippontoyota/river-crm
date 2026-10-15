@@ -4,7 +4,7 @@
 .heading h1 { font-size: 30px; line-height: 1.2; margin: 4px 0 8px; }
 .heading p, .note, .updated { font-size: 12px; color: #6c7974; }
 .eyebrow { letter-spacing: .12em; font-size: 10px !important; }
-.actions, .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .page button, .page select, .page input { border: 1px solid #d8e1dc; border-radius: 6px; background: white; color: inherit; padding: 9px 12px; font: inherit; font-size: 12px; }
 .page button { cursor: pointer; }
 .page button:disabled { opacity: .5; cursor: default; }
@@ -12,21 +12,24 @@
 .filters { display: flex; gap: 12px; flex-wrap: wrap; padding: 14px; background: white; border: 1px solid #dce3df; border-radius: 8px; margin-bottom: 16px; }
 .filters label { display: grid; gap: 6px; min-width: 170px; flex: 1; font-size: 11px; font-weight: 600; }
 .filters select { width: 100%; }
-.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
-.metrics article { display: grid; gap: 5px; padding: 14px 16px; background: white; border: 1px solid #dce3df; border-top: 3px solid #0d8f73; border-radius: 8px; }
+.metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 18px; }
+.metrics .metric { display: grid; gap: 5px; padding: 14px 16px; background: white; border: 1px solid #dce3df; border-top: 3px solid #0d8f73; border-radius: 8px; text-align: left; }
+.metric:hover:not(:disabled) { background: #f0f8f4; }
+.page .countLink { padding: 3px 0; border: 0; background: transparent; color: inherit; text-decoration: underline; text-decoration-color: #b7ccc1; text-underline-offset: 3px; }
+.page .countLink:hover { color: #086b56; text-decoration-color: currentColor; }
 .metrics span { font-size: 12px; }
 .metrics strong { font-size: 28px; }
 .metrics small { color: #74817b; font-size: 11px; }
 .panel { border: 1px solid #dce3df; border-radius: 8px; background: white; overflow: hidden; }
 .tableHeading { padding: 16px 18px 8px; }
 .tableHeading h2 { font-size: 18px; margin: 0; }
-.tabs button[aria-pressed="true"] { background: #e4f5ed; border-color: #0d8f73; color: #086b56; }
 .note { margin: 4px 18px 16px; line-height: 1.6; max-width: 1000px; }
 .scroll { overflow-x: auto; }
 .scroll table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .scroll th { background: #edf3ef; font-size: 11px; text-align: right; white-space: nowrap; }
 .scroll td, .scroll th { padding: 12px 16px; border-bottom: 1px solid #edf0ee; }
 .scroll td { text-align: right; font-variant-numeric: tabular-nums; }
+.scroll tfoot { background: #edf3ef; font-weight: 700; }
 .scroll td:first-child, .scroll th:first-child { text-align: left; min-width: 180px; }
 .scroll td small { display: block; font-size: 10px; color: #74817b; margin-top: 3px; }
 .overdue { color: #b33b28; font-weight: 700; }

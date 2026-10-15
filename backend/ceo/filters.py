@@ -190,6 +190,9 @@ class ReportFilters:
         return queryset.distinct()
 
     def leads(self):
+        if self.params.get("ce_metric"):
+            from .ce_performance import ce_matching_leads
+            return ce_matching_leads(self)
         from .lead_analysis import filter_analysis
         if self.params.get("metric"):
             queryset = Lead.objects.filter(pk__in=self.milestones(True).values("lead_id"))

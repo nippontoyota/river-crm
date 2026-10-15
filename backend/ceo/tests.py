@@ -76,7 +76,8 @@ class CEOTests(TestCase):
     def test_milestones_survive_followups_reassignment_and_cancellation(self):
         self.auth(self.so)
         base = {"call_status": "Connected", "remarks": "Customer agreed"}
-        result = self.client.patch(f"/api/leads/{self.lead.id}/so-update/", {**base, "call_outcome": "Booking Done", "follow_up_at": (timezone.now() + timedelta(days=1)).isoformat()}, format="json")
+        FollowUp.objects.create(lead=self.lead, so=self.so, scheduled_for=timezone.now() + timedelta(days=1))
+        result = self.client.patch(f"/api/leads/{self.lead.id}/so-update/", {**base, "call_outcome": "Booking Done"}, format="json")
         self.assertEqual(result.status_code, 200, result.data)
         old = Milestone.objects.get(lead=self.lead, kind="B")
         result = self.client.patch(f"/api/leads/{self.lead.id}/so-update/", {**base, "call_outcome": "Not Interested"}, format="json")

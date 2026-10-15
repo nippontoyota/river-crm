@@ -3,9 +3,10 @@ from django.db.models import Case, CharField, Count, F, Max, OuterRef, Q, Subque
 from django.db.models.fields.json import KeyTextTransform
 from django.db.models.functions import Lower, Trim
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 
 from accounts.models import User
-from leads.metrics import CE_HANDLING_FILTERS, actionable_followups, with_ce_handling
+from leads.metrics import actionable_followups, with_ce_handling
 from leads.models import CallLog, Lead, LeadAudit
 
 
@@ -18,7 +19,7 @@ def ce_lead_outcomes(leads):
     changes = LeadAudit.objects.filter(
         lead_id=OuterRef("pk"), actor_id=OuterRef("assigned_so_id"), created_at__gte=OuterRef("_ce_allocated_at"),
         event__in=["status_changed", "so_updated"], after__status__in=Lead.Status.values,
-    ).exclude(before__status=F("after__status")).order_by("-created_at", "-pk")
+    ).filter(Q(before__status__isnull=True) | ~Q(before__status=F("after__status"))).order_by("-created_at", "-pk")
     leads = leads.annotate(
         _ce_call_status=Subquery(calls.values("status")[:1]),
         _ce_call_at=Subquery(calls.values("created_at")[:1]),
@@ -36,12 +37,40 @@ def ce_lead_outcomes(leads):
     ))
 
 
+def ce_cohort(filters):
+    users = User.objects.for_reporting().filter(role=User.Role.CRE)
+    if filters.employee:
+        users = users.filter(pk=filters.employee.pk)
+    return ce_lead_outcomes(filters.period(filters.base_leads(employee=False), "enquiry_date")).filter(
+        assigned_so_id__in=users.values("pk"),
+    )
+
+
+def ce_buckets(now):
+    """Shared predicates keep the displayed counts and matching leads identical."""
+    due = actionable_followups().filter(so__role=User.Role.CRE, so_id=F("lead__assigned_so_id"))
+    return {
+        "assigned": Q(),
+        **{key: Q(ce_result=key) for key in ("untouched", "qualified", "lost", "in_progress")},
+        "followups": Q(pk__in=due.values("lead_id")),
+        "awaiting_ps": Q(assigned_ps__isnull=True) & ~Q(status__in=["WON", "LOST", "UNQUALIFIED"]),
+        "due_today": Q(pk__in=due.filter(scheduled_for__date=timezone.localdate(now)).values("lead_id")),
+        "overdue": Q(pk__in=due.filter(scheduled_for__lt=now).values("lead_id")),
+    }
+
+
+def ce_matching_leads(filters):
+    buckets = {**ce_buckets(timezone.now()), "calls": Q(_ce_called=True)}
+    metric = filters.params["ce_metric"]
+    if metric not in buckets:
+        raise ValidationError({"ce_metric": "Choose a CE performance count."})
+    return ce_cohort(filters).filter(buckets[metric])
+
+
 def ce_performance(filters):
     # Every count describes the same currently owned enquiry cohort.
-    leads = ce_lead_outcomes(filters.period(filters.base_leads(employee=False), "enquiry_date"))
-    users = User.objects.filter(role=User.Role.CRE).exclude(
-        Q(deleted_at__isnull=False) & (Q(first_name__istartswith="test") | Q(last_name__istartswith="test"))
-    ).order_by("first_name", "last_name", "email")
+    leads = ce_cohort(filters)
+    users = User.objects.for_reporting().filter(role=User.Role.CRE).order_by("first_name", "last_name", "email")
     allocation = leads.filter(pk=OuterRef("lead_id")).values("_ce_allocated_at")[:1]
     calls = CallLog.objects.filter(
         lead_id__in=leads.values("pk"), so_id=F("lead__assigned_so_id"),
@@ -61,19 +90,10 @@ def ce_performance(filters):
     users = list(users)
     ids = [user.pk for user in users]
     now = timezone.now()
-    due = actionable_followups().filter(so__role=User.Role.CRE, so_id=F("lead__assigned_so_id"))
     workload = {row.pop("assigned_so_id"): row for row in leads.filter(
         assigned_so_id__in=ids,
     ).values("assigned_so_id").annotate(
-        assigned=Count("pk", distinct=True),
-        untouched=Count("pk", filter=Q(ce_result="untouched"), distinct=True),
-        qualified=Count("pk", filter=Q(ce_result="qualified"), distinct=True),
-        lost=Count("pk", filter=Q(ce_result="lost"), distinct=True),
-        in_progress=Count("pk", filter=Q(ce_result="in_progress"), distinct=True),
-        followups=Count("pk", filter=Q(pk__in=due.values("lead_id")), distinct=True),
-        awaiting_ps=Count("pk", filter=Q(assigned_ps__isnull=True) & ~Q(status__in=["WON", "LOST", "UNQUALIFIED"]), distinct=True),
-        due_today=Count("pk", filter=Q(pk__in=due.filter(scheduled_for__date=timezone.localdate()).values("lead_id")), distinct=True),
-        overdue=Count("pk", filter=Q(pk__in=due.filter(scheduled_for__lt=now).values("lead_id")), distinct=True),
+        **{key: Count("pk", filter=predicate, distinct=True) for key, predicate in ce_buckets(now).items()},
     )}
     activity = {row.pop("so_id"): row for row in calls.filter(so_id__in=ids).values("so_id").annotate(
         calls=Count("pk"),
