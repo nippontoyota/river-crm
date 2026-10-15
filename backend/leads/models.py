@@ -16,7 +16,7 @@ class Lead(models.Model):
         PENDING = "PENDING", "Pending"
         QUALIFIED = "QUALIFIED", "Qualified"
         UNQUALIFIED = "UNQUALIFIED", "Unqualified"
-        WALKIN = "WALKIN", "Walk-in"
+        WALKIN = "WALKIN", "Walk-in"  # Historical records only; new leads use Source.WALKIN.
         BOOKED = "BOOKED", "Booked"
         WON = "WON", "Won"
         LOST = "LOST", "Lost"
@@ -73,6 +73,22 @@ class Lead(models.Model):
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        # Status is the explicit customer state. Keep the reporting field in
+        # step even when an intake/admin path saves only the status.
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None or {"status", "sales_outcome"}.intersection(update_fields):
+            outcome = {
+                self.Status.BOOKED: self.SalesOutcome.BOOKED,
+                self.Status.WON: self.SalesOutcome.RETAILED,
+                self.Status.LOST: self.SalesOutcome.LOST,
+            }.get(self.status)
+            if outcome is not None and self.sales_outcome != outcome:
+                self.sales_outcome = outcome
+                if update_fields is not None:
+                    kwargs["update_fields"] = set(update_fields) | {"sales_outcome"}
+        super().save(*args, **kwargs)
 
     class Meta:
         indexes = [models.Index(fields=["assigned_so", "status"]), models.Index(fields=["assigned_so", "category"]), models.Index(fields=["assigned_ps", "status"]), models.Index(fields=["source", "created_at"])]

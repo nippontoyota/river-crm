@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 from accounts.models import User
 from accounts.permissions import IsAdmin, IsSalesManager
 from analytics.cache import cache_analytics
-from leads.metrics import PS_HANDLING_FILTERS, etbr_aggregates, lost_reason_groups, with_ps_handling
+from leads.metrics import CE_HANDLING_FILTERS, PS_HANDLING_FILTERS, actionable_followups, etbr_aggregates, lost_reason_groups, with_ce_handling, with_ps_handling
 from leads.models import CallLog, FollowUp, Lead, LeadAudit
 from leads.choices import choice_q, merge_choice_counts, unique_choices
 from leads.serializers import configured_values
@@ -35,12 +35,16 @@ def manager_csv_value(key, value):
 
 
 def metrics(queryset):
+    queryset = with_ce_handling(with_ps_handling(queryset))
     counts = queryset.aggregate(
         **etbr_aggregates(),
         total_assigned=Count("id"),
         total_called=Count("id", filter=~Q(status=Lead.Status.FRESH)),
+        untouched_by_ce=Count("id", filter=CE_HANDLING_FILTERS["untouched"]),
+        untouched_by_ps=Count("id", filter=PS_HANDLING_FILTERS["untouched"]),
         qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)),
-        walkins=Count("id", filter=Q(status=Lead.Status.WALKIN)),
+        walkins=Count("id", filter=choice_q("source", Lead.Source.WALKIN)),
+        booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)),
         won=Count("id", filter=Q(status=Lead.Status.WON)),
         lost=Count("id", filter=Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED])),
     )
@@ -51,13 +55,19 @@ def metrics(queryset):
 def team_metrics(users, lead_relation):
     today = timezone.localdate()
     active_leads = Q(**{f"{lead_relation}__deleted_at__isnull": True})
+    is_ce = lead_relation == "assigned_leads"
+    handled = with_ce_handling(Lead.objects.all()) if is_ce else with_ps_handling(Lead.objects.all())
+    untouched = handled.filter((CE_HANDLING_FILTERS if is_ce else PS_HANDLING_FILTERS)["untouched"])
+    called = handled.filter(**{("_ce_called" if is_ce else "_ps_called"): True})
     rows = []
     for user in users.annotate(
         total_assigned=Count(lead_relation, filter=active_leads, distinct=True),
-        total_called=Count(lead_relation, filter=active_leads & ~Q(**{f"{lead_relation}__status": Lead.Status.FRESH}), distinct=True),
+        total_called=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__pk__in": called.values("pk")}), distinct=True),
+        untouched=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__pk__in": untouched.values("pk")}), distinct=True),
         calls_today=Count("call_logs", filter=Q(call_logs__created_at__date=today, call_logs__lead__deleted_at__isnull=True), distinct=True),
         qualified=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__status": Lead.Status.QUALIFIED}), distinct=True),
-        walkins=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__status": Lead.Status.WALKIN}), distinct=True),
+        walkins=Count(lead_relation, filter=active_leads & choice_q(f"{lead_relation}__source", Lead.Source.WALKIN), distinct=True),
+        booked=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__sales_outcome": Lead.SalesOutcome.BOOKED}), distinct=True),
         won=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__status": Lead.Status.WON}), distinct=True),
         lost=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__status__in": [Lead.Status.LOST, Lead.Status.UNQUALIFIED]}), distinct=True),
     ):
@@ -67,9 +77,11 @@ def team_metrics(users, lead_relation):
             "lifecycle_status": user.lifecycle_status,
             "total_assigned": user.total_assigned,
             "total_called": user.total_called,
+            "untouched": user.untouched,
             "calls_today": user.calls_today,
             "qualified": user.qualified,
             "walkins": user.walkins,
+            "booked": user.booked,
             "won": user.won,
             "lost": user.lost,
             "conversion_rate": round((user.won / user.total_assigned) * 100, 1) if user.total_assigned else 0,
@@ -142,7 +154,7 @@ def ps_followup_queryset(request):
         if priority in {choice for choice, _ in Lead.Category.choices}:
             queryset = queryset.filter(category=priority)
     followup_count = FollowUp.objects.filter(lead_id=OuterRef("pk"), so_id=OuterRef("assigned_ps_id")).values("lead_id").annotate(total=Count("id")).values("total")
-    overdue_followup = FollowUp.objects.filter(lead_id=OuterRef("pk"), so_id=OuterRef("assigned_ps_id"), resolved_at__isnull=True, scheduled_for__lt=timezone.now())
+    overdue_followup = actionable_followups().filter(lead_id=OuterRef("pk"), so_id=OuterRef("assigned_ps_id"), scheduled_for__lt=timezone.now())
     test_drive_call = CallLog.objects.filter(lead_id=OuterRef("pk"), so_id=OuterRef("assigned_ps_id"), outcome__iexact="Need Test Drive")
     return with_ps_handling(queryset).annotate(
         ps_followup_count=Coalesce(Subquery(followup_count, output_field=IntegerField()), Value(0)),
@@ -200,13 +212,13 @@ def ps_followup_payload(request):
 
     grouped = {}
     empty_counts = {"total_leads": 0, "test_drive": 0, "unattended": 0, "overdue": 0, "f1": 0, "f2": 0, "f3": 0, "f4": 0, "f5": 0}
-    for lead in queryset.values("assigned_ps_id", "_ps_called", "ps_followup_count", "qualification__test_drive", "has_test_drive_call", "has_overdue_followup"):
+    for lead in queryset.values("assigned_ps_id", "_ps_touched", "ps_followup_count", "qualification__test_drive", "has_test_drive_call", "has_overdue_followup"):
         row = grouped.setdefault(lead["assigned_ps_id"], empty_counts.copy())
         row["total_leads"] += 1
         count = lead["ps_followup_count"]
         row["test_drive"] += int(has_test_drive(lead["qualification__test_drive"], lead["has_test_drive_call"]))
         row["overdue"] += int(lead["has_overdue_followup"])
-        if not lead["_ps_called"]:
+        if not lead["_ps_touched"]:
             row["unattended"] += 1
         if count >= 5:
             row["f5"] += 1
@@ -229,7 +241,7 @@ def summary_for(queryset, stale_since=None):
         contacted=Count("id", filter=~Q(status=Lead.Status.FRESH)),
         open=Count("id", filter=~Q(status__in=[Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED])),
         qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)),
-        walkin=Count("id", filter=Q(status=Lead.Status.WALKIN)),
+        walkin=Count("id", filter=choice_q("source", Lead.Source.WALKIN)),
         booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)),
         retailed=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.RETAILED)),
         lost=Count("id", filter=Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED])),
@@ -344,15 +356,11 @@ def manager_payload(request):
     stale_since = today - timedelta(days=3)
     summary = with_deltas(summary_for(queryset, stale_since), previous)
     followups = {"due": 0, "overdue": 0, "by_owner": []}
-    if "overview" in includes:
-        due_followups = FollowUp.objects.filter(choice_q("lead__branch", branch), so__role=User.Role.SALES_OFFICER, resolved_at__isnull=True, lead__deleted_at__isnull=True, scheduled_for__date__lte=today)
-        if start:
-            due_followups = due_followups.filter(scheduled_for__date__gte=start)
-        if end:
-            due_followups = due_followups.filter(scheduled_for__date__lte=end)
+    if "overview" in includes or "ps" in includes:
+        due_followups = actionable_followups().filter(lead__in=queryset, so__role=User.Role.SALES_OFFICER, scheduled_for__date__lte=today)
         owner_rows = list(due_followups.values("so__id", "so__first_name", "so__last_name", "so__email").annotate(
-            count=Count("id"),
-            overdue=Count("id", filter=Q(scheduled_for__lt=timezone.now())),
+            count=Count("lead_id", distinct=True),
+            overdue=Count("lead_id", filter=Q(scheduled_for__lt=timezone.now()), distinct=True),
         ).order_by("-count"))
         followups = {
             "due": sum(row["count"] for row in owner_rows),
@@ -423,6 +431,8 @@ class MyAnalyticsView(APIView):
     def get(self, request):
         owner_filter = {"assigned_so": request.user} if request.user.role == User.Role.CRE else {"assigned_ps": request.user}
         queryset = Lead.objects.filter(deleted_at__isnull=True, **owner_filter)
+        is_ce = request.user.role == User.Role.CRE
+        queryset = with_ce_handling(queryset) if is_ce else with_ps_handling(queryset)
         date_range = request.query_params.get("range", "mtd")
         today = timezone.localdate()
         if date_range == "today":
@@ -437,6 +447,7 @@ class MyAnalyticsView(APIView):
         summary = queryset.aggregate(
             **etbr_aggregates(),
             total=Count("id"),
+            untouched=Count("id", filter=(CE_HANDLING_FILTERS if is_ce else PS_HANDLING_FILTERS)["untouched"]),
             qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)),
             booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)),
             lost=Count("id", filter=Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED])),

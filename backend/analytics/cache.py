@@ -5,6 +5,7 @@ from functools import wraps
 
 from django.conf import settings
 from django.core.cache import caches
+from django.db import transaction
 from rest_framework.response import Response
 
 
@@ -18,6 +19,21 @@ def invalidate_analytics():
         cache.clear()
     except Exception as error:
         logger.warning("Analytics cache invalidation failed: %s", type(error).__name__)
+
+
+class AnalyticsInvalidationMiddleware:
+    """Also covers bulk assignments and imports, which bypass model signals."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if request.path.startswith("/api/"):
+            response["Cache-Control"] = "no-store"
+            if request.method not in {"GET", "HEAD", "OPTIONS"} and 200 <= response.status_code < 300:
+                transaction.on_commit(invalidate_analytics)
+        return response
 
 
 def analytics_cache_key(request, endpoint):
@@ -41,7 +57,7 @@ def cache_analytics(endpoint, max_ttl=None):
         @wraps(view)
         def wrapped(self, request, *args, **kwargs):
             ttl = min(settings.CACHE_TTL_SECONDS, max_ttl) if max_ttl else settings.CACHE_TTL_SECONDS
-            if max_ttl and request.query_params.get("refresh"):
+            if request.query_params.get("refresh"):
                 ttl = 0
             if ttl <= 0:
                 response = view(self, request, *args, **kwargs)

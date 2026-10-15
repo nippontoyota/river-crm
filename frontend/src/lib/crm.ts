@@ -37,13 +37,13 @@ export type WhatsAppSummary = {
 };
 export type LeadDetail = Lead & { ownership: LeadOwnership; whatsapp: WhatsAppSummary; outcomePolicy: OutcomePolicy; email: string; sourceLabel: string; campaign: string; qualification: LeadQualification | null; callHistory: CallHistory[]; followUpHistory: FollowUpHistory[]; auditHistory: { event: string; before: Record<string, unknown>; after: Record<string, unknown>; actor: string; created_at: string }[] };
 export type EtbrMetrics = { etbr_enquired: number; etbr_test_drive_completed: number; etbr_booked: number; etbr_retailed: number };
-export type SalesDashboard = { summary: EtbrMetrics & { total: number; fresh: number; followups: number; missed: number; pending: number; qualified: number; walkin: number; won: number; lost: number; won_lost: number; untouched: number; called: number; scheduled: number }; section: string; results: SalesLead[] };
-export type PersonalAnalytics = { range: string; summary: EtbrMetrics & { total: number; assigned: number; qualified: number; booked: number; lost: number; retailed: number; conversion_rate: number }; status_counts: { status: string; count: number }[]; source: { source: string; total: number; qualified: number; booked: number; retailed: number }[]; models: { model_interest: string; total: number; qualified: number; booked: number }[]; monthly: { month: string; total: number; qualified: number; booked: number; retailed: number }[] };
+export type SalesDashboard = { summary: EtbrMetrics & { total: number; fresh: number; followups: number; missed: number; pending: number; qualified: number; booked: number; walkin: number; won: number; lost: number; won_lost: number; untouched: number; called: number; scheduled: number }; section: string; results: SalesLead[] };
+export type PersonalAnalytics = { range: string; summary: EtbrMetrics & { total: number; assigned: number; untouched: number; qualified: number; booked: number; lost: number; retailed: number; conversion_rate: number }; status_counts: { status: string; count: number }[]; source: { source: string; total: number; qualified: number; booked: number; retailed: number }[]; models: { model_interest: string; total: number; qualified: number; booked: number }[]; monthly: { month: string; total: number; qualified: number; booked: number; retailed: number }[] };
 export type Officer = { id: number; name: string; initials: string; color: "blue" | "green" | "violet" | "orange"; location: string; assigned: number; calls: number; qualified: number; won: number };
-export type Metrics = { total_assigned: number; total_called: number; calls_today?: number; qualified: number; walkins: number; won: number; lost: number; conversion_rate: number };
+export type Metrics = { total_assigned: number; total_called: number; untouched: number; calls_today?: number; qualified: number; walkins: number; booked: number; won: number; lost: number; conversion_rate: number };
 export type LifecycleEvent = { action: "DISABLED" | "ENABLED" | "DELETED"; reason: string; actor: string; summary: Record<string, unknown>; created_at: string };
 export type AnalyticsOfficer = Metrics & { id: number; name: string; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; account_history?: LifecycleEvent[] };
-export type Analytics = { summary: Metrics & EtbrMetrics; source: { source: string; total: number; qualified: number; won: number }[]; cre: AnalyticsOfficer[]; officers: AnalyticsOfficer[] };
+export type Analytics = { summary: Omit<Metrics, "untouched"> & EtbrMetrics & { untouched_by_ce: number; untouched_by_ps: number }; source: { source: string; total: number; qualified: number; won: number }[]; cre: AnalyticsOfficer[]; officers: AnalyticsOfficer[] };
 export type CurrentUser = { id: number; first_name: string; last_name: string; email: string; phone?: string; role: "ADMIN" | "CEO" | "CRE" | "SO" | "SALES_MANAGER" | "RECEPTIONIST" | "COMPLAINTS" | "FEEDBACK" | "SERVICE" | "META_UPLOADER"; is_active?: boolean; deleted_at?: string | null; lifecycle_status?: "ACTIVE" | "DISABLED" | "DELETED"; location?: string };
 export type OffboardingRoute = { status: string; destination: "POOL" | "DISTRIBUTE"; recipient_ids: number[] };
 export type OffboardingImpact = {
@@ -93,17 +93,29 @@ async function csrf() {
 
 export async function api<T>(path: string, options: ApiOptions = {}, didRefresh = false): Promise<T> {
   const method = options.method?.toUpperCase() || "GET";
+  // Live dashboards must read committed data even across separate cache workers.
+  if (method === "GET" && /^\/api\/(analytics|ceo)\//.test(path)) {
+    const [pathname, search = ""] = path.split("?");
+    const query = new URLSearchParams(search);
+    query.set("refresh", "1");
+    path = `${pathname}?${query}`;
+  }
   const headers = new Headers(options.headers);
   const { skipCsrf, ...fetchOptions } = options;
   if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   if (!skipCsrf && !["GET", "HEAD", "OPTIONS"].includes(method)) headers.set("X-CSRFToken", await csrf());
-  const response = await fetch(`${API_URL}${path}`, { ...fetchOptions, headers, credentials: "include" });
+  const response = await fetch(`${API_URL}${path}`, { cache: "no-store", ...fetchOptions, headers, credentials: "include" });
   if (!response.ok) {
     if (response.status === 401 && !didRefresh && await refreshSession()) return api<T>(path, options, true);
     const body = await response.json().catch(() => ({}));
     throw new Error(responseError(body, `The request could not be completed (${response.status}).`));
   }
-  return response.status === 204 ? undefined as T : response.json() as Promise<T>;
+  const result = response.status === 204 ? undefined as T : await response.json() as T;
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && !path.startsWith("/api/auth/") && typeof window !== "undefined") {
+    window.dispatchEvent(new Event("crm-data-changed"));
+    try { window.localStorage.setItem("crm-data-changed", String(Date.now())); } catch { /* Storage can be disabled. */ }
+  }
+  return result;
 }
 
 async function refreshSession() {

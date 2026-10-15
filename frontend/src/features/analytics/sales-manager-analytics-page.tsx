@@ -1,4 +1,5 @@
 "use client";
+import { useCrmRefresh } from "@/lib/use-crm-refresh";
 
 import { EtbrTiles } from "@/components/etbr-tiles";
 
@@ -105,7 +106,8 @@ function PSFollowupsSection({ filters, primaryPs, setPrimaryPs, officers, refres
   const [modalLoading, setModalLoading] = useState(false);
   const [detail, setDetail] = useState<LeadDetail | null>(null);
   const query = useMemo(() => ({ ...filters, ...(primaryPs ? { ps: primaryPs } : {}), ...(primaryPs && comparePs ? { compare_ps: comparePs } : {}), ...(priority ? { priority } : {}) }), [comparePs, filters, primaryPs, priority]);
-  const load = useCallback(async () => { setLoading(true); setError(""); try { setRows((await getSalesManagerPSFollowups(query)).rows); } catch (err) { setError(err instanceof Error ? err.message : "Unable to load PS follow-ups."); } finally { setLoading(false); } }, [query]);
+  const followupRequest = useRef(0);
+  const load = useCallback(async () => { const request = ++followupRequest.current; setLoading(true); setError(""); try { const result = await getSalesManagerPSFollowups(query); if (request === followupRequest.current) setRows(result.rows); } catch (err) { if (request === followupRequest.current) setError(err instanceof Error ? err.message : "Unable to load PS follow-ups."); } finally { if (request === followupRequest.current) setLoading(false); } }, [query]);
   useEffect(() => {
     if (!sectionRef.current || !("IntersectionObserver" in window)) { setEnabled(true); return; }
     const observer = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) { setEnabled(true); observer.disconnect(); } }, { rootMargin: "300px" });
@@ -162,13 +164,7 @@ export function SalesManagerAnalyticsPage() {
   const load = useCallback(async (fresh = false) => { const request = ++requestId.current; setLoading(true); setError(""); try { const result = await getSalesManagerAnalytics({ ...params, include: "filters,ps,source,lost", ...(fresh ? { refresh: "1" } : {}) }); if (request === requestId.current) { setData(result); setDataVersion(version => version + 1); } } catch (err) { if (request === requestId.current) setError(err instanceof Error ? err.message : "Unable to load sales manager analytics."); } finally { if (request === requestId.current) setLoading(false); } }, [params]);
   useEffect(() => { void getSystemConfig().then(config => { setConfiguredSources(config.lists.sources || ["WALKIN"]); setConfiguredColors(config.lists.colorVariants || []); }).catch(() => { setConfiguredSources(["WALKIN"]); setConfiguredColors([]); }); }, []);
   useEffect(() => { const timer = window.setTimeout(() => void load(range === "mtd"), 0); return () => window.clearTimeout(timer); }, [load, range]);
-  useEffect(() => {
-    if (range !== "mtd") return;
-    const refreshVisible = () => { if (document.visibilityState === "visible") void load(true); };
-    const timer = window.setInterval(refreshVisible, 60_000);
-    document.addEventListener("visibilitychange", refreshVisible);
-    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshVisible); };
-  }, [load, range]);
+  useCrmRefresh(() => load(true));
   const sources = configuredSources;
   const psOptions = data?.filters?.ps || data?.ps || [];
   const exportSection = (section: string) => { setError(""); void exportSalesManagerAnalytics(section, params).catch(err => setError(err instanceof Error ? err.message : "Export failed.")); };
@@ -177,11 +173,11 @@ export function SalesManagerAnalyticsPage() {
     {error && <div className="empty-state">{error}</div>}
     {loading && !data ? <div className="panel sales-analytics-loading">Loading branch analytics...</div> : data && <>
       <section className="manager-filter-bar panel"><label>Source<select value={source} onChange={event => setSource(event.target.value)}><option value="">All sources</option>{sources.map(item => <option value={item} key={item}>{sourceName(item)}</option>)}</select></label><label>Color<select value={color} onChange={event => setColor(event.target.value)}><option value="">All colors</option>{configuredColors.map(item => <option value={item} key={item}>{item}</option>)}</select></label><label>PS/SO<select value={ps} onChange={event => setPs(event.target.value)}><option value="">All PS/SO</option>{psOptions.map(row => <option value={row.id} key={row.id}>{row.name}</option>)}</select></label></section>
-      <div className="manager-period-note"><span>{data.range === "mtd" ? "Month to date" : data.range === "today" ? "Today" : data.range === "all" ? "All time" : "Selected dates"}{data.date_from ? ` · ${formatDate(data.date_from)}–${formatDate(data.date_to)}` : ""}</span><span>{data.range === "mtd" ? "Refreshes every minute while open · " : ""}Updated {formatDateTime(data.generated_at)}{loading ? " · Refreshing…" : ""}</span></div>
+      <div className="manager-period-note"><span>{data.range === "mtd" ? "Month to date" : data.range === "today" ? "Today" : data.range === "all" ? "All time" : "Selected dates"}{data.date_from ? ` · ${formatDate(data.date_from)}–${formatDate(data.date_to)}` : ""}</span><span>{data.range === "mtd" ? "Refreshes every 3 seconds while open · " : ""}Updated {formatDateTime(data.generated_at)}{loading ? " · Refreshing…" : ""}</span></div>
       <div className="manager-kpi-heading"><h2>Lead journey</h2><p>Progress for leads enquired in this period. Booked includes leads later retailed.</p></div>
       <section className="manager-kpi-grid" aria-label="Lead journey metrics"><EtbrTiles embedded data={data.summary} actions={{ etbr_enquired: () => router.push(leadHref(drilldownFilters)), etbr_retailed: () => router.push(leadHref(drilldownFilters, { sales_outcome: "RETAILED" })) }} /></section>
       <div className="manager-kpi-heading"><h2>Current position</h2><p>Booked here excludes retailed leads; lost includes not interested.</p></div>
-      <section className="manager-kpi-grid" aria-label="Current position metrics">{[["Untouched by PS", data.summary.untouched, "untouched", "Assigned PS has logged no calls"], ["Currently booked", data.summary.booked, "booked", "Excludes retailed leads"], ["Lost / not interested", data.summary.lost, "lost", "Closed without a sale"], ["Lead to retail", `${data.summary.lead_to_retail_rate}%`, "conversion", "Retailed ÷ all enquiries"]].map(([label, value, key, description]) => <Link prefetch={false} className={`sales-metric manager-metric ${key}`} key={key} title={String(description)} href={leadHref(drilldownFilters, metricFilters[String(key)] || {})}><span>{label}</span><strong>{value}</strong><small>{data.range === "mtd" ? `${metricDelta(data.summary.delta?.[String(key)] as number)}${key === "conversion" ? " pp" : ""} vs previous MTD` : "Selected period"}</small></Link>)}</section>
+      <section className="manager-kpi-grid" aria-label="Current position metrics">{[["Untouched by PS", data.summary.untouched, "untouched", "No call or customer action recorded by the assigned PS"], ["Currently booked", data.summary.booked, "booked", "Excludes retailed leads"], ["Lost / not interested", data.summary.lost, "lost", "Closed without a sale"], ["Lead to retail", `${data.summary.lead_to_retail_rate}%`, "conversion", "Retailed ÷ all enquiries"]].map(([label, value, key, description]) => <Link prefetch={false} className={`sales-metric manager-metric ${key}`} key={key} title={String(description)} href={leadHref(drilldownFilters, metricFilters[String(key)] || {})}><span>{label}</span><strong>{value}</strong><small>{data.range === "mtd" ? `${metricDelta(data.summary.delta?.[String(key)] as number)}${key === "conversion" ? " pp" : ""} vs previous MTD` : "Selected period"}</small></Link>)}</section>
       <section id="manager-section-ps" className="manager-section"><RoleTable rows={data.ps} filters={drilldownFilters} onExport={exportSection} /></section>
       <section id="manager-section-source" className="manager-two-col manager-section"><PerformanceTable title="Source conversion" section="source" labelKey="source" rows={data.source} filters={drilldownFilters} onExport={exportSection} /><PerformanceTable title="Color conversion" section="colors" labelKey="color" rows={data.colors} filters={drilldownFilters} onExport={exportSection} /></section>
       <PSFollowupsSection filters={followupFilters} primaryPs={ps} setPrimaryPs={setPs} officers={psOptions} refreshKey={dataVersion} />

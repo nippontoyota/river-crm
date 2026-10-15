@@ -1,6 +1,7 @@
 "use client";
 
 import { EtbrTiles } from "@/components/etbr-tiles";
+import { useCrmRefresh } from "@/lib/use-crm-refresh";
 
 import { useEffect, useState } from "react";
 import { getReceptionistAnalytics, type ReceptionistAnalytics } from "@/lib/crm";
@@ -9,6 +10,9 @@ export default function ReceptionistDashboardPage() {
   const [analytics, setAnalytics] = useState<ReceptionistAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  useCrmRefresh(() => getReceptionistAnalytics()
+    .then(result => { setAnalytics(result); setError(""); })
+    .catch(err => setError(err instanceof Error ? err.message : "Failed to load dashboard")));
 
   useEffect(() => {
     getReceptionistAnalytics()

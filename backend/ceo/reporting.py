@@ -14,7 +14,7 @@ from .filters import AGE_BANDS, ROLES, ReportFilters
 from .models import FinancialEntry, Milestone, OperationEvent, SaleAccount, SalesTarget
 from .tracking import branch_key
 from .lead_analysis import lead_analysis
-from leads.metrics import ps_handling_counts, with_ps_handling
+from leads.metrics import CE_HANDLING_FILTERS, PS_HANDLING_FILTERS, actionable_followups, ps_handling_counts, with_ce_handling, with_ps_handling
 from leads.choices import choice_key
 
 KINDS = "ETBR"
@@ -36,8 +36,11 @@ def milestone_counts(queryset):
 
 
 def current_counts(queryset):
-    open_followups = FollowUp.objects.filter(resolved_at__isnull=True)
+    open_followups = actionable_followups()
+    queryset = with_ce_handling(with_ps_handling(queryset))
     return queryset.aggregate(
+        untouched_by_ce=Count("id", filter=CE_HANDLING_FILTERS["untouched"], distinct=True),
+        untouched_by_ps=Count("id", filter=PS_HANDLING_FILTERS["untouched"], distinct=True),
         leads=Count("id", distinct=True), active=Count("id", filter=~Q(status__in=CLOSED), distinct=True),
         booked=Count("id", filter=Q(sales_outcome="BOOKED"), distinct=True),
         retailed=Count("id", filter=Q(sales_outcome="RETAILED"), distinct=True),
@@ -256,7 +259,7 @@ def segment_rows(filters, dimension="branch"):
         group_label=Min(Trim(dimension)),
         current_leads=Count("id", distinct=True), current_booked=Count("id", filter=Q(sales_outcome="BOOKED"), distinct=True),
         current_lost=Count("id", filter=Q(status__in=["LOST", "UNQUALIFIED"]), distinct=True),
-        overdue=Count("id", filter=Q(follow_ups__resolved_at__isnull=True, follow_ups__scheduled_for__lt=timezone.now()) & ~Q(status__in=CLOSED), distinct=True))
+        overdue=Count("id", filter=Q(pk__in=actionable_followups().filter(scheduled_for__lt=timezone.now()).values("lead_id")), distinct=True))
     labels = branch_options() if dimension == "branch" else {}
     if dimension in {"source", "activity", "sub_activity", "model_interest"}:
         lists = SystemConfig.objects.filter(pk=1).values_list("lists", flat=True).first() or {}
@@ -306,9 +309,12 @@ def people_rows(filters, users):
     workloads = {}
     leads = filters.base_leads(employee=False)
     for field in ("assigned_so_id", "assigned_ps_id"):
-        for row in leads.filter(**{field + "__in": ids}).values(field).annotate(assigned=Count("id", distinct=True),
+        is_ce = field == "assigned_so_id"
+        handled = with_ce_handling(leads) if is_ce else with_ps_handling(leads)
+        for row in handled.filter(**{field + "__in": ids}).values(field).annotate(assigned=Count("id", distinct=True),
+            untouched=Count("id", filter=(CE_HANDLING_FILTERS if is_ce else PS_HANDLING_FILTERS)["untouched"], distinct=True),
             active=Count("id", filter=~Q(status__in=CLOSED), distinct=True),
-            overdue=Count("id", filter=Q(follow_ups__resolved_at__isnull=True, follow_ups__scheduled_for__lt=timezone.now()) & ~Q(status__in=CLOSED), distinct=True),
+            overdue=Count("id", filter=Q(pk__in=actionable_followups().filter(so_id=F("lead__" + field), scheduled_for__lt=timezone.now()).values("lead_id")), distinct=True),
             qualified=Count("id", filter=Q(status="QUALIFIED"), distinct=True),
             self_generated=Count("id", filter=Q(generated_by_id=F(field)), distinct=True)):
             workloads[row.pop(field)] = row

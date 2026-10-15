@@ -130,7 +130,7 @@ class CustomerLookupTests(TestCase):
                 sales_outcome={"BOOKED": "BOOKED", "WON": "RETAILED", "LOST": "LOST"}.get(lead_status, "PENDING"),
                 test_drive_completed_at=timezone.now(),
             )
-            for section in ["all", "test_drive_completed", {"QUALIFIED": "qualified", "BOOKED": "walkin", "WON": "won", "LOST": "lost"}[lead_status]]:
+            for section in ["all", "test_drive_completed", {"QUALIFIED": "qualified", "BOOKED": "booked", "WON": "won", "LOST": "lost"}[lead_status]]:
                 row = self.client.get("/api/leads/my-dashboard/", {"section": section}).data["results"][0]
                 self.assertEqual(row["assigned_ps"], self.ps.id)
                 self.assertEqual(row["assigned_ps_status"], "ACTIVE")

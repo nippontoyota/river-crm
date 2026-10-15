@@ -1,4 +1,5 @@
 "use client";
+import { useCrmRefresh } from "@/lib/use-crm-refresh";
 
 import { matchingChoice, uniqueChoices } from "@/lib/choices";
 
@@ -22,7 +23,7 @@ import { SOLeadForm } from "@/features/leads/so-lead-form";
 import { DateInput } from "@/components/date-input";
 import { addDays, formatDate, formatDateTime, parseDate, todayInIST, toApiDate } from "@/lib/dates";
 
-type Section = "all" | "fresh" | "followups" | "missed" | "pending" | "qualified" | "test_drive_completed" | "walkin" | "won" | "lost" | "won_lost" | "active";
+type Section = "all" | "fresh" | "followups" | "missed" | "pending" | "qualified" | "test_drive_completed" | "booked" | "won" | "lost" | "won_lost" | "active";
 type WonLostFilter = "all" | "won" | "lost";
 type Draft = {
   status: string; category: string; sales_outcome: string; call_outcome: string; call_status: string; remarks: string; follow_up_at: string;
@@ -33,7 +34,7 @@ type LeadFields = { name: string; phone: string; email: string; source: string; 
 
 const sections: { key: Section; label: string; count: keyof SalesDashboard["summary"]; icon: string }[] = [
   { key: "all", label: "All leads", count: "total", icon: "☰" },
-  { key: "fresh", label: "Fresh leads", count: "fresh", icon: "✦" },
+  { key: "fresh", label: "Untouched by CE", count: "fresh", icon: "✦" },
   { key: "followups", label: "Today's follow-ups", count: "followups", icon: "◷" },
   { key: "pending", label: "Pending leads", count: "pending", icon: "!" },
   { key: "qualified", label: "Qualified leads", count: "qualified", icon: "◎" },
@@ -42,7 +43,7 @@ const sections: { key: Section; label: string; count: keyof SalesDashboard["summ
 ];
 const psAllSections: { key: Section; label: string; count: keyof SalesDashboard["summary"]; icon: string }[] = [
   { key: "all", label: "All leads", count: "total", icon: "☰" },
-  { key: "walkin", label: "Booked", count: "walkin", icon: "◷" },
+  { key: "booked", label: "Booked", count: "booked", icon: "◷" },
   { key: "won", label: "Retailed", count: "won", icon: "✓" },
   { key: "lost", label: "Lost", count: "lost", icon: "×" },
 ];
@@ -223,6 +224,8 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
     finally { if (request === dashboardRequest.current) setLoading(false); }
   }, [category, query, range, section, source, user]);
 
+  useCrmRefresh(loadDashboard, authChecked && Boolean(user));
+
   useEffect(() => { if (!authChecked || !user) return; const timer = window.setTimeout(() => void loadDashboard(), query ? 250 : 0); return () => window.clearTimeout(timer); }, [authChecked, loadDashboard, query, user]);
 
   useEffect(() => {
@@ -384,8 +387,8 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const metrics: { label: string; value: number; tone: string; section: Section; href?: string }[] = isPs
     ? followUpsOnly
       ? [{label:"TODAY'S FOLLOW-UPS", value:summary?.followups ?? 0, tone:"blue", section:"followups", href:"/follow-ups"}, {label:"MISSED FOLLOW-UPS", value:summary?.missed ?? 0, tone:"red", section:"missed", href:"/follow-ups?section=missed"}]
-      : [{label:"FRESH LEADS", value:summary?.fresh ?? 0, tone:"blue", section:"fresh", href:"/my-leads"}, {label:"BOOKED", value:summary?.walkin ?? 0, tone:"green", section:"walkin", href:"/all-my-leads?section=walkin"}, {label:"RETAILED", value:summary?.won ?? 0, tone:"green", section:"won", href:"/all-my-leads?section=won"}, {label:"LOST", value:summary?.lost ?? 0, tone:"red", section:"lost", href:"/all-my-leads?section=lost"}]
-    : [{label:"Fresh leads", value:summary?.fresh ?? 0, tone:"blue", section:"fresh"}, {label:"Today's follow-ups", value:summary?.followups ?? 0, tone:"yellow", section:"followups"}, {label:"Pending leads", value:summary?.pending ?? 0, tone:"orange", section:"pending"}, {label:"Qualified leads", value:summary?.qualified ?? 0, tone:"green", section:"qualified"}, {label:"Won leads", value:summary?.won ?? 0, tone:"mint", section:"won"}, {label:"Lost leads", value:summary?.lost ?? 0, tone:"red", section:"lost"}];
+      : [{label:"FRESH LEADS", value:summary?.fresh ?? 0, tone:"blue", section:"fresh", href:"/my-leads"}, {label:"BOOKED", value:summary?.booked ?? 0, tone:"green", section:"booked", href:"/all-my-leads?section=booked"}, {label:"RETAILED", value:summary?.won ?? 0, tone:"green", section:"won", href:"/all-my-leads?section=won"}, {label:"LOST", value:summary?.lost ?? 0, tone:"red", section:"lost", href:"/all-my-leads?section=lost"}]
+    : [{label:"Untouched by CE", value:summary?.fresh ?? 0, tone:"blue", section:"fresh"}, {label:"Today's follow-ups", value:summary?.followups ?? 0, tone:"yellow", section:"followups"}, {label:"Pending leads", value:summary?.pending ?? 0, tone:"orange", section:"pending"}, {label:"Qualified leads", value:summary?.qualified ?? 0, tone:"green", section:"qualified"}, {label:"Won leads", value:summary?.won ?? 0, tone:"mint", section:"won"}, {label:"Lost leads", value:summary?.lost ?? 0, tone:"red", section:"lost"}];
   const displayStatus = (lead: SalesLead) => !isPs && ["RNR", "SWITCHED_OFF", "CALLBACK"].includes(lead.statusCode) ? "Pending" : lead.status;
   const displayStatusClass = (lead: SalesLead) => !isPs && ["RNR", "SWITCHED_OFF", "CALLBACK"].includes(lead.statusCode) ? "pending" : lead.statusCode.toLowerCase();
   const saveTone = selectedPsOutcome?.tone === "lost" ? "lost" : draft?.call_outcome ? "qualified" : "";

@@ -1,8 +1,9 @@
 "use client";
+import { useCrmRefresh } from "@/lib/use-crm-refresh";
 
 import { EtbrTiles } from "@/components/etbr-tiles";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { exportMyAnalytics, getMyAnalyticsDashboard, type PersonalAnalytics } from "@/lib/crm";
 import { DateInput } from "@/components/date-input";
 import { formatDate, todayInIST, toDateInputValue } from "@/lib/dates";
@@ -23,7 +24,9 @@ export function SalesAnalyticsPage() {
   const [data, setData] = useState<PersonalAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const load = useCallback(async () => { setLoading(true); setError(""); try { setData(await getMyAnalyticsDashboard(range, dateFrom, dateTo)); } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Unable to load analytics."); } finally { setLoading(false); } }, [dateFrom, dateTo, range]);
+  const requestId = useRef(0);
+  const load = useCallback(async () => { const request = ++requestId.current; setLoading(true); setError(""); try { const result = await getMyAnalyticsDashboard(range, dateFrom, dateTo); if (request === requestId.current) setData(result); } catch (requestError) { if (request === requestId.current) setError(requestError instanceof Error ? requestError.message : "Unable to load analytics."); } finally { if (request === requestId.current) setLoading(false); } }, [dateFrom, dateTo, range]);
+  useCrmRefresh(load);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   const maxMonthly = Math.max(...(data?.monthly.map(item => item.total) || [1]));
   const maxModel = Math.max(...(data?.models.map(item => item.total) || [1]));

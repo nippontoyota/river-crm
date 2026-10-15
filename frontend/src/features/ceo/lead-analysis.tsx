@@ -47,7 +47,7 @@ export function LeadAnalysis({ data, loading, query, options }: Props) {
     {totals("Lead Status Analysis", data.statuses, data.total)}
     {totals("Lost Lead Analysis", data.loss_reasons, data.lost_total, true)}
     <section className="ceo-table-card ceo-analysis ceo-analysis-officers" aria-busy={loading}>
-      <header><div><h2>Sales Officer-wise Lead Status</h2><p>Passed to PS = currently assigned. Untouched by PS = no call logged by that PS, even if the CE called. Counts use the selected enquiry dates and branch filters.</p></div></header>
+      <header><div><h2>Sales Officer-wise Lead Status</h2><p>Passed to PS = currently assigned. Untouched by PS = no call or customer action recorded by that PS; assignment and CE activity do not count. Counts use the selected enquiry dates and branch filters.</p></div></header>
       <div className="ceo-table-scroll" tabIndex={0} role="region" aria-label="Sales officer status matrix">
         <table>
           <caption className="ceo-sr-only">Sales Officer-wise Lead Status</caption>

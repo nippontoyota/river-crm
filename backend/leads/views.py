@@ -21,7 +21,7 @@ from notifications.models import Notification
 from notifications.serializers import WhatsAppAgreementSerializer
 from notifications.whatsapp import may_record_agreement, save_agreement
 from .outcomes import CLOSED_STATUSES, is_closed, outcome_policy, validate_milestone_change
-from .metrics import PS_HANDLING_FILTERS, etbr_aggregates, lost_reason_groups, with_ps_handling
+from .metrics import CE_HANDLING_FILTERS, PS_HANDLING_FILTERS, actionable_followups, etbr_aggregates, lost_reason_groups, with_ce_handling, with_ps_handling
 from .phone_lock import guard_manual_phone, lock_phones
 from .choices import choice_q
 from .serializers import CustomerLookupSerializer, validate_configured_choice
@@ -32,9 +32,9 @@ FORWARD_TRANSITIONS = {
     Lead.Status.FRESH: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.LOST},
     Lead.Status.RNR: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.LOST},
     Lead.Status.SWITCHED_OFF: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.LOST},
-    Lead.Status.CALLBACK: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.WALKIN, Lead.Status.BOOKED, Lead.Status.LOST},
-    Lead.Status.PENDING: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.WALKIN, Lead.Status.BOOKED, Lead.Status.LOST},
-    Lead.Status.QUALIFIED: {Lead.Status.WALKIN, Lead.Status.BOOKED, Lead.Status.WON, Lead.Status.LOST},
+    Lead.Status.CALLBACK: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.BOOKED, Lead.Status.LOST},
+    Lead.Status.PENDING: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.BOOKED, Lead.Status.LOST},
+    Lead.Status.QUALIFIED: {Lead.Status.BOOKED, Lead.Status.WON, Lead.Status.LOST},
     Lead.Status.WALKIN: {Lead.Status.BOOKED, Lead.Status.WON, Lead.Status.LOST},
     Lead.Status.BOOKED: {Lead.Status.BOOKED, Lead.Status.WON, Lead.Status.LOST},
 }
@@ -230,10 +230,7 @@ class LeadViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def perform_create(self, serializer):
-        is_walkin = (
-            serializer.validated_data.get("source") == Lead.Source.WALKIN
-            or serializer.validated_data.get("status") == Lead.Status.WALKIN
-        )
+        is_walkin = serializer.validated_data.get("source") == Lead.Source.WALKIN
         if getattr(self.request.user, "role", None) == User.Role.RECEPTIONIST:
             branch = self.request.user.location.strip()
             if not branch:
@@ -299,7 +296,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         if request.query_params.get("flagged") == "true":
             queryset = queryset.filter(flagged_to_manager=True)
         if request.query_params.get("followup") == "overdue":
-            queryset = queryset.filter(follow_ups__so__role=User.Role.SALES_OFFICER, follow_ups__resolved_at__isnull=True, follow_ups__scheduled_for__lt=timezone.now()).distinct()
+            queryset = queryset.filter(pk__in=actionable_followups().filter(so__role=User.Role.SALES_OFFICER, scheduled_for__lt=timezone.now()).values("lead_id"))
         if request.query_params.get("risk") == "stale":
             queryset = queryset.filter(status=Lead.Status.FRESH, created_at__date__lte=timezone.localdate() - timedelta(days=3))
         if request.query_params.get("status_group") == "lost_or_unqualified":
@@ -319,16 +316,19 @@ class LeadViewSet(viewsets.ModelViewSet):
         is_cre = request.user.role == User.Role.CRE
         owner_filter = {"assigned_so": request.user} if is_cre else {"assigned_ps": request.user}
         queryset = Lead.objects.filter(deleted_at__isnull=True, **owner_filter)
-        open_followup = Q(follow_ups__id__isnull=False, follow_ups__resolved_at__isnull=True, follow_ups__origin="OUTBOUND")
-        due_followup = open_followup & Q(follow_ups__scheduled_for__date__lte=today)
-        missed_followup = open_followup & Q(follow_ups__scheduled_for__date__lt=today)
+        queryset = with_ce_handling(queryset) if is_cre else with_ps_handling(queryset)
+        untouched_filter = (CE_HANDLING_FILTERS if is_cre else PS_HANDLING_FILTERS)["untouched"]
+        owned_followups = actionable_followups().filter(so=request.user)
+        open_followup = Q(pk__in=owned_followups.values("lead_id"))
+        due_followup = Q(pk__in=owned_followups.filter(scheduled_for__date__lte=today).values("lead_id"))
+        missed_followup = Q(pk__in=owned_followups.filter(scheduled_for__lt=timezone.now()).values("lead_id"))
         followup_filter = due_followup
         missed_filter = missed_followup
         if is_cre:
             followup_filter = due_followup & Q(status=Lead.Status.PENDING, call_logs__outcome="Call Me Back")
             missed_filter = missed_followup & Q(status=Lead.Status.PENDING, call_logs__outcome="Call Me Back")
         pending_status = Q(status__in=[Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.PENDING])
-        called_status = Q(status__in=[Lead.Status.RNR, Lead.Status.SWITCHED_OFF])
+        called_status = Q(status__in=[Lead.Status.RNR, Lead.Status.SWITCHED_OFF]) & Q(**{("_ce_called" if is_cre else "_ps_called"): True})
         date_range = request.query_params.get("range", "all")
         if date_range == "today":
             queryset = queryset.filter(enquiry_date=today)
@@ -343,10 +343,10 @@ class LeadViewSet(viewsets.ModelViewSet):
         pending_queryset = queryset.filter(pending_status)
         if is_cre:
             pending_queryset = pending_queryset.exclude(followup_filter)
-        fresh_queryset = queryset.filter(status=Lead.Status.FRESH) if is_cre else queryset.filter(status=Lead.Status.QUALIFIED).exclude(call_logs__so=request.user)
+        fresh_filter = untouched_filter if is_cre else Q(status=Lead.Status.QUALIFIED) & untouched_filter
+        fresh_queryset = queryset.filter(fresh_filter)
 
         pending_filter = pending_status & (~followup_filter if is_cre else Q())
-        fresh_filter = Q(status=Lead.Status.FRESH) if is_cre else Q(status=Lead.Status.QUALIFIED) & ~Q(call_logs__so=request.user)
         summary = queryset.aggregate(
             **etbr_aggregates(),
             total=Count("id", distinct=True),
@@ -355,18 +355,19 @@ class LeadViewSet(viewsets.ModelViewSet):
             missed=Count("id", filter=missed_filter, distinct=True),
             pending=Count("id", filter=pending_filter, distinct=True),
             qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED), distinct=True),
-            walkin=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED), distinct=True),
+            booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED), distinct=True),
+            walkin=Count("id", filter=choice_q("source", Lead.Source.WALKIN), distinct=True),
             won=Count("id", filter=Q(status=Lead.Status.WON), distinct=True),
             lost=Count("id", filter=Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]), distinct=True),
             won_lost=Count("id", filter=Q(status__in=[Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED]), distinct=True),
-            untouched=Count("id", filter=Q(status=Lead.Status.FRESH), distinct=True),
+            untouched=Count("id", filter=untouched_filter, distinct=True),
             called=Count("id", filter=called_status, distinct=True),
             scheduled=Count("id", filter=open_followup, distinct=True),
         )
         section = request.query_params.get("section", "fresh")
         fresh_subfilter = request.query_params.get("subfilter", "untouched")
         fresh_filters = {
-            "untouched": Q(status=Lead.Status.FRESH),
+            "untouched": untouched_filter,
             "called": called_status,
             "scheduled": open_followup,
         }
@@ -378,7 +379,8 @@ class LeadViewSet(viewsets.ModelViewSet):
             "pending": pending_status,
             "qualified": Q(status=Lead.Status.QUALIFIED),
             "test_drive_completed": Q(test_drive_completed_at__isnull=False),
-            "walkin": Q(sales_outcome=Lead.SalesOutcome.BOOKED),
+            "booked": Q(sales_outcome=Lead.SalesOutcome.BOOKED),
+            "walkin": choice_q("source", Lead.Source.WALKIN),
             "won": Q(status=Lead.Status.WON),
             "lost": Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]),
             "won_lost": Q(status__in=[Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED]),
@@ -433,7 +435,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Call Me Back requires a connected call."}, status=status.HTTP_400_BAD_REQUEST)
         if call_outcome == "PENDING" and not data.get("follow_up_at"):
             return Response({"detail": "Pending calls require a follow-up time."}, status=status.HTTP_400_BAD_REQUEST)
-        follow_up_statuses = {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.WALKIN, Lead.Status.BOOKED}
+        follow_up_statuses = {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.BOOKED}
         if not sales_call and call_outcome in CALL_OUTCOME_STATUS_OPTIONS and next_status not in follow_up_statuses and data.get("follow_up_at"):
             return Response({"detail": "This outcome cannot have a follow-up time."}, status=status.HTTP_400_BAD_REQUEST)
         if not sales_call and call_outcome and call_outcome not in CALL_OUTCOME_STATUS_OPTIONS and call_outcome != "PENDING" and data.get("follow_up_at"):
@@ -441,7 +443,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         if data.get("follow_up_at") and next_status == Lead.Status.FRESH:
             next_status = Lead.Status.CALLBACK
         if data.get("follow_up_at") and next_status not in follow_up_statuses:
-            return Response({"detail": "Only callbacks, walk-ins, and bookings can have an appointment."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Choose an active follow-up status to schedule an appointment."}, status=status.HTTP_400_BAD_REQUEST)
         if request.user.role == User.Role.CRE and lead.status == Lead.Status.QUALIFIED and next_status == Lead.Status.QUALIFIED and (call_outcome == "QUALIFIED" or data.get("qualification")):
             return Response({"detail": "This lead is already qualified."}, status=status.HTTP_400_BAD_REQUEST)
         if not sales_call and any(field in data for field in ("status", "sales_outcome", "call_outcome", "call_status", "remarks", "follow_up_at")):

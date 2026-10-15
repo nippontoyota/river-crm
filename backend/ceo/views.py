@@ -114,7 +114,7 @@ class CEOOptionsView(CEOView):
             "employees": [{"id": u.id, "name": u.history_display_name, "role": u.role, "branch": u.location.strip().casefold(), "lifecycle": u.lifecycle_status} for u in users],
             "roles": [{"value": value, "label": label} for value, label in User.Role.choices if value in ROLES],
             "rtos": [{"value": code, "label": f"{code.replace('-', '')} - {name}"} for code, name in KERALA_RTO_CHOICES],
-            "statuses": [{"value": value, "label": label} for value, label in Lead.Status.choices],
+            "statuses": [{"value": value, "label": label} for value, label in Lead.Status.choices if value != Lead.Status.WALKIN],
             "activities": unique_choices(lists.get("activities", [])), "sub_activities": {parent: activity_children(lists, parent) for parent in unique_choices(lists.get("activities", []))}, **options})
 
 

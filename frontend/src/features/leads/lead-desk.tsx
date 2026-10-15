@@ -1,4 +1,5 @@
 "use client";
+import { useCrmRefresh } from "@/lib/use-crm-refresh";
 
 import { FeedbackRequestForm } from "@/features/feedback/feedback-requests";
 
@@ -58,12 +59,12 @@ function followUpOptions() {
 const nextOutcomes: Record<string, { label: string; value: string }[]> = {
   Fresh: [{ label: "No response", value: "RNR" }, { label: "Schedule callback", value: "CALLBACK" }, { label: "Interested / Qualified", value: "QUALIFIED" }, { label: "Not interested", value: "UNQUALIFIED" }],
   RNR: [{ label: "Schedule callback", value: "CALLBACK" }, { label: "Interested / Qualified", value: "QUALIFIED" }, { label: "Not interested", value: "UNQUALIFIED" }],
-  Callback: [{ label: "No response", value: "RNR" }, { label: "Interested / Qualified", value: "QUALIFIED" }, { label: "Book walk-in", value: "WALKIN" }, { label: "Not interested", value: "UNQUALIFIED" }],
-  Qualified: [{ label: "Book walk-in", value: "WALKIN" }, { label: "Won (Sold)", value: "WON" }, { label: "Lost", value: "LOST" }],
-  "Walk-in": [{ label: "Won (Sold)", value: "WON" }, { label: "Lost", value: "LOST" }],
+  Callback: [{ label: "No response", value: "RNR" }, { label: "Interested / Qualified", value: "QUALIFIED" }, { label: "Booking Done", value: "BOOKED" }, { label: "Not interested", value: "UNQUALIFIED" }],
+  Qualified: [{ label: "Booking Done", value: "BOOKED" }, { label: "Won (Sold)", value: "WON" }, { label: "Lost", value: "LOST" }],
+  Booked: [{ label: "Won (Sold)", value: "WON" }, { label: "Lost", value: "LOST" }],
 };
 
-const leadStatuses = [["FRESH", "Fresh"], ["RNR", "RNR"], ["SWITCHED_OFF", "Switch off"], ["CALLBACK", "Callback"], ["PENDING", "Pending"], ["QUALIFIED", "Qualified"], ["WALKIN", "Walk-in"], ["BOOKED", "Booked"], ["WON", "Won"], ["LOST", "Lost"], ["UNQUALIFIED", "Unqualified"]];
+const leadStatuses = [["FRESH", "Fresh"], ["RNR", "RNR"], ["SWITCHED_OFF", "Switch off"], ["CALLBACK", "Callback"], ["PENDING", "Pending"], ["QUALIFIED", "Qualified"], ["BOOKED", "Booked"], ["WON", "Won"], ["LOST", "Lost"], ["UNQUALIFIED", "Unqualified"]];
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const emptyLead = (): LeadInput => ({ name: "", phone: "", email: "", source: "", source_label: "", model_interest: "", city: "", rto: "", enquiry_date: formatDate(new Date()) });
 const optionsWithCurrent = (options: string[], current = "") => {
@@ -193,13 +194,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
   }, [effectiveActiveFilters, followUpsOnly, isAdminAllLeads, leadView, officerMode, page, reassignmentRole, searchFilter]);
 
   useEffect(() => { const timer = window.setTimeout(() => void refresh(), 0); return () => window.clearTimeout(timer); }, [refresh]);
-  useEffect(() => {
-    if (officerMode) return;
-    const poll = () => { if (document.visibilityState === "visible") void refresh(); };
-    const timer = window.setInterval(poll, 30_000);
-    document.addEventListener("visibilitychange", poll);
-    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", poll); };
-  }, [officerMode, refresh]);
+  useCrmRefresh(() => { supportLoaded.current = false; return refresh(); });
   useEffect(() => {
     void getSystemConfig().then(config => {
       setModels(config.lists?.models || []);
@@ -227,7 +222,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
   }, [officerMode]);
 
   const visible = useMemo(() => leads.filter(lead => `${lead.name} ${lead.phone}`.toLowerCase().includes(query.toLowerCase())), [leads, query]);
-  const needsAppointment = ["CALLBACK", "WALKIN", "PENDING"].includes(outcome);
+  const needsAppointment = ["CALLBACK", "BOOKED", "PENDING"].includes(outcome);
   const selectedBucketOfficers = useMemo(() => bucketOfficerIds.map(id => creUsers.find(officer => officer.id === id)).filter(Boolean) as Officer[], [bucketOfficerIds, creUsers]);
   const reassignmentUsers = reassignmentRole === "CRE" ? creUsers : psUsers;
   const bucketName = useMemo(() => {
@@ -499,8 +494,8 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
       {isAdminAllLeads && <article className="sales-metric orange"><span>NOT ASSIGNED TO CE</span><strong>{unassignedCeCount ?? "…"}</strong><small>Across every lead status</small></article>}
       <article className="sales-metric mint">
         <span>BOOKED</span>
-        <strong>{analytics.summary.walkins || 0}</strong>
-        <small>Appointments scheduled</small>
+        <strong>{analytics.summary.booked || 0}</strong>
+        <small>Currently booked leads</small>
       </article>
       <article className="sales-metric green">
         <span>RETAILED</span>
@@ -627,6 +622,6 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
       </div>
       <footer className="sales-detail-footer"><button className="filter" onClick={() => { setActiveLead(null); setLeadDetail(null); }}>Close</button></footer>
     </section></div>}
-    {activeLead && officerMode && <div className="modal-layer" role="presentation"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="call-title-so"><button className="modal-close" onClick={() => setActiveLead(null)} aria-label="Close">×</button><p className="eyebrow">CALL LOG</p><h2 id="call-title-so">Update {activeLead.name}</h2><div className="lead-summary"><b>#{activeLead.id} · {activeLead.model}</b><span>{activeLead.source} lead</span><small>{activeLead.phone} · {activeLead.city || "—"}</small></div>{nextOutcomes[activeLead.status]?.length ? <><div className="form-grid"><label>Next outcome<select value={outcome} onChange={event => { setOutcome(event.target.value); if (!["CALLBACK", "WALKIN"].includes(event.target.value)) setFollowUpAt(""); }}>{nextOutcomes[activeLead.status].map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{needsAppointment && <label>{outcome === "WALKIN" ? "Walk-in appointment" : "Follow-up time"}<select required value={followUpAt} onChange={event => setFollowUpAt(event.target.value)}><option value="">Select time</option>{followUpOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select></label>}</div><label>Remarks<textarea maxLength={500} value={remarks} onChange={event => setRemarks(event.target.value)} placeholder="Add a clear note from the conversation" /></label><footer><button className="filter" onClick={() => setActiveLead(null)}>Cancel</button><button className="button primary" disabled={savingCall || (needsAppointment && !followUpAt) || !outcome} onClick={() => void saveCall()}>{savingCall ? "Saving…" : "Save call log"}</button></footer></> : <p className="subtext">This lead is closed. Reopen it before recording another outcome.</p>}</section></div>}
+    {activeLead && officerMode && <div className="modal-layer" role="presentation"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="call-title-so"><button className="modal-close" onClick={() => setActiveLead(null)} aria-label="Close">×</button><p className="eyebrow">CALL LOG</p><h2 id="call-title-so">Update {activeLead.name}</h2><div className="lead-summary"><b>#{activeLead.id} · {activeLead.model}</b><span>{activeLead.source} lead</span><small>{activeLead.phone} · {activeLead.city || "—"}</small></div>{nextOutcomes[activeLead.status]?.length ? <><div className="form-grid"><label>Next outcome<select value={outcome} onChange={event => { setOutcome(event.target.value); if (!["CALLBACK", "BOOKED"].includes(event.target.value)) setFollowUpAt(""); }}>{nextOutcomes[activeLead.status].map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{needsAppointment && <label>{"Follow-up time"}<select required value={followUpAt} onChange={event => setFollowUpAt(event.target.value)}><option value="">Select time</option>{followUpOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select></label>}</div><label>Remarks<textarea maxLength={500} value={remarks} onChange={event => setRemarks(event.target.value)} placeholder="Add a clear note from the conversation" /></label><footer><button className="filter" onClick={() => setActiveLead(null)}>Cancel</button><button className="button primary" disabled={savingCall || (needsAppointment && !followUpAt) || !outcome} onClick={() => void saveCall()}>{savingCall ? "Saving…" : "Save call log"}</button></footer></> : <p className="subtext">This lead is closed. Reopen it before recording another outcome.</p>}</section></div>}
   </section>;
 }

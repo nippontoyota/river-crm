@@ -1,6 +1,18 @@
-from django.db.models import Count, Exists, OuterRef, Q, Subquery
+from django.db.models import Count, Exists, F, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
 
-from .models import CallLog, Lead
+from .models import CallLog, FollowUp, Lead, LeadAudit
+
+
+def actionable_followups():
+    """Outstanding outbound work for a lead's current, active owner."""
+    return FollowUp.objects.filter(
+        resolved_at__isnull=True, origin="OUTBOUND", reminder_held=False,
+        lead__deleted_at__isnull=True, so__is_active=True, so__deleted_at__isnull=True,
+    ).exclude(lead__status__in=[Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED]).filter(
+        Q(so__role="SO", so_id=F("lead__assigned_ps_id"))
+        | Q(so__role="CRE", so_id=F("lead__assigned_so_id"))
+    )
 
 
 def etbr_aggregates():
@@ -15,14 +27,38 @@ def etbr_aggregates():
 
 PS_HANDLING_FILTERS = {
     "passed": Q(assigned_ps__isnull=False),
-    "untouched": Q(assigned_ps__isnull=False, _ps_called=False),
+    "untouched": Q(assigned_ps__isnull=False, _ps_touched=False),
+}
+CE_HANDLING_FILTERS = {
+    "passed": Q(assigned_so__isnull=False),
+    "untouched": Q(assigned_so__isnull=False, _ce_touched=False),
 }
 
 
+def with_owner_handling(queryset, owner_field, prefix):
+    """Only the current owner's activity since their latest allocation counts."""
+    allocation = LeadAudit.objects.filter(
+        lead_id=OuterRef("pk"), after__has_key=owner_field,
+        event__in=["assigned_ps", "assigned_cre", "bucket_assigned_cre", "auto_assigned_cre", "reassignment_completed", "offboarding_reassigned"],
+    ).order_by("-created_at", "-pk")
+    allocated_at = f"_{prefix}_allocated_at"
+    queryset = queryset.annotate(**{allocated_at: Coalesce(Subquery(allocation.values("created_at")[:1]), F("created_at"))})
+    calls = CallLog.objects.filter(
+        lead_id=OuterRef("pk"), so_id=OuterRef(owner_field + "_id"), created_at__gte=OuterRef(allocated_at),
+    )
+    actions = LeadAudit.objects.filter(
+        lead_id=OuterRef("pk"), actor_id=OuterRef(owner_field + "_id"), created_at__gte=OuterRef(allocated_at),
+        event__in=["created", "so_updated", "status_changed", "test_drive_completed", "qualification_updated", "details_updated"],
+    )
+    return queryset.annotate(**{f"_{prefix}_called": Exists(calls), f"_{prefix}_touched": Exists(calls) | Exists(actions)})
+
+
 def with_ps_handling(queryset):
-    return queryset.annotate(_ps_called=Exists(
-        CallLog.objects.filter(lead_id=OuterRef("pk"), so_id=OuterRef("assigned_ps_id"))
-    ))
+    return with_owner_handling(queryset, "assigned_ps", "ps")
+
+
+def with_ce_handling(queryset):
+    return with_owner_handling(queryset, "assigned_so", "ce")
 
 
 def ps_handling_counts():

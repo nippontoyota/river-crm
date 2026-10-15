@@ -182,8 +182,12 @@ class LeadAccessTests(TestCase):
         self.assertEqual(lead.qualification.variant, "Blue")
         self.assertEqual(LeadAudit.objects.get(lead=lead, event="created").actor, self.ps_so)
         dashboard = self.client.get("/api/leads/my-dashboard/?section=fresh")
-        self.assertEqual(dashboard.data["summary"]["fresh"], 1)
-        self.assertEqual(dashboard.data["results"][0]["id"], lead.id)
+        self.assertEqual(dashboard.data["summary"]["fresh"], 0)
+        self.assertEqual(dashboard.data["results"], [])
+        # Recording a customer personally is already a PS action; the lead
+        # remains in All leads rather than the untouched assignment queue.
+        all_leads = self.client.get("/api/leads/my-dashboard/?section=all")
+        self.assertEqual(all_leads.data["results"][0]["id"], lead.id)
         self.client.force_authenticate(self.admin)
         self.assertEqual(self.client.get("/api/leads/?unassigned=true").data["count"], 0)
         self.assertEqual(self.client.get(f"/api/leads/{lead.id}/").data["generated_by"], self.ps_so.id)
@@ -511,6 +515,8 @@ class LeadAccessTests(TestCase):
         called = Lead.objects.create(name="Called", phone="7305198422", assigned_so=self.first_so, status=Lead.Status.RNR)
         scheduled = Lead.objects.create(name="Scheduled", phone="7305198423", assigned_so=self.first_so, status=Lead.Status.PENDING)
         qualified = Lead.objects.create(name="Qualified", phone="7305198424", assigned_so=self.first_so, status=Lead.Status.QUALIFIED)
+        for lead in (called, scheduled, qualified):
+            CallLog.objects.create(lead=lead, so=self.first_so, status=lead.status)
         FollowUp.objects.create(lead=scheduled, so=self.first_so, scheduled_for=timezone.now() + timedelta(days=1))
         self.client.force_authenticate(self.first_so)
 
@@ -656,15 +662,16 @@ class LeadAccessTests(TestCase):
         missed = self.client.get("/api/leads/my-dashboard/?section=missed")
 
         self.assertEqual(response.data["summary"]["followups"], 2)
-        self.assertEqual(response.data["summary"]["missed"], 1)
+        # Overdue is based on the scheduled time, as in manager/CEO analytics.
+        self.assertEqual(response.data["summary"]["missed"], 2)
         self.assertEqual({lead["id"] for lead in response.data["results"]}, {yesterday.id, today.id})
-        self.assertEqual({lead["id"] for lead in missed.data["results"]}, {yesterday.id})
+        self.assertEqual({lead["id"] for lead in missed.data["results"]}, {yesterday.id, today.id})
 
     def test_ps_dashboard_filters_all_fresh_booked_retailed_and_lost(self):
         fresh = Lead.objects.create(name="Fresh PS", phone="7305198434", assigned_ps=self.ps_so, status=Lead.Status.QUALIFIED)
         called = Lead.objects.create(name="Called PS", phone="7305198438", assigned_ps=self.ps_so, status=Lead.Status.QUALIFIED)
         booked = Lead.objects.create(name="Booked PS", phone="7305198435", assigned_ps=self.ps_so, status=Lead.Status.BOOKED, sales_outcome=Lead.SalesOutcome.BOOKED)
-        walkin = Lead.objects.create(name="Walk-in PS", phone="7305198439", assigned_ps=self.ps_so, status=Lead.Status.WALKIN)
+        walkin = Lead.objects.create(name="Walk-in PS", phone="7305198439", assigned_ps=self.ps_so, source=Lead.Source.WALKIN, status=Lead.Status.QUALIFIED)
         retailed = Lead.objects.create(name="Retailed PS", phone="7305198436", assigned_ps=self.ps_so, status=Lead.Status.WON)
         lost = Lead.objects.create(name="Lost PS", phone="7305198437", assigned_ps=self.ps_so, status=Lead.Status.LOST)
         CallLog.objects.create(lead=called, so=self.ps_so, status=Lead.Status.QUALIFIED)
@@ -672,8 +679,9 @@ class LeadAccessTests(TestCase):
 
         sections = {
             "all": {fresh.id, called.id, booked.id, walkin.id, retailed.id, lost.id},
-            "fresh": {fresh.id},
-            "walkin": {booked.id},
+            "fresh": {fresh.id, walkin.id},
+            "booked": {booked.id},
+            "walkin": {walkin.id},
             "won": {retailed.id},
             "lost": {lost.id},
         }
@@ -991,7 +999,7 @@ class LeadAccessTests(TestCase):
         detail = self.client.get(f"/api/leads/{self.first_lead.id}/")
         dashboard = self.client.get("/api/leads/my-dashboard/?section=qualified")
         update = self.client.patch(f"/api/leads/{self.first_lead.id}/so-update/", {"category": Lead.Category.COLD}, format="json")
-        log_call = self.client.post(f"/api/leads/{self.first_lead.id}/log-call/", {"status": Lead.Status.WALKIN, "follow_up_at": (timezone.now() + timedelta(days=1)).isoformat()}, format="json")
+        log_call = self.client.post(f"/api/leads/{self.first_lead.id}/log-call/", {"status": Lead.Status.BOOKED, "follow_up_at": (timezone.now() + timedelta(days=1)).isoformat()}, format="json")
 
         self.assertEqual(detail.status_code, 200)
         self.assertIn(self.first_lead.id, [lead["id"] for lead in dashboard.data["results"]])

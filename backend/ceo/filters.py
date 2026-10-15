@@ -61,7 +61,7 @@ class ReportFilters:
             raise ValidationError({"age": "Choose a valid lead age band."})
         if params.get("metric") and params["metric"] not in {"E", "T", "B", "R"}:
             raise ValidationError({"metric": "Choose E, T, B or R."})
-        if params.get("followup") and params["followup"] not in {"overdue", "due", "missing", "unassigned", "reassignment", "untouched", "flagged", "incomplete"}:
+        if params.get("followup") and params["followup"] not in {"overdue", "due", "missing", "unassigned", "reassignment", "untouched", "untouched_ce", "untouched_ps", "flagged", "incomplete"}:
             raise ValidationError({"followup": "Choose a valid workload filter."})
         if params.get("ps_handling") and params["ps_handling"] not in {"passed", "untouched"}:
             raise ValidationError({"ps_handling": "Choose passed to PS or untouched by PS."})
@@ -137,10 +137,14 @@ class ReportFilters:
         return self.workload(queryset).distinct()
 
     def workload(self, queryset):
-        from leads.models import FollowUp
+        from leads.metrics import CE_HANDLING_FILTERS, PS_HANDLING_FILTERS, actionable_followups, with_ce_handling, with_ps_handling
+        if self.params.get("followup") == "untouched_ce":
+            return with_ce_handling(queryset).filter(CE_HANDLING_FILTERS["untouched"])
+        if self.params.get("followup") == "untouched_ps":
+            return with_ps_handling(queryset).filter(PS_HANDLING_FILTERS["untouched"])
         today = timezone.localdate()
         active = ~Q(status__in=["WON", "LOST", "UNQUALIFIED"])
-        open_followups = FollowUp.objects.filter(resolved_at__isnull=True)
+        open_followups = actionable_followups()
         if self.params.get("age"):
             low, high = AGE_BANDS[self.params["age"]]
             queryset = queryset.filter(active, enquiry_date__lte=today - timedelta(days=low))

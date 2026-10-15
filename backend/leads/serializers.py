@@ -114,6 +114,8 @@ class LeadSerializer(serializers.ModelSerializer):
     qualification_input = QualificationSerializer(required=False, write_only=True)
 
     def validate(self, attrs):
+        if attrs.get("status") == Lead.Status.WALKIN:
+            raise serializers.ValidationError({"status": "Walk-in is a lead source. Choose it in Source; record Booking Done only after a booking."})
         if (not self.instance or "rto" in attrs) and not attrs.get("rto"):
             raise serializers.ValidationError({"rto": "Choose an RTO."})
         if self.instance and any(field in attrs and attrs[field] != getattr(self.instance, field) for field in ("status", "sales_outcome")):
@@ -340,7 +342,7 @@ class CallLogSerializer(serializers.ModelSerializer):
 
 
 class LeadUpdateSerializer(serializers.Serializer):
-    status = serializers.ChoiceField(choices=Lead.Status.choices)
+    status = serializers.ChoiceField(choices=[choice for choice in Lead.Status.choices if choice[0] != Lead.Status.WALKIN])
     remarks = serializers.CharField(max_length=500, required=False, allow_blank=True)
     call_status = serializers.CharField(max_length=20, required=False, allow_blank=True)
     call_outcome = serializers.CharField(max_length=50, required=False, allow_blank=True)
@@ -348,10 +350,10 @@ class LeadUpdateSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         follow_up_at = attrs.get("follow_up_at")
-        if attrs["status"] in [Lead.Status.CALLBACK, Lead.Status.WALKIN, Lead.Status.BOOKED] and not follow_up_at:
+        if attrs["status"] in [Lead.Status.CALLBACK, Lead.Status.BOOKED] and not follow_up_at:
             raise serializers.ValidationError({"follow_up_at": "This status requires a follow-up time."})
-        if attrs["status"] not in [Lead.Status.CALLBACK, Lead.Status.WALKIN, Lead.Status.BOOKED] and follow_up_at:
-            raise serializers.ValidationError({"follow_up_at": "Only callbacks, walk-ins, and bookings can have an appointment."})
+        if attrs["status"] not in [Lead.Status.CALLBACK, Lead.Status.BOOKED] and follow_up_at:
+            raise serializers.ValidationError({"follow_up_at": "Choose an active follow-up status to schedule an appointment."})
         if follow_up_at and follow_up_at <= timezone.now():
             raise serializers.ValidationError({"follow_up_at": "Choose a future appointment time."})
         return attrs
@@ -370,7 +372,7 @@ class SOLeadUpdateSerializer(serializers.Serializer):
     model_interest = serializers.CharField(max_length=100, required=False, allow_blank=True)
     city = serializers.CharField(max_length=100, required=False, allow_blank=True)
     pincode = serializers.CharField(max_length=6, required=False, allow_blank=True, validators=Lead._meta.get_field("pincode").validators)
-    status = serializers.ChoiceField(choices=Lead.Status.choices, required=False, allow_blank=True)
+    status = serializers.ChoiceField(choices=[choice for choice in Lead.Status.choices if choice[0] != Lead.Status.WALKIN], required=False, allow_blank=True)
     category = serializers.ChoiceField(choices=Lead.Category.choices, required=False)
     sales_outcome = serializers.ChoiceField(choices=Lead.SalesOutcome.choices, required=False)
     branch = serializers.CharField(max_length=120, required=False, allow_blank=True)
@@ -418,13 +420,13 @@ class SOLeadUpdateSerializer(serializers.Serializer):
             from datetime import timedelta
             if follow_up_at > timezone.now() + timedelta(days=3):
                 raise serializers.ValidationError({"follow_up_at": "Follow-up cannot be scheduled more than 3 days in advance."})
-        follow_up_statuses = [Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.WALKIN, Lead.Status.BOOKED]
-        if next_status in [Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.WALKIN, Lead.Status.BOOKED] and not follow_up_at:
+        follow_up_statuses = [Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.BOOKED]
+        if next_status in [Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.BOOKED] and not follow_up_at:
             lead = self.context.get("lead")
             if not (self.context.get("call_center") and lead and lead.follow_ups.filter(resolved_at__isnull=True, scheduled_for__gt=timezone.now(), so__is_active=True, so__deleted_at__isnull=True, reminder_held=False).exists()):
                 raise serializers.ValidationError({"follow_up_at": "Schedule a callback before selecting this status." if self.context.get("call_center") else "This status requires a follow-up time."})
         if follow_up_at and next_status not in [None, Lead.Status.FRESH, *follow_up_statuses]:
-            raise serializers.ValidationError({"follow_up_at": "Only callbacks, walk-ins, and bookings can have an appointment."})
+            raise serializers.ValidationError({"follow_up_at": "Choose an active follow-up status to schedule an appointment."})
         return attrs
 
 
