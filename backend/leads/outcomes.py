@@ -49,7 +49,8 @@ def outcome_policy(lead, user):
                     continue
                 if label == "Need Test Drive" and lead.test_drive_completed_at:
                     continue
-                if label == "Already Booked" and is_booked(lead):
+                # Retain the legacy label for stored history; offer one booking action.
+                if label == "Already Booked":
                     continue
                 sales_outcome = {"BOOKED": "BOOKED", "WON": "RETAILED", "LOST": "LOST"}.get(state, "PENDING")
                 if is_booked(lead) and sales_outcome == "PENDING":
@@ -57,7 +58,7 @@ def outcome_policy(lead, user):
                 groups[call_status].append({
                     "label": label, "status": state, "sales_outcome": sales_outcome,
                     "tone": "lost" if state == "LOST" else "qualified",
-                    "requires_follow_up": state not in CLOSED_STATUSES and label != "Already Booked",
+                    "requires_follow_up": state not in CLOSED_STATUSES and label != "Booking Done",
                 })
     return {
         "can_update": can_update,

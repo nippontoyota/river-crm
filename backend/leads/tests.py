@@ -851,7 +851,7 @@ class LeadAccessTests(TestCase):
             ("Not Connected", "Call Forwarding", Lead.Status.PENDING, "Reception random PS remark 2: call forwarding."),
             ("Not Connected", "Line Busy", Lead.Status.PENDING, "Reception random PS remark 3: line busy."),
             ("Connected", "Need More Details", Lead.Status.PENDING, "Reception random PS remark 4: needs pricing detail."),
-            ("Connected", "Booking Done", Lead.Status.BOOKED, "Reception random PS remark 5: booking follow-up done."),
+            ("Connected", "Booking Done", Lead.Status.BOOKED, "Reception random PS remark 5: booking confirmed."),
         ]:
             response = self.client.patch(f"/api/leads/{lead_id}/so-update/", {
                 "call_status": call_status,
@@ -859,7 +859,7 @@ class LeadAccessTests(TestCase):
                 "status": status_value,
                 "sales_outcome": Lead.SalesOutcome.BOOKED if outcome == "Booking Done" else Lead.SalesOutcome.PENDING,
                 "remarks": remark,
-                "follow_up_at": follow_up_at.isoformat(),
+                "follow_up_at": None if outcome == "Booking Done" else follow_up_at.isoformat(),
             }, format="json")
             self.assertEqual(response.status_code, 200, response.data)
 
@@ -877,7 +877,7 @@ class LeadAccessTests(TestCase):
         self.assertEqual(lead.status, Lead.Status.WON)
         self.assertEqual(lead.sales_outcome, Lead.SalesOutcome.RETAILED)
         self.assertEqual(CallLog.objects.filter(lead=lead).count(), 6)
-        self.assertEqual(FollowUp.objects.filter(lead=lead).count(), 5)
+        self.assertEqual(FollowUp.objects.filter(lead=lead).count(), 4)
         self.assertFalse(FollowUp.objects.filter(lead=lead, resolved_at__isnull=True).exists())
 
     def test_direct_qualified_and_lost_outcomes_set_matching_statuses(self):

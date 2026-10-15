@@ -59,7 +59,7 @@ class DashboardConsistencyTests(TestCase):
     def test_booking_and_loss_refresh_warm_caches_for_all_roles(self):
         self.assert_booked(0)
         self.assert_booked(0)  # Warm caches before a PS writes.
-        for outcome, expected in (("Already Booked", 1), ("Not Interested", 0)):
+        for outcome, expected in (("Booking Done", 1), ("Not Interested", 0)):
             self.client.force_authenticate(self.ps)
             with self.captureOnCommitCallbacks(execute=True):
                 response = self.client.patch(f"/api/leads/{self.lead.pk}/so-update/", {

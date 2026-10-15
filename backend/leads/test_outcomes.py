@@ -53,7 +53,7 @@ class OutcomePolicyTests(TestCase):
                         lead = self.lead(state, completed)
                         policy = self.client.get(f"/api/leads/{lead.pk}/").data["outcome_policy"]
                         options = {item["label"]: item for item in policy["outcomes"][call_status]}
-                        allowed = state not in {"WON", "LOST", "UNQUALIFIED"} and outcome != "Need SO Call" and not (completed and outcome == "Need Test Drive") and not (state == "BOOKED" and outcome == "Already Booked")
+                        allowed = state not in {"WON", "LOST", "UNQUALIFIED"} and outcome not in {"Need SO Call", "Already Booked"} and not (completed and outcome == "Need Test Drive")
                         self.assertEqual(outcome in [item["label"] for item in policy["outcomes"][call_status]], allowed)
                         data = self.payload(call_status, outcome, options[outcome]["requires_follow_up"] if allowed else expected_status not in {"WON", "LOST"})
                         response = self.update(lead, data)
@@ -121,22 +121,26 @@ class OutcomePolicyTests(TestCase):
         self.assertFalse(lead.follow_ups.filter(resolved_at__isnull=True).exists())
         self.assertEqual(self.update(self.lead("BOOKED"), self.payload(outcome="Retail Done", follow_up=False)).status_code, 200)
 
-    def test_already_booked_is_a_booking_without_a_follow_up(self):
+    def test_booking_done_is_the_single_booking_action_without_a_follow_up(self):
         lead = self.lead()
+        existing = FollowUp.objects.create(lead=lead, so=self.so, scheduled_for=timezone.now() - timedelta(days=1))
         policy = self.client.get(f"/api/leads/{lead.pk}/").data["outcome_policy"]
-        option = next(item for item in policy["outcomes"]["Connected"] if item["label"] == "Already Booked")
+        self.assertNotIn("Already Booked", [item["label"] for item in policy["outcomes"]["Connected"]])
+        option = next(item for item in policy["outcomes"]["Connected"] if item["label"] == "Booking Done")
         self.assertEqual(option, {
-            "label": "Already Booked", "status": "BOOKED", "sales_outcome": "BOOKED",
+            "label": "Booking Done", "status": "BOOKED", "sales_outcome": "BOOKED",
             "tone": "qualified", "requires_follow_up": False,
         })
 
-        response = self.update(lead, self.payload(outcome="Already Booked", follow_up=False))
+        response = self.update(lead, self.payload(outcome="Booking Done", follow_up=False))
 
         self.assertEqual(response.status_code, 200, response.data)
         lead.refresh_from_db()
         self.assertEqual((lead.status, lead.sales_outcome), (Lead.Status.BOOKED, Lead.SalesOutcome.BOOKED))
         self.assertEqual(lead.call_logs.get().status, Lead.Status.BOOKED)
-        self.assertFalse(lead.follow_ups.exists())
+        existing.refresh_from_db()
+        self.assertIsNotNone(existing.resolved_at)
+        self.assertEqual(lead.follow_ups.count(), 1)
         self.assertEqual(Lead.objects.filter(pk=lead.pk).aggregate(**etbr_aggregates())["etbr_booked"], 1)
 
     def test_walkin_status_does_not_hide_booking_done(self):
@@ -147,7 +151,7 @@ class OutcomePolicyTests(TestCase):
         labels = [item["label"] for item in policy["outcomes"]["Connected"]]
         self.assertIn("Booking Done", labels)
 
-        response = self.update(lead, self.payload(outcome="Booking Done"))
+        response = self.update(lead, self.payload(outcome="Booking Done", follow_up=False))
 
         self.assertEqual(response.status_code, 200, response.data)
         lead.refresh_from_db()

@@ -105,7 +105,7 @@ class SalesManagerAnalyticsTests(TestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.data["call_history"][0]["remarks"], "Chose another model")
 
-    def test_already_booked_is_counted_as_booked_and_excluded_from_lost_analysis(self):
+    def test_booking_done_is_counted_as_booked_and_excluded_from_lost_analysis(self):
         lead = Lead.objects.create(
             name="Already booked customer", phone="9000000046", branch="Mount Road",
             enquiry_date=timezone.localdate(), assigned_so=self.cre, assigned_ps=self.ps,
@@ -113,7 +113,7 @@ class SalesManagerAnalyticsTests(TestCase):
         )
         self.client.force_authenticate(self.ps)
         saved = self.client.patch(f"/api/leads/{lead.pk}/so-update/", {
-            "call_status": "Connected", "call_outcome": "Already Booked", "remarks": "Booked at this dealership.",
+            "call_status": "Connected", "call_outcome": "Booking Done", "remarks": "Booked at this dealership.",
         }, format="json")
         self.assertEqual(saved.status_code, 200, saved.data)
 
