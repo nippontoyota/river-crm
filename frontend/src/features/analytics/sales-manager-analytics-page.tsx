@@ -175,7 +175,7 @@ export function SalesManagerAnalyticsPage() {
   const models = data?.filters?.models || data?.models.map(row => row.model).filter(modelName => modelName !== "Model not set") || [];
   const psOptions = data?.filters?.ps || data?.ps || [];
   const exportSection = (section: string) => { setError(""); void exportSalesManagerAnalytics(section, params).catch(err => setError(err instanceof Error ? err.message : "Export failed.")); };
-  return <section className="page manager-page">
+  return <section className="page manager-page manager-analytics-page">
     <div className="sales-hero manager-hero"><div><p className="eyebrow">SALES MANAGER</p><h1>Branch analytics <span>{data?.branch || ""}</span></h1><p className="subtext">Branch lead intake, PS/SO performance and conversion, and sales follow-ups.</p></div><div className="sales-hero-actions"><select className="filter" value={range} onChange={event => setRange(event.target.value)}><option value="mtd">MTD vs previous MTD</option><option value="today">Today</option><option value="custom">Date range</option><option value="all">All time</option></select>{range === "custom" && <><DateInput className="date-input-filter" value={dateFrom} max={historicalFromMax} onChange={setDateFrom} ariaLabel="Analytics start date, DD/MM/YYYY" /><DateInput className="date-input-filter" value={dateTo} min={dateFrom || undefined} max={today} onChange={setDateTo} ariaLabel="Analytics end date, DD/MM/YYYY" /></>}<button className="filter" onClick={() => void load(true)} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button></div></div>
     {error && <div className="empty-state">{error}</div>}
     {loading && !data ? <div className="panel sales-analytics-loading">Loading branch analytics...</div> : data && <>

@@ -443,8 +443,32 @@
   max-width: 1680px !important;
 }
 
+.sales-shell .manager-analytics-page {
+  padding: 24px 30px;
+}
+
 .manager-hero {
   align-items: flex-start;
+}
+
+.sales-shell .manager-analytics-page .sales-hero {
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.sales-shell .manager-analytics-page .sales-hero .eyebrow {
+  margin-bottom: 4px;
+  font-size: 10px;
+}
+
+.sales-shell .manager-analytics-page .sales-hero h1 {
+  font-size: clamp(26px, 2.4vw, 32px);
+  line-height: 1.12;
+}
+
+.sales-shell .manager-analytics-page .sales-hero .subtext {
+  margin-top: 5px;
+  font-size: 13px;
 }
 
 .manager-hero h1 span {
@@ -452,30 +476,41 @@
   color: #a73f16;
 }
 
+.manager-analytics-page .manager-hero h1 span {
+  display: inline;
+}
+
+.manager-analytics-page .sales-hero-actions .filter {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 11px;
+}
+
 .manager-filter-bar {
   display: grid;
   grid-template-columns: repeat(3, minmax(160px, 1fr));
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 10px;
+  padding: 13px 16px;
   border-radius: 8px;
 }
 
 .manager-filter-bar label {
   display: grid;
-  gap: 7px;
+  gap: 5px;
   color: #33413e;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
 .manager-filter-bar select,
 .manager-filter-bar input {
-  min-height: 40px;
+  min-height: 34px;
   border: 1px solid var(--sales-outline);
   border-radius: 6px;
   background: #fff;
-  padding: 9px 11px;
-  font-size: 13px;
+  padding: 7px 10px;
+  font-size: 12px;
 }
 
 .manager-period-note {
@@ -487,38 +522,38 @@
 }
 
 .manager-period-note {
-  margin: 0 0 16px;
+  margin: 0 0 8px;
   color: var(--sales-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .manager-kpi-heading {
-  margin: 18px 0 12px;
+  margin: 10px 0 7px;
 }
 
 .manager-kpi-heading h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .manager-kpi-heading p {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   color: var(--sales-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .manager-page .manager-kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .sales-shell .manager-page .manager-kpi-grid .sales-metric {
   min-width: 0;
-  height: 144px;
-  min-height: 144px !important;
-  padding: 18px 20px !important;
+  height: auto;
+  min-height: 104px !important;
+  padding: 12px 16px !important;
   border: 1px solid #d9e5df !important;
   border-top: 3px solid var(--manager-card-accent, #187462) !important;
   border-radius: 10px !important;
@@ -542,24 +577,24 @@
 .sales-shell .manager-page .manager-kpi-grid .sales-metric.lost { --manager-card-accent: #b25642; }
 
 .sales-shell .manager-page .manager-kpi-grid .sales-metric span {
-  min-height: 2.5em;
+  min-height: 1.25em;
   color: #52665f !important;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.25;
 }
 
 .sales-shell .manager-page .manager-kpi-grid .sales-metric strong {
-  margin-top: 6px;
+  margin-top: 5px;
   color: #192a25 !important;
-  font-size: clamp(30px, 2.5vw, 38px);
+  font-size: clamp(26px, 2.1vw, 32px);
   line-height: 1;
 }
 
 .sales-shell .manager-page .manager-kpi-grid .sales-metric small {
   margin-top: auto;
-  padding-top: 10px;
+  padding-top: 5px;
   color: #687b73 !important;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .sales-shell .manager-page .manager-kpi-grid a.sales-metric:hover,
@@ -656,6 +691,20 @@
 
 .manager-table-card {
   border-radius: 8px !important;
+}
+
+.manager-analytics-page .manager-table-card,
+.manager-analytics-page .manager-lost-analysis {
+  padding: 16px 18px;
+}
+
+.manager-analytics-page .manager-card-head {
+  margin-bottom: 12px;
+}
+
+.manager-analytics-page .manager-table th,
+.manager-analytics-page .manager-table td {
+  padding-block: 10px;
 }
 
 .manager-table-scroll {
@@ -891,10 +940,6 @@
 }
 
 @media (max-width: 1250px) {
-  .manager-page .manager-kpi-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .manager-filter-bar,
   .manager-lead-filters {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -909,8 +954,13 @@
   }
 }
 
+@media (max-width: 1050px) {
+  .manager-page .manager-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 720px) {
-  .manager-page .manager-kpi-grid,
   .manager-filter-bar,
   .manager-lead-filters {
     grid-template-columns: 1fr;
@@ -951,6 +1001,13 @@
     padding-right: 32px;
   }
 }
+
+@media (max-width: 380px) {
+  .manager-page .manager-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .sales-hero-actions { flex-wrap: wrap; }
 .ownership-grid, .lookup-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .ownership-panel p { margin: 0 0 10px; }
