@@ -29,7 +29,7 @@ class OutcomePolicyTests(TestCase):
     def lead(self, state="QUALIFIED", completed=False):
         lead = Lead.objects.create(
             name="Outcome customer", phone="9876543210", assigned_ps=self.so, assigned_so=self.cre,
-            status=state, sales_outcome={"WALKIN": "BOOKED", "WON": "RETAILED", "LOST": "LOST"}.get(state, "PENDING"),
+            status=state, sales_outcome={"BOOKED": "BOOKED", "WON": "RETAILED", "LOST": "LOST"}.get(state, "PENDING"),
             test_drive_completed_at=timezone.now() if completed else None,
         )
 
@@ -46,24 +46,24 @@ class OutcomePolicyTests(TestCase):
         return method(f"/api/leads/{lead.pk}/{endpoint}/", data, format="json")
 
     def test_every_outcome_against_milestones_and_contact_status(self):
-        for state, completed in [("QUALIFIED", False), ("QUALIFIED", True), ("WALKIN", False), ("WALKIN", True), ("WON", True), ("LOST", True), ("UNQUALIFIED", False)]:
+        for state, completed in [("QUALIFIED", False), ("QUALIFIED", True), ("WALKIN", False), ("BOOKED", False), ("BOOKED", True), ("WON", True), ("LOST", True), ("UNQUALIFIED", False)]:
             for call_status, outcomes in (("Connected", CONNECTED), ("Not Connected", NOT_CONNECTED)):
                 for outcome, expected_status in outcomes.items():
                     with self.subTest(state=state, completed=completed, call_status=call_status, outcome=outcome):
                         lead = self.lead(state, completed)
                         policy = self.client.get(f"/api/leads/{lead.pk}/").data["outcome_policy"]
                         options = {item["label"]: item for item in policy["outcomes"][call_status]}
-                        allowed = state not in {"WON", "LOST", "UNQUALIFIED"} and outcome != "Need SO Call" and not (completed and outcome == "Need Test Drive") and not (state == "WALKIN" and outcome in {"Booking Done", "Already Booked"})
+                        allowed = state not in {"WON", "LOST", "UNQUALIFIED"} and outcome != "Need SO Call" and not (completed and outcome == "Need Test Drive") and not (state == "BOOKED" and outcome == "Already Booked")
                         self.assertEqual(outcome in [item["label"] for item in policy["outcomes"][call_status]], allowed)
                         data = self.payload(call_status, outcome, options[outcome]["requires_follow_up"] if allowed else expected_status not in {"WON", "LOST"})
                         response = self.update(lead, data)
                         self.assertEqual(response.status_code, 200 if allowed else 400, response.data)
                         lead.refresh_from_db()
                         if allowed:
-                            if state == "WALKIN" and expected_status not in {"WON", "LOST"}:
-                                expected_status = "WALKIN"
+                            if state == "BOOKED" and expected_status not in {"BOOKED", "WON", "LOST"}:
+                                expected_status = "BOOKED"
                             self.assertEqual(lead.status, expected_status)
-                            self.assertEqual(lead.sales_outcome, {"WALKIN": "BOOKED", "WON": "RETAILED", "LOST": "LOST"}.get(expected_status, "PENDING"))
+                            self.assertEqual(lead.sales_outcome, {"BOOKED": "BOOKED", "WON": "RETAILED", "LOST": "LOST"}.get(expected_status, "PENDING"))
                             self.assertEqual(lead.call_logs.get().call_status, call_status)
                         else:
                             self.assertEqual(lead.status, state)
@@ -88,7 +88,7 @@ class OutcomePolicyTests(TestCase):
                     self.assertEqual(lead.follow_ups.exists(), user == self.admin)
 
     def test_wrong_contact_pairings_and_missing_fields_are_atomic(self):
-        lead = self.lead("WALKIN", True)
+        lead = self.lead("BOOKED", True)
         existing = FollowUp.objects.create(lead=lead, so=self.so, scheduled_for=timezone.now() + timedelta(days=1))
         invalid = [
             self.payload("Not Connected", outcome, False) for outcome in CONNECTED
@@ -106,27 +106,27 @@ class OutcomePolicyTests(TestCase):
                 self.assertEqual(self.update(lead, data).status_code, 400)
         lead.refresh_from_db()
         existing.refresh_from_db()
-        self.assertEqual((lead.status, lead.sales_outcome), ("WALKIN", "BOOKED"))
+        self.assertEqual((lead.status, lead.sales_outcome), ("BOOKED", "BOOKED"))
         self.assertIsNone(existing.resolved_at)
         self.assertFalse(CallLog.objects.filter(lead=lead).exists())
         self.assertFalse(LeadAudit.objects.filter(lead=lead).exists())
 
     def test_booked_counts_survive_retries_and_loss_or_retail_are_explicit(self):
-        lead = self.lead("WALKIN", True)
+        lead = self.lead("BOOKED", True)
         for call_status, outcome in [("Connected", "Call Me Back"), ("Not Connected", "RNR"), ("Not Connected", "No Response")]:
             self.assertEqual(self.update(lead, self.payload(call_status, outcome)).status_code, 200)
             self.assertEqual(Lead.objects.filter(pk=lead.pk).aggregate(**etbr_aggregates())["etbr_booked"], 1)
             self.assertEqual(lead.follow_ups.filter(resolved_at__isnull=True).count(), 1)
         self.assertEqual(self.update(lead, self.payload(outcome="Not Interested", follow_up=False)).status_code, 200)
         self.assertFalse(lead.follow_ups.filter(resolved_at__isnull=True).exists())
-        self.assertEqual(self.update(self.lead("WALKIN"), self.payload(outcome="Retail Done", follow_up=False)).status_code, 200)
+        self.assertEqual(self.update(self.lead("BOOKED"), self.payload(outcome="Retail Done", follow_up=False)).status_code, 200)
 
     def test_already_booked_is_a_booking_without_a_follow_up(self):
         lead = self.lead()
         policy = self.client.get(f"/api/leads/{lead.pk}/").data["outcome_policy"]
         option = next(item for item in policy["outcomes"]["Connected"] if item["label"] == "Already Booked")
         self.assertEqual(option, {
-            "label": "Already Booked", "status": "WALKIN", "sales_outcome": "BOOKED",
+            "label": "Already Booked", "status": "BOOKED", "sales_outcome": "BOOKED",
             "tone": "qualified", "requires_follow_up": False,
         })
 
@@ -134,10 +134,24 @@ class OutcomePolicyTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         lead.refresh_from_db()
-        self.assertEqual((lead.status, lead.sales_outcome), (Lead.Status.WALKIN, Lead.SalesOutcome.BOOKED))
-        self.assertEqual(lead.call_logs.get().status, Lead.Status.WALKIN)
+        self.assertEqual((lead.status, lead.sales_outcome), (Lead.Status.BOOKED, Lead.SalesOutcome.BOOKED))
+        self.assertEqual(lead.call_logs.get().status, Lead.Status.BOOKED)
         self.assertFalse(lead.follow_ups.exists())
         self.assertEqual(Lead.objects.filter(pk=lead.pk).aggregate(**etbr_aggregates())["etbr_booked"], 1)
+
+    def test_walkin_status_does_not_hide_booking_done(self):
+        lead = self.lead()
+        Lead.objects.filter(pk=lead.pk).update(status=Lead.Status.WALKIN, sales_outcome=Lead.SalesOutcome.PENDING)
+        lead.refresh_from_db()
+        policy = self.client.get(f"/api/leads/{lead.pk}/").data["outcome_policy"]
+        labels = [item["label"] for item in policy["outcomes"]["Connected"]]
+        self.assertIn("Booking Done", labels)
+
+        response = self.update(lead, self.payload(outcome="Booking Done"))
+
+        self.assertEqual(response.status_code, 200, response.data)
+        lead.refresh_from_db()
+        self.assertEqual((lead.status, lead.sales_outcome), (Lead.Status.BOOKED, Lead.SalesOutcome.BOOKED))
 
     def test_already_booked_data_correction_preserves_later_losses(self):
         mistaken = self.lead("LOST")
@@ -155,20 +169,21 @@ class OutcomePolicyTests(TestCase):
             status=Lead.Status.LOST, remarks="Later cancelled.",
         )
 
-        migration = import_module("leads.migrations.0022_already_booked_is_booking")
-        migration.reclassify_already_booked(apps, SimpleNamespace(connection=SimpleNamespace(alias="default")))
+        schema_editor = SimpleNamespace(connection=SimpleNamespace(alias="default"))
+        import_module("leads.migrations.0022_already_booked_is_booking").reclassify_already_booked(apps, schema_editor)
+        import_module("leads.migrations.0023_separate_walkin_and_booked").separate_walkin_and_booked(apps, schema_editor)
 
         mistaken.refresh_from_db()
         later_lost.refresh_from_db()
         mistaken_call.refresh_from_db()
         older_call.refresh_from_db()
-        self.assertEqual((mistaken.status, mistaken.sales_outcome), (Lead.Status.WALKIN, Lead.SalesOutcome.BOOKED))
+        self.assertEqual((mistaken.status, mistaken.sales_outcome), (Lead.Status.BOOKED, Lead.SalesOutcome.BOOKED))
         self.assertEqual((later_lost.status, later_lost.sales_outcome), (Lead.Status.LOST, Lead.SalesOutcome.LOST))
-        self.assertEqual((mistaken_call.status, older_call.status), (Lead.Status.WALKIN, Lead.Status.WALKIN))
+        self.assertEqual((mistaken_call.status, older_call.status), (Lead.Status.BOOKED, Lead.Status.BOOKED))
         self.assertEqual(set(mistaken.milestones.values_list("kind", flat=True)), {"B"})
         self.assertEqual(set(later_lost.milestones.values_list("kind", flat=True)), {"B"})
         event = mistaken.operation_events.get(source_key=f"call:{mistaken_call.pk}")
-        self.assertEqual((event.after["status"], event.snapshot["status"]), ("WALKIN", "WALKIN"))
+        self.assertEqual((event.after["status"], event.snapshot["status"]), ("BOOKED", "BOOKED"))
 
     def test_completion_idempotency_closed_leads_and_stale_outcomes(self):
         lead = self.lead()

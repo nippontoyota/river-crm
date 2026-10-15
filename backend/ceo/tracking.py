@@ -40,7 +40,7 @@ def record_audit(audit):
         Milestone.objects.filter(lead=lead, kind="E").update(occurred_on=lead.enquiry_date)
 
     if audit.event in {"so_updated", "status_changed"}:
-        if (after.get("sales_outcome") == "BOOKED" and before.get("sales_outcome") != "BOOKED") or (after.get("status") == "WALKIN" and before.get("status") != "WALKIN"):
+        if (after.get("sales_outcome") == "BOOKED" and before.get("sales_outcome") != "BOOKED") or (after.get("status") == "BOOKED" and before.get("status") != "BOOKED"):
             milestone(lead, "B", audit.actor, audit.created_at)
         if (after.get("sales_outcome") == "RETAILED" and before.get("sales_outcome") != "RETAILED") or (after.get("status") == "WON" and before.get("status") != "WON"):
             milestone(lead, "R", audit.actor, audit.created_at)

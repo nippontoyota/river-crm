@@ -16,7 +16,8 @@ class Lead(models.Model):
         PENDING = "PENDING", "Pending"
         QUALIFIED = "QUALIFIED", "Qualified"
         UNQUALIFIED = "UNQUALIFIED", "Unqualified"
-        WALKIN = "WALKIN", "Walk-in Booked"
+        WALKIN = "WALKIN", "Walk-in"
+        BOOKED = "BOOKED", "Booked"
         WON = "WON", "Won"
         LOST = "LOST", "Lost"
 

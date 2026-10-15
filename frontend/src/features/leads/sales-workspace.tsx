@@ -46,12 +46,12 @@ const psAllSections: { key: Section; label: string; count: keyof SalesDashboard[
   { key: "won", label: "Retailed", count: "won", icon: "✓" },
   { key: "lost", label: "Lost", count: "lost", icon: "×" },
 ];
-const statusLabels: Record<string, string> = { FRESH: "Fresh", RNR: "RNR", SWITCHED_OFF: "Switch off", CALLBACK: "Callback", PENDING: "Pending", QUALIFIED: "Qualified", UNQUALIFIED: "Unqualified", WALKIN: "Walk-in", WON: "Won", LOST: "Lost" };
+const statusLabels: Record<string, string> = { FRESH: "Fresh", RNR: "RNR", SWITCHED_OFF: "Switch off", CALLBACK: "Callback", PENDING: "Pending", QUALIFIED: "Qualified", UNQUALIFIED: "Unqualified", WALKIN: "Walk-in", BOOKED: "Booked", WON: "Won", LOST: "Lost" };
 const outcomeLabels: Record<string, string> = { QUALIFIED: "Qualified", LOST: "Lost", PENDING: "Pending" };
 const psOutcomeLabels: Record<string, string> = { BOOKED: "Booked Follow-up", RETAILED: "Retailed", LOST: "Lost" };
 const allOutcomeLabels: Record<string, string> = { ...outcomeLabels, ...psOutcomeLabels };
 
-const statusOptions: Record<string, string[]> = { QUALIFIED: ["QUALIFIED"], LOST: ["LOST"], PENDING: ["PENDING"], BOOKED: ["WALKIN"], RETAILED: ["WON"] };
+const statusOptions: Record<string, string[]> = { QUALIFIED: ["QUALIFIED"], LOST: ["LOST"], PENDING: ["PENDING"], BOOKED: ["BOOKED"], RETAILED: ["WON"] };
 const autoNextDayFollowUpOutcomes = new Set(["RNR", "Switch Off", "Call Forwarding", "Line Busy", "No Response"]);
 const professionOptions = ["Salaried", "Business", "Self Employed", "Doctor", "Govt Employee"];
 const buyingPlanOptions = ["Immediate", "1–2 Months", "2–3 Months", "Greater than 3 months"];

@@ -63,7 +63,7 @@ const nextOutcomes: Record<string, { label: string; value: string }[]> = {
   "Walk-in": [{ label: "Won (Sold)", value: "WON" }, { label: "Lost", value: "LOST" }],
 };
 
-const leadStatuses = [["FRESH", "Fresh"], ["RNR", "RNR"], ["SWITCHED_OFF", "Switch off"], ["CALLBACK", "Callback"], ["PENDING", "Pending"], ["QUALIFIED", "Qualified"], ["WALKIN", "Walk-in"], ["WON", "Won"], ["LOST", "Lost"], ["UNQUALIFIED", "Unqualified"]];
+const leadStatuses = [["FRESH", "Fresh"], ["RNR", "RNR"], ["SWITCHED_OFF", "Switch off"], ["CALLBACK", "Callback"], ["PENDING", "Pending"], ["QUALIFIED", "Qualified"], ["WALKIN", "Walk-in"], ["BOOKED", "Booked"], ["WON", "Won"], ["LOST", "Lost"], ["UNQUALIFIED", "Unqualified"]];
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const emptyLead = (): LeadInput => ({ name: "", phone: "", email: "", source: "", source_label: "", model_interest: "", city: "", rto: "", enquiry_date: formatDate(new Date()) });
 const optionsWithCurrent = (options: string[], current = "") => {

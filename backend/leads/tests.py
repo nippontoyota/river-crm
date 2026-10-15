@@ -663,14 +663,15 @@ class LeadAccessTests(TestCase):
     def test_ps_dashboard_filters_all_fresh_booked_retailed_and_lost(self):
         fresh = Lead.objects.create(name="Fresh PS", phone="7305198434", assigned_ps=self.ps_so, status=Lead.Status.QUALIFIED)
         called = Lead.objects.create(name="Called PS", phone="7305198438", assigned_ps=self.ps_so, status=Lead.Status.QUALIFIED)
-        booked = Lead.objects.create(name="Booked PS", phone="7305198435", assigned_ps=self.ps_so, status=Lead.Status.WALKIN)
+        booked = Lead.objects.create(name="Booked PS", phone="7305198435", assigned_ps=self.ps_so, status=Lead.Status.BOOKED, sales_outcome=Lead.SalesOutcome.BOOKED)
+        walkin = Lead.objects.create(name="Walk-in PS", phone="7305198439", assigned_ps=self.ps_so, status=Lead.Status.WALKIN)
         retailed = Lead.objects.create(name="Retailed PS", phone="7305198436", assigned_ps=self.ps_so, status=Lead.Status.WON)
         lost = Lead.objects.create(name="Lost PS", phone="7305198437", assigned_ps=self.ps_so, status=Lead.Status.LOST)
         CallLog.objects.create(lead=called, so=self.ps_so, status=Lead.Status.QUALIFIED)
         self.client.force_authenticate(self.ps_so)
 
         sections = {
-            "all": {fresh.id, called.id, booked.id, retailed.id, lost.id},
+            "all": {fresh.id, called.id, booked.id, walkin.id, retailed.id, lost.id},
             "fresh": {fresh.id},
             "walkin": {booked.id},
             "won": {retailed.id},
@@ -842,7 +843,7 @@ class LeadAccessTests(TestCase):
             ("Not Connected", "Call Forwarding", Lead.Status.PENDING, "Reception random PS remark 2: call forwarding."),
             ("Not Connected", "Line Busy", Lead.Status.PENDING, "Reception random PS remark 3: line busy."),
             ("Connected", "Need More Details", Lead.Status.PENDING, "Reception random PS remark 4: needs pricing detail."),
-            ("Connected", "Booking Done", Lead.Status.WALKIN, "Reception random PS remark 5: booking follow-up done."),
+            ("Connected", "Booking Done", Lead.Status.BOOKED, "Reception random PS remark 5: booking follow-up done."),
         ]:
             response = self.client.patch(f"/api/leads/{lead_id}/so-update/", {
                 "call_status": call_status,

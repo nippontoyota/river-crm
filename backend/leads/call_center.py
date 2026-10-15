@@ -32,7 +32,7 @@ CALL_KINDS = {"NOTE", "CALLBACK", "COMPLAINT", "SERVICE", "COMPLAINT_NOTE", "SER
 
 
 def callback_destination(lead):
-    sales = bool(lead.assigned_ps_id or lead.needs_so_reassignment or lead.status in {"QUALIFIED", "WALKIN", "WON"})
+    sales = bool(lead.assigned_ps_id or lead.needs_so_reassignment or lead.status in {"QUALIFIED", "WALKIN", "BOOKED", "WON"})
     owner = lead.assigned_ps if sales else lead.assigned_so
     held = lead.needs_so_reassignment if sales else lead.needs_cre_reassignment
     role = "SO" if sales else "CRE"

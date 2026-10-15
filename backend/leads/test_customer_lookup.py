@@ -124,9 +124,13 @@ class CustomerLookupTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["ownership"]["assigned_ps"]["id"], self.ps.id)
         replacement = User.objects.create_user(email="replacement@example.com", role="SO", first_name="New PS", location="Central", phone="9000000003")
-        for lead_status in ["QUALIFIED", "WALKIN", "WON", "LOST"]:
-            Lead.objects.filter(pk=self.lead.pk).update(status=lead_status, test_drive_completed_at=timezone.now())
-            for section in ["all", "test_drive_completed", {"QUALIFIED": "qualified", "WALKIN": "walkin", "WON": "won", "LOST": "lost"}[lead_status]]:
+        for lead_status in ["QUALIFIED", "BOOKED", "WON", "LOST"]:
+            Lead.objects.filter(pk=self.lead.pk).update(
+                status=lead_status,
+                sales_outcome={"BOOKED": "BOOKED", "WON": "RETAILED", "LOST": "LOST"}.get(lead_status, "PENDING"),
+                test_drive_completed_at=timezone.now(),
+            )
+            for section in ["all", "test_drive_completed", {"QUALIFIED": "qualified", "BOOKED": "walkin", "WON": "won", "LOST": "lost"}[lead_status]]:
                 row = self.client.get("/api/leads/my-dashboard/", {"section": section}).data["results"][0]
                 self.assertEqual(row["assigned_ps"], self.ps.id)
                 self.assertEqual(row["assigned_ps_status"], "ACTIVE")

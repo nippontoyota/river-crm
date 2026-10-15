@@ -27,7 +27,7 @@ class ServiceWorkflowTests(APITestCase):
         self.so = self.user("so", "SO")
         self.service = self.user("service", "SERVICE")
         self.other_service = self.user("other-service", "SERVICE", "Thrissur")
-        self.lead = Lead.objects.create(name="Scooter Customer", phone="9876543210", email="rider@test.local", model_interest="Indie", branch="Kochi", assigned_so=self.ce, assigned_ps=self.so, status="WALKIN", sales_outcome="BOOKED")
+        self.lead = Lead.objects.create(name="Scooter Customer", phone="9876543210", email="rider@test.local", model_interest="Indie", branch="Kochi", assigned_so=self.ce, assigned_ps=self.so, status="BOOKED", sales_outcome="BOOKED")
         self.vehicle = Vehicle.objects.create(chassis_number="RIVER123", model="Indie", related_lead=self.lead, created_by=self.so, **{"customer_name": self.lead.name, "customer_phone": self.lead.phone})
 
     def user(self, name, role, branch="Kochi"):
@@ -187,7 +187,7 @@ class ServiceWorkflowTests(APITestCase):
                     self.assertEqual(response.status_code, 400, response.data)
         self.assertEqual(ServiceRequest.objects.count(), 0)
         self.assertFalse(Vehicle.objects.filter(chassis_number="UNBOOKED123").exists())
-        for state, outcome in [("WALKIN", "BOOKED"), ("WON", "RETAILED"), ("WON", "PENDING")]:
+        for state, outcome in [("BOOKED", "BOOKED"), ("WON", "RETAILED"), ("WON", "PENDING")]:
             self.lead.status, self.lead.sales_outcome = state, outcome
             self.lead.save()
             self.client.force_authenticate(self.ce)

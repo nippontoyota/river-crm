@@ -7,7 +7,7 @@ import { exportMyAnalytics, getMyAnalyticsDashboard, type PersonalAnalytics } fr
 import { DateInput } from "@/components/date-input";
 import { formatDate, todayInIST, toDateInputValue } from "@/lib/dates";
 
-const labels: Record<string, string> = { FRESH: "Fresh", RNR: "RNR", SWITCHED_OFF: "Switch off", CALLBACK: "Callback", QUALIFIED: "Qualified", WALKIN: "Walk-in", WON: "Won", LOST: "Lost", UNQUALIFIED: "Unqualified" };
+const labels: Record<string, string> = { FRESH: "Fresh", RNR: "RNR", SWITCHED_OFF: "Switch off", CALLBACK: "Callback", QUALIFIED: "Qualified", WALKIN: "Walk-in", BOOKED: "Booked", WON: "Won", LOST: "Lost", UNQUALIFIED: "Unqualified" };
 const colors = ["#477fe3", "#f2a315", "#ee6055", "#38a878", "#8a64df", "#18a9b7", "#e75d9b"];
 
 function label(value: string) { return labels[value] || value || "Unknown"; }

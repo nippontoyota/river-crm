@@ -237,9 +237,9 @@ class CallCenterTests(TestCase):
 
     def test_ps_reassignment_preserves_open_progress_and_uses_owner_branch_when_missing(self):
         other = User.objects.create_user(email="same@example.test", role="SO", location="Kochi")
-        for progress in ("QUALIFIED", "PENDING", "RNR", "SWITCHED_OFF", "CALLBACK", "WALKIN"):
+        for progress in ("QUALIFIED", "PENDING", "RNR", "SWITCHED_OFF", "CALLBACK", "WALKIN", "BOOKED"):
             with self.subTest(progress=progress):
-                outcome = "BOOKED" if progress == "WALKIN" else "PENDING"
+                outcome = "BOOKED" if progress == "BOOKED" else "PENDING"
                 Lead.objects.filter(pk=self.lead.pk).update(status=progress, sales_outcome=outcome, assigned_ps=self.ps, branch="")
                 payload = {"submission_id": str(uuid4()), "lead_version": self.detail()["updated_at"], "ps_officer_id": other.pk, "remarks": "Reassign"}
                 response = self.client.patch(f"/api/call-center/leads/{self.lead.pk}/", payload, format="json")

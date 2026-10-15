@@ -11,10 +11,10 @@ from .models import Lead
 CLOSED_STATUSES = {Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED}
 CONNECTED = {
     "Need Test Drive": "PENDING", "Showroom Visit": "PENDING",
-    "Exchange Issue": "PENDING", "Booking Done": "WALKIN", "Retail Done": "WON",
+    "Exchange Issue": "PENDING", "Booking Done": "BOOKED", "Retail Done": "WON",
     "Call Me Back": "CALLBACK", "Need time": "PENDING", "Need SO Call": "PENDING",
     "Need More Details": "PENDING", "Discount Issue": "PENDING",
-    "Not Interested": "LOST", "Already Booked": "WALKIN", "Lost to Competition": "LOST",
+    "Not Interested": "LOST", "Already Booked": "BOOKED", "Lost to Competition": "LOST",
     "Finance Rejected": "LOST", "Dropped": "LOST", "Lost to co-dealer": "LOST",
 }
 NOT_CONNECTED = {
@@ -34,7 +34,7 @@ def is_closed(lead):
 
 
 def is_booked(lead):
-    return lead.status == Lead.Status.WALKIN or lead.sales_outcome == Lead.SalesOutcome.BOOKED
+    return lead.sales_outcome == Lead.SalesOutcome.BOOKED
 
 
 def outcome_policy(lead, user):
@@ -49,11 +49,11 @@ def outcome_policy(lead, user):
                     continue
                 if label == "Need Test Drive" and lead.test_drive_completed_at:
                     continue
-                if label in {"Booking Done", "Already Booked"} and is_booked(lead):
+                if label == "Already Booked" and is_booked(lead):
                     continue
-                sales_outcome = {"WON": "RETAILED", "LOST": "LOST", "WALKIN": "BOOKED"}.get(state, "PENDING")
+                sales_outcome = {"BOOKED": "BOOKED", "WON": "RETAILED", "LOST": "LOST"}.get(state, "PENDING")
                 if is_booked(lead) and sales_outcome == "PENDING":
-                    state, sales_outcome = "WALKIN", "BOOKED"
+                    state, sales_outcome = "BOOKED", "BOOKED"
                 groups[call_status].append({
                     "label": label, "status": state, "sales_outcome": sales_outcome,
                     "tone": "lost" if state == "LOST" else "qualified",
@@ -103,9 +103,9 @@ def validate_milestone_change(lead, attrs):
     if is_closed(lead):
         raise ValidationError({"detail": "This lead is closed. Use the reopen action before recording another outcome."})
     next_status = attrs.get("status") or lead.status
-    if is_booked(lead) and (next_status not in {"WALKIN", "WON", "LOST"} or attrs.get("sales_outcome") == "PENDING"):
+    if is_booked(lead) and (next_status not in {"BOOKED", "WON", "LOST"} or attrs.get("sales_outcome") == "PENDING"):
         raise ValidationError({"status": "A routine follow-up cannot remove the booking. Use a sales call outcome."})
-    expected = {"WALKIN": "BOOKED", "WON": "RETAILED", "LOST": "LOST"}.get(next_status, "PENDING")
+    expected = {"BOOKED": "BOOKED", "WON": "RETAILED", "LOST": "LOST"}.get(next_status, "PENDING")
     if attrs.get("sales_outcome") and attrs["sales_outcome"] != expected:
         raise ValidationError({"sales_outcome": "Choose a sales outcome matching the lead status."})
     attrs["sales_outcome"] = expected

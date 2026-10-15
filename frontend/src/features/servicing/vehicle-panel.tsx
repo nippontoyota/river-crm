@@ -35,7 +35,7 @@ export function VehicleRegistration({ chassis = "", lead, onSaved, onCancel }: {
 }
 
 export function VehiclePanel({ lead }: { lead: LeadDetail }) {
-  const booked = ["BOOKED", "RETAILED"].includes(lead.salesOutcome) || ["WALKIN", "WON"].includes(lead.statusCode);
+  const booked = ["BOOKED", "RETAILED"].includes(lead.salesOutcome) || ["BOOKED", "WON"].includes(lead.statusCode);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selected, setSelected] = useState<Vehicle | null>(null);
   const [adding, setAdding] = useState(false);

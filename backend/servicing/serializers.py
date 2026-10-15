@@ -23,7 +23,7 @@ def configured_branch(value):
 
 
 def validate_vehicle_sale(lead):
-    if lead and lead.sales_outcome not in {"BOOKED", "RETAILED"} and lead.status not in {"WALKIN", "WON"}:
+    if lead and lead.sales_outcome not in {"BOOKED", "RETAILED"} and lead.status not in {"BOOKED", "WON"}:
         raise serializers.ValidationError({"related_lead": "Vehicle and service records can only be linked to a booked or retailed sale."})
 
 

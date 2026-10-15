@@ -13,7 +13,7 @@ from .models import OperationEvent
 STAGE_LABELS = {
     "FRESH": "Fresh", "RNR": "RNR", "SWITCHED_OFF": "Switch Off",
     "CALLBACK": "Call Me Back", "PENDING": "Pending", "QUALIFIED": "Qualified",
-    "UNQUALIFIED": "Unqualified", "WALKIN": "Booking Done", "WON": "Retail Done",
+    "UNQUALIFIED": "Unqualified", "WALKIN": "Walk-in", "BOOKED": "Booking Done", "WON": "Retail Done",
     "LOST": "Lost Lead",
 }
 UNKNOWN_REASON = "Reason not recorded"

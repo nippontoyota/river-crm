@@ -40,7 +40,7 @@ class LeadAnalysisTests(TestCase):
         CallLog.objects.create(lead=incompatible, so=self.officer, status="RNR", outcome="RNR")
         legacy = self.lead(status="PENDING")
         self.call(legacy, "Details Received")
-        booked = self.lead(status="WALKIN", sales_outcome="BOOKED")
+        booked = self.lead(status="BOOKED", sales_outcome="BOOKED")
         self.call(booked, "RNR")
         retail = self.lead(status="WON", sales_outcome="RETAILED")
         self.call(retail, "RNR")

@@ -32,10 +32,11 @@ FORWARD_TRANSITIONS = {
     Lead.Status.FRESH: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.LOST},
     Lead.Status.RNR: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.LOST},
     Lead.Status.SWITCHED_OFF: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.LOST},
-    Lead.Status.CALLBACK: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.WALKIN, Lead.Status.LOST},
-    Lead.Status.PENDING: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.WALKIN, Lead.Status.LOST},
-    Lead.Status.QUALIFIED: {Lead.Status.WALKIN, Lead.Status.WON, Lead.Status.LOST},
-    Lead.Status.WALKIN: {Lead.Status.WON, Lead.Status.LOST},
+    Lead.Status.CALLBACK: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.WALKIN, Lead.Status.BOOKED, Lead.Status.LOST},
+    Lead.Status.PENDING: {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.QUALIFIED, Lead.Status.UNQUALIFIED, Lead.Status.WALKIN, Lead.Status.BOOKED, Lead.Status.LOST},
+    Lead.Status.QUALIFIED: {Lead.Status.WALKIN, Lead.Status.BOOKED, Lead.Status.WON, Lead.Status.LOST},
+    Lead.Status.WALKIN: {Lead.Status.BOOKED, Lead.Status.WON, Lead.Status.LOST},
+    Lead.Status.BOOKED: {Lead.Status.BOOKED, Lead.Status.WON, Lead.Status.LOST},
 }
 
 def apply_lead_filters(queryset, filters):
@@ -48,7 +49,7 @@ def apply_lead_filters(queryset, filters):
     if value := filters.get("sales_outcome"):
         queryset = queryset.filter(sales_outcome=value)
     if filters.get("service_eligible") == "true":
-        queryset = queryset.filter(Q(sales_outcome__in=["BOOKED", "RETAILED"]) | Q(status__in=["WALKIN", "WON"]))
+        queryset = queryset.filter(Q(sales_outcome__in=["BOOKED", "RETAILED"]) | Q(status__in=["BOOKED", "WON"]))
     for key, field in (("model", "model_interest"), ("city", "city"), ("campaign", "campaign")):
         if value := filters.get(key):
             queryset = queryset.filter(**{f"{field}__icontains": value.strip()})
@@ -354,7 +355,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             missed=Count("id", filter=missed_filter, distinct=True),
             pending=Count("id", filter=pending_filter, distinct=True),
             qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED), distinct=True),
-            walkin=Count("id", filter=Q(status=Lead.Status.WALKIN), distinct=True),
+            walkin=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED), distinct=True),
             won=Count("id", filter=Q(status=Lead.Status.WON), distinct=True),
             lost=Count("id", filter=Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]), distinct=True),
             won_lost=Count("id", filter=Q(status__in=[Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED]), distinct=True),
@@ -377,7 +378,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             "pending": pending_status,
             "qualified": Q(status=Lead.Status.QUALIFIED),
             "test_drive_completed": Q(test_drive_completed_at__isnull=False),
-            "walkin": Q(status=Lead.Status.WALKIN),
+            "walkin": Q(sales_outcome=Lead.SalesOutcome.BOOKED),
             "won": Q(status=Lead.Status.WON),
             "lost": Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]),
             "won_lost": Q(status__in=[Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED]),
@@ -417,7 +418,7 @@ class LeadViewSet(viewsets.ModelViewSet):
                               and (request.user.role == User.Role.CRE or self.shared_call_center))
         assignment_only = reassigning_ps and not any(field in data for field in ("status", "sales_outcome", "call_status", "call_outcome", "follow_up_at"))
         sales_call = request.user.role == User.Role.SALES_OFFICER or (request.user.is_admin and (data.get("call_status") or data.get("call_outcome") in PS_CALL_OUTCOME_STATUS_OPTIONS))
-        sales_status = {Lead.SalesOutcome.BOOKED: Lead.Status.WALKIN, Lead.SalesOutcome.RETAILED: Lead.Status.WON, Lead.SalesOutcome.LOST: Lead.Status.LOST}
+        sales_status = {Lead.SalesOutcome.BOOKED: Lead.Status.BOOKED, Lead.SalesOutcome.RETAILED: Lead.Status.WON, Lead.SalesOutcome.LOST: Lead.Status.LOST}
         call_status = {"QUALIFIED": Lead.Status.QUALIFIED, "PENDING": Lead.Status.PENDING, "LOST": Lead.Status.LOST, "RNR": Lead.Status.RNR, "SWITCHED_OFF": Lead.Status.SWITCHED_OFF, "CALLBACK": Lead.Status.CALLBACK}
         call_outcome = data.get("call_outcome")
         if sales_call:
@@ -432,7 +433,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Call Me Back requires a connected call."}, status=status.HTTP_400_BAD_REQUEST)
         if call_outcome == "PENDING" and not data.get("follow_up_at"):
             return Response({"detail": "Pending calls require a follow-up time."}, status=status.HTTP_400_BAD_REQUEST)
-        follow_up_statuses = {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.WALKIN}
+        follow_up_statuses = {Lead.Status.RNR, Lead.Status.SWITCHED_OFF, Lead.Status.CALLBACK, Lead.Status.PENDING, Lead.Status.WALKIN, Lead.Status.BOOKED}
         if not sales_call and call_outcome in CALL_OUTCOME_STATUS_OPTIONS and next_status not in follow_up_statuses and data.get("follow_up_at"):
             return Response({"detail": "This outcome cannot have a follow-up time."}, status=status.HTTP_400_BAD_REQUEST)
         if not sales_call and call_outcome and call_outcome not in CALL_OUTCOME_STATUS_OPTIONS and call_outcome != "PENDING" and data.get("follow_up_at"):
@@ -440,7 +441,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         if data.get("follow_up_at") and next_status == Lead.Status.FRESH:
             next_status = Lead.Status.CALLBACK
         if data.get("follow_up_at") and next_status not in follow_up_statuses:
-            return Response({"detail": "Only callbacks and walk-ins can have an appointment."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Only callbacks, walk-ins, and bookings can have an appointment."}, status=status.HTTP_400_BAD_REQUEST)
         if request.user.role == User.Role.CRE and lead.status == Lead.Status.QUALIFIED and next_status == Lead.Status.QUALIFIED and (call_outcome == "QUALIFIED" or data.get("qualification")):
             return Response({"detail": "This lead is already qualified."}, status=status.HTTP_400_BAD_REQUEST)
         if not sales_call and any(field in data for field in ("status", "sales_outcome", "call_outcome", "call_status", "remarks", "follow_up_at")):
