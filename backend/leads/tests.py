@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone as datetime_timezone
 from unittest.mock import patch
 
 from accounts.models import User
+from notifications.models import Notification
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 
 
@@ -152,6 +153,23 @@ class LeadAccessTests(TestCase):
         lead = Lead.objects.get(pk=response.data["id"])
         self.assertIsNone(lead.assigned_so)
         self.assertEqual(lead.status, Lead.Status.FRESH)
+
+    def test_directly_created_lead_notifies_selected_ps(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post("/api/leads/", {
+            "rto": "KL-07", "name": "Mobile enquiry", "phone": "7006682398",
+            "source": Lead.Source.WALKIN, "model_interest": "River Indie",
+            "branch": "Kochi", "ps_officer_id": self.ps_so.id,
+        }, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        notification = Notification.objects.get(user=self.ps_so, kind=Notification.Kind.ASSIGNMENT)
+        self.assertEqual(notification.lead_id, response.data["id"])
+        self.assertEqual(notification.message, "New lead received: Mobile enquiry.")
+        self.client.force_authenticate(self.ps_so)
+        inbox = self.client.get("/api/notifications/?kind=ASSIGNMENT")
+        self.assertEqual(inbox.status_code, 200)
+        self.assertEqual(inbox.data["results"][0]["message"], notification.message)
+        self.assertEqual(inbox.data["results"][0]["lead"], response.data["id"])
 
     def so_lead_payload(self, **overrides):
         return {

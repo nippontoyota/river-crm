@@ -2,6 +2,14 @@ from django.conf import settings
 from django.db import models
 
 
+class NotificationManager(models.Manager):
+    def bulk_create(self, objs, *args, **kwargs):
+        created = super().bulk_create(objs, *args, **kwargs)
+        from .push import schedule_assignment_pushes
+        schedule_assignment_pushes(created)
+        return created
+
+
 class Notification(models.Model):
     class Kind(models.TextChoices):
         SERVICE_UPDATE = "SERVICE_UPDATE", "Service update"
@@ -22,6 +30,17 @@ class Notification(models.Model):
     message = models.CharField(max_length=280)
     read_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    objects = NotificationManager()
+
+
+class PushSubscription(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="push_subscriptions")
+    endpoint = models.URLField(max_length=2048, unique=True)
+    p256dh = models.CharField(max_length=512)
+    auth = models.CharField(max_length=256)
+    user_agent = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 class WhatsAppContact(models.Model):

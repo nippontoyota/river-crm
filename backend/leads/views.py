@@ -267,6 +267,13 @@ class LeadViewSet(viewsets.ModelViewSet):
         else:
             lead = serializer.save(generated_by=self.request.user)
         LeadAudit.objects.create(lead=lead, actor=self.request.user, event="created")
+        if lead.assigned_ps_id and lead.assigned_ps_id != self.request.user.pk:
+            Notification.objects.create(
+                user_id=lead.assigned_ps_id,
+                lead=lead,
+                kind=Notification.Kind.ASSIGNMENT,
+                message=f"New lead received: {lead.name}.",
+            )
 
     def perform_destroy(self, instance):
         with transaction.atomic():

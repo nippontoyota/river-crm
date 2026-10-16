@@ -1,11 +1,14 @@
+from django.conf import settings
 from django.utils import timezone
 from django.db.models import Q
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet, mixins
 
-from .models import Notification
-from .serializers import NotificationSerializer
+from accounts.models import User
+from .models import Notification, PushSubscription
+from .serializers import NotificationSerializer, PushSubscriptionSerializer
 
 
 class NotificationViewSet(mixins.ListModelMixin, GenericViewSet):
@@ -21,9 +24,42 @@ class NotificationViewSet(mixins.ListModelMixin, GenericViewSet):
             queryset = queryset.filter(service_request__isnull=False)
         if self.request.query_params.get("feedback") == "true":
             queryset = queryset.filter(feedback_task__isnull=False)
+        if kind := self.request.query_params.get("kind"):
+            queryset = queryset.filter(kind=kind) if kind in Notification.Kind.values else queryset.none()
         if kind := self.request.query_params.get("feedback_kind"):
             queryset = queryset.filter(feedback_task__kind=kind)
         return queryset.select_related("feedback_task").order_by("-created_at", "-id")
+
+    def require_ps(self):
+        if self.request.user.role != User.Role.SALES_OFFICER:
+            raise PermissionDenied("Phone lead alerts are only available to PS/SO users.")
+
+    @action(detail=False, methods=["get"], url_path="push-config")
+    def push_config(self, request):
+        self.require_ps()
+        enabled = bool(settings.WEB_PUSH_VAPID_PUBLIC_KEY and settings.WEB_PUSH_VAPID_PRIVATE_KEY and settings.WEB_PUSH_VAPID_SUBJECT)
+        return Response({
+            "enabled": enabled,
+            "public_key": settings.WEB_PUSH_VAPID_PUBLIC_KEY if enabled else "",
+            "subscribed": PushSubscription.objects.filter(user=request.user).exists(),
+        })
+
+    @action(detail=False, methods=["post"], url_path="push-subscribe")
+    def push_subscribe(self, request):
+        self.require_ps()
+        if not (settings.WEB_PUSH_VAPID_PUBLIC_KEY and settings.WEB_PUSH_VAPID_PRIVATE_KEY and settings.WEB_PUSH_VAPID_SUBJECT):
+            raise ValidationError({"detail": "Phone push notifications are not configured."})
+        serializer = PushSubscriptionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(user=request.user, user_agent=request.headers.get("User-Agent", ""))
+        return Response({"subscribed": True}, status=201)
+
+    @action(detail=False, methods=["post"], url_path="push-unsubscribe")
+    def push_unsubscribe(self, request):
+        self.require_ps()
+        endpoint = request.data.get("endpoint", "")
+        PushSubscription.objects.filter(user=request.user, endpoint=endpoint).delete()
+        return Response(status=204)
 
     @action(detail=False, methods=["get"])
     def unread_count(self, request):

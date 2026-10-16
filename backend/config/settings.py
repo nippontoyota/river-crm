@@ -93,6 +93,11 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
 CELERY_BEAT_SCHEDULE = {"follow-up-reminders": {"task": "notifications.tasks.create_due_follow_up_notifications", "schedule": 900}}
 CELERY_BEAT_SCHEDULE["feedback-reminders"] = {"task": "feedback.tasks.process_feedback_queue", "schedule": 60}
 
+# Web Push credentials are deployment secrets. The public key is exposed to PS browsers.
+WEB_PUSH_VAPID_PUBLIC_KEY = os.environ.get("WEB_PUSH_VAPID_PUBLIC_KEY", "").strip()
+WEB_PUSH_VAPID_PRIVATE_KEY = os.environ.get("WEB_PUSH_VAPID_PRIVATE_KEY", "").strip()
+WEB_PUSH_VAPID_SUBJECT = os.environ.get("WEB_PUSH_VAPID_SUBJECT", "").strip()
+
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", os.environ.get("SUPABASE_SERVICE_ROLE_KEY", ""))
 SUPABASE_BUCKET = os.environ.get("SUPABASE_UPLOAD_BUCKET", "crm-imports")

@@ -1361,3 +1361,170 @@ input[type="radio"] {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* PS is predominantly a phone workflow: compact controls, thumb-sized actions,
+   and dossier cards that scale from a narrow handset to a wide desktop. */
+.ps-shell .so-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: clamp(10px, 2vw, 16px);
+}
+
+.ps-shell .so-lead-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid #000;
+  border-top: 4px solid #8db355;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.ps-shell .so-lead-card-main {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: clamp(16px, 4vw, 22px);
+  cursor: pointer;
+  text-align: left;
+}
+
+.ps-shell .so-lead-card-main:focus-visible,
+.ps-shell .so-lead-call:focus-visible {
+  outline: 3px solid #d90000;
+  outline-offset: -3px;
+}
+
+.ps-shell .so-lead-card-top,
+.ps-shell .so-lead-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.ps-shell .so-lead-identity,
+.ps-shell .so-lead-meta > span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.ps-shell .so-lead-identity strong {
+  overflow-wrap: anywhere;
+  font-size: clamp(16px, 4.5vw, 19px);
+  line-height: 1.25;
+}
+
+.ps-shell .so-lead-identity small,
+.ps-shell .so-lead-meta small {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.ps-shell .so-lead-meta {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.ps-shell .so-lead-meta > span { min-width: min(160px, 45%); }
+.ps-shell .so-lead-meta b { overflow-wrap: anywhere; font-size: 13px; }
+.ps-shell .so-lead-open { font-size: 12px; font-weight: 700; }
+.ps-shell .so-lead-open b { color: #d90000; font-size: 17px; }
+
+.ps-shell .so-lead-call {
+  display: grid;
+  min-width: 72px;
+  place-content: center;
+  gap: 5px;
+  border-left: 1px solid #000;
+  background: #f4f8ee;
+  color: #000;
+  text-align: center;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ps-shell .so-lead-call span { color: #d90000; font-size: 20px; }
+
+@media (max-width: 767px) {
+  .ps-shell .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    padding-top: max(10px, env(safe-area-inset-top));
+  }
+
+  .ps-shell .page { padding: 18px clamp(12px, 4vw, 18px) 24px; }
+  .ps-shell .sales-hero { margin-bottom: 16px; }
+  .ps-shell .sales-hero h1 { font-size: clamp(27px, 9vw, 38px); }
+  .ps-shell .sales-hero .subtext { font-size: 13px; }
+  .ps-shell .sales-hero-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .ps-shell .sales-hero-actions > * { min-height: 44px; }
+  .ps-shell .sales-hero-actions > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+
+  .ps-shell .sales-workspace .sales-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .ps-shell .sales-overview-grid .sales-metric {
+    height: auto;
+    min-height: 92px;
+    padding: 12px 10px;
+  }
+
+  .ps-shell .sales-overview-grid .sales-metric span { font-size: 10px; }
+  .ps-shell .sales-overview-grid .sales-metric strong { font-size: clamp(24px, 8vw, 32px); }
+  .ps-shell .sales-search { height: 48px; }
+  .ps-shell .sales-search input { font-size: 16px; }
+
+  .ps-shell .sales-tabs button {
+    min-height: 44px;
+    padding: 9px 12px;
+  }
+
+  .ps-shell .so-lead-card-main { min-height: 156px; }
+  .ps-shell .so-lead-call { min-width: 68px; }
+
+  .ps-shell .modal-layer {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .ps-shell .sales-detail-modal {
+    min-height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .ps-shell .sales-detail-header { padding-top: max(18px, env(safe-area-inset-top)); }
+  .ps-shell .sales-detail-scroll { flex: 1; max-height: none; }
+  .ps-shell .sales-detail-footer { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .ps-shell .sales-detail-footer > button { min-height: 48px; }
+
+  .ps-shell .lead-notifications .feedback-notifications {
+    position: fixed;
+    top: calc(64px + env(safe-area-inset-top));
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100dvh - 154px - env(safe-area-inset-top));
+  }
+}
+
+@media (max-width: 360px) {
+  .ps-shell .topbar { padding-inline: 10px; }
+  .ps-shell .topbar > div > b { max-width: 150px; }
+  .ps-shell .sales-hero-actions { grid-template-columns: 1fr; }
+  .ps-shell .sales-hero-actions > * { grid-column: auto!important; }
+  .ps-shell .so-lead-card-main { padding: 14px 12px; }
+  .ps-shell .so-lead-meta > span { min-width: 100%; }
+  .ps-shell .so-lead-call { min-width: 60px; }
+}

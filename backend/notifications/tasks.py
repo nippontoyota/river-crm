@@ -38,3 +38,9 @@ def create_due_follow_up_notifications():
             Notification.objects.create(user=follow_up.so, lead=follow_up.lead, kind=kind, message=f"Follow up with {follow_up.lead.name}.")
             follow_up.notified_at = timezone.now()
             follow_up.save(update_fields=["notified_at"])
+
+
+@shared_task
+def deliver_assignment_pushes(notification_ids):
+    from .push import deliver_assignment_push
+    return sum(deliver_assignment_push(notification_id) for notification_id in notification_ids)

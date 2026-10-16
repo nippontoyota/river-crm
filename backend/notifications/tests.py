@@ -1,14 +1,154 @@
-from unittest.mock import patch
+import json
+import os
+import sys
+from base64 import urlsafe_b64encode
+from types import ModuleType
+from unittest.mock import Mock, patch
 
 from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 from rest_framework.test import APIClient
 
 from accounts.models import User
 from leads.models import Lead, LeadAudit
-from .models import WhatsAppContact, WhatsAppMessage
+from .models import Notification, PushSubscription, WhatsAppContact, WhatsAppMessage
+from .push import deliver_assignment_push
 from .whatsapp import normalize_phone, record_lead_audit, send_whatsapp_message, whatsapp_mode
+
+
+class NotificationFilterTests(TestCase):
+    def test_kind_filter_limits_list_and_unread_count_to_assignments(self):
+        user = User.objects.create_user("ps@notifications.test", role=User.Role.SALES_OFFICER)
+        lead = Lead.objects.create(name="New rider", phone="9876543210", assigned_ps=user)
+        Notification.objects.create(user=user, lead=lead, kind=Notification.Kind.ASSIGNMENT, message="New lead")
+        Notification.objects.create(user=user, lead=lead, kind=Notification.Kind.FOLLOW_UP, message="Follow up")
+        other = User.objects.create_user("other@notifications.test", role=User.Role.SALES_OFFICER)
+        Notification.objects.create(user=other, lead=lead, kind=Notification.Kind.ASSIGNMENT, message="Private")
+        client = APIClient()
+        client.force_authenticate(user)
+
+        response = client.get("/api/notifications/?kind=ASSIGNMENT")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["message"] for item in response.data["results"]], ["New lead"])
+        self.assertEqual(client.get("/api/notifications/unread_count/?kind=ASSIGNMENT").data["count"], 1)
+        self.assertEqual(client.post("/api/notifications/mark_read/?kind=ASSIGNMENT").status_code, 204)
+        self.assertIsNotNone(Notification.objects.get(user=user, kind=Notification.Kind.ASSIGNMENT).read_at)
+        self.assertIsNone(Notification.objects.get(user=user, kind=Notification.Kind.FOLLOW_UP).read_at)
+        self.assertEqual(client.get("/api/notifications/?kind=INVALID").data["count"], 0)
+
+
+@override_settings(
+    WEB_PUSH_VAPID_PUBLIC_KEY="test-public-key",
+    WEB_PUSH_VAPID_PRIVATE_KEY="test-private-key",
+    WEB_PUSH_VAPID_SUBJECT="mailto:push@example.test",
+)
+class PushNotificationTests(TestCase):
+    def setUp(self):
+        self.ps = User.objects.create_user("ps@push.test", role=User.Role.SALES_OFFICER)
+        self.other = User.objects.create_user("cre@push.test", role=User.Role.CRE)
+        self.client = APIClient()
+        self.client.force_authenticate(self.ps)
+        receiver_key = ec.generate_private_key(ec.SECP256R1())
+        encode = lambda value: urlsafe_b64encode(value).rstrip(b"=").decode()
+        self.subscription = {
+            "endpoint": "https://push.example.test/subscription-1",
+            "keys": {
+                "p256dh": encode(receiver_key.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)),
+                "auth": encode(os.urandom(16)),
+            },
+        }
+
+    def test_ps_can_subscribe_check_status_and_unsubscribe(self):
+        config = self.client.get("/api/notifications/push-config/")
+        self.assertEqual(config.status_code, 200)
+        self.assertTrue(config.data["enabled"])
+        self.assertFalse(config.data["subscribed"])
+
+        response = self.client.post("/api/notifications/push-subscribe/", self.subscription, format="json", HTTP_USER_AGENT="Mobile test")
+        self.assertEqual(response.status_code, 201, response.data)
+        stored = PushSubscription.objects.get(user=self.ps)
+        self.assertEqual(stored.endpoint, self.subscription["endpoint"])
+        self.assertEqual(stored.user_agent, "Mobile test")
+        self.assertTrue(self.client.get("/api/notifications/push-config/").data["subscribed"])
+
+        response = self.client.post("/api/notifications/push-unsubscribe/", {"endpoint": stored.endpoint}, format="json")
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(PushSubscription.objects.exists())
+
+    def test_non_ps_and_insecure_endpoints_are_rejected(self):
+        insecure = {**self.subscription, "endpoint": "http://push.example.test/subscription-1"}
+        self.assertEqual(self.client.post("/api/notifications/push-subscribe/", insecure, format="json").status_code, 400)
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.get("/api/notifications/push-config/").status_code, 403)
+
+    def test_assignment_payload_targets_each_ps_phone_subscription(self):
+        lead = Lead.objects.create(name="Phone alert lead", phone="9000000001", assigned_ps=self.ps)
+        PushSubscription.objects.create(
+            user=self.ps,
+            endpoint=self.subscription["endpoint"],
+            p256dh=self.subscription["keys"]["p256dh"],
+            auth=self.subscription["keys"]["auth"],
+        )
+        notification = Notification.objects.create(
+            user=self.ps, lead=lead, kind=Notification.Kind.ASSIGNMENT, message="You have a new lead: Phone alert lead.",
+        )
+        webpush_module = ModuleType("pywebpush")
+        webpush_module.WebPushException = Exception
+        webpush_module.webpush = Mock()
+        with patch.dict(sys.modules, {"pywebpush": webpush_module}):
+            self.assertEqual(deliver_assignment_push(notification.pk), 1)
+
+        webpush_module.webpush.assert_called_once()
+        call = webpush_module.webpush.call_args.kwargs
+        self.assertEqual(call["subscription_info"]["endpoint"], self.subscription["endpoint"])
+        payload = json.loads(call["data"])
+        self.assertEqual(payload["title"], "New lead assigned")
+        self.assertEqual(payload["url"], f"/my-leads?lead={lead.pk}")
+
+    def test_real_webpush_library_encrypts_and_dispatches_payload(self):
+        encode = lambda value: urlsafe_b64encode(value).rstrip(b"=").decode()
+        receiver_key = ec.generate_private_key(ec.SECP256R1())
+        receiver_public = receiver_key.public_key().public_bytes(
+            serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint,
+        )
+        vapid_key = ec.generate_private_key(ec.SECP256R1())
+        vapid_private = encode(vapid_key.private_numbers().private_value.to_bytes(32, "big"))
+        PushSubscription.objects.create(
+            user=self.ps,
+            endpoint=self.subscription["endpoint"],
+            p256dh=encode(receiver_public),
+            auth=encode(os.urandom(16)),
+        )
+        notification = Notification.objects.create(
+            user=self.ps, kind=Notification.Kind.ASSIGNMENT, message="A real encrypted phone push.",
+        )
+        response = Mock(status_code=201, text="", headers={}, reason="Created")
+        with override_settings(WEB_PUSH_VAPID_PRIVATE_KEY=vapid_private), patch("requests.post", return_value=response) as post:
+            self.assertEqual(deliver_assignment_push(notification.pk), 1)
+
+        request = post.call_args.kwargs
+        self.assertEqual(request["headers"]["content-encoding"], "aes128gcm")
+        self.assertIn("authorization", request["headers"])
+        self.assertIsInstance(request["data"], bytes)
+        self.assertNotIn(b"real encrypted phone push", request["data"])
+
+    def test_create_and_bulk_create_queue_assignment_delivery_after_commit(self):
+        with patch("notifications.tasks.deliver_assignment_pushes.delay") as delay:
+            with self.captureOnCommitCallbacks(execute=True):
+                individual = Notification.objects.create(
+                    user=self.ps, kind=Notification.Kind.ASSIGNMENT, message="One lead assigned.",
+                )
+            delay.assert_called_once_with([individual.pk])
+            delay.reset_mock()
+            with self.captureOnCommitCallbacks(execute=True):
+                created = Notification.objects.bulk_create([
+                    Notification(user=self.ps, kind=Notification.Kind.ASSIGNMENT, message="Two leads assigned."),
+                    Notification(user=self.ps, kind=Notification.Kind.FOLLOW_UP, message="Follow up."),
+                ])
+            delay.assert_called_once_with([created[0].pk])
 
 
 @override_settings(WHATSAPP_MODE="preview", WHATSAPP_BUSINESS_NAME="Example Motors")

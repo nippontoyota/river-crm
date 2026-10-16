@@ -142,7 +142,7 @@ function LeadEditPanel({ fields, config, loading, error, onChange, onClose, onSa
   </section></div>;
 }
 
-export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, initialSection }: { followUpsOnly?: boolean; allLeadsOnly?: boolean; initialSection?: Section }) {
+export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, initialSection, initialLeadId }: { followUpsOnly?: boolean; allLeadsOnly?: boolean; initialSection?: Section; initialLeadId?: number }) {
   const [section, setSection] = useState<Section>(initialSection ?? (followUpsOnly ? "followups" : allLeadsOnly ? "all" : "fresh"));
   const [wonLostFilter, setWonLostFilter] = useState<WonLostFilter>("all");
   const [range, setRange] = useState("all");
@@ -180,6 +180,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const sourceOptions = (config?.lists.sources || []).map(value => ({ value, label: sourceName(value) }));
   const [addLeadPsOptions, setAddLeadPsOptions] = useState<Officer[]>([]);
   const dashboardRequest = useRef(0);
+  const openedInitialLead = useRef<number | null>(null);
   const isPs = user?.role === "SO";
   const psVisibleOutcomes = detail && draft ? detail.outcomePolicy.outcomes[draft.call_status] || [] : [];
   const selectedPsOutcome = psVisibleOutcomes.find(option => option.label === draft?.call_outcome);
@@ -249,7 +250,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
     return () => { cancelled = true; };
   }, [draft?.call_outcome, isPs, selectedLocation]);
 
-  const openLead = async (lead: { id: number }) => {
+  const openLead = useCallback(async (lead: { id: number }) => {
     setDetailLoading(true); setError(""); setNotice("");
     try {
       const fullLead = await getLeadDetail(lead.id);
@@ -260,7 +261,13 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
     }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Unable to open this lead."); }
     finally { setDetailLoading(false); }
-  };
+  }, [isPs]);
+
+  useEffect(() => {
+    if (!user || !initialLeadId || openedInitialLead.current === initialLeadId) return;
+    openedInitialLead.current = initialLeadId;
+    void openLead({ id: initialLeadId });
+  }, [initialLeadId, openLead, user]);
 
   const save = async () => {
     if (!detail || !draft || saving || completingDrive || !detail.outcomePolicy.can_update) return;
@@ -404,18 +411,16 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
       <section className="panel sales-table-panel" style={{ background: "transparent", border: "none", boxShadow: "none", padding: 0 }}>
         {psVisibleSections.length > 0 && <nav className="sales-tabs" aria-label="All lead filters">{psVisibleSections.map(item => <button key={item.key} className={section === item.key ? "active" : ""} aria-pressed={section === item.key} onClick={() => setSection(item.key)}><i>{item.icon}</i><span>{item.label}</span><b>{summary?.[item.count] ?? 0}</b></button>)}</nav>}
         {!followUpsOnly && <div className="sales-filters" style={{ marginBottom: "1rem" }}>{leadSearch}</div>}
-        <div className="so-card-list" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <div className="so-card-list">
           {loading ? <div className="sales-empty">Loading…</div> : dashboard?.results.length ? dashboard.results.map(lead => (
-            <div key={lead.id} onClick={() => void openLead(lead)} style={{ background: "#fff", padding: "1.25rem", borderRadius: "12px", border: "1px solid var(--border)", cursor: "pointer", display: "flex", flexDirection: "column", gap: "0.75rem", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                 <div style={{ display: "flex", flexDirection: "column" }}>
-                   <b style={{ fontSize: "1.1rem", marginBottom: "0.25rem" }}>{lead.name}</b>
-                   <span style={{ color: "var(--text-light)", fontSize: "0.9rem" }}>{lead.phone} · {lead.sourceCode}</span>
-                   <span style={{ color: "var(--text-light)", fontSize: "0.85rem" }}>{lead.source} · {lead.status}</span>
-                 </div>
-                 <span className={`sales-status ${displayStatusClass(lead)}`}>{displayStatus(lead)}</span>
-               </div>
-            </div>
+            <article className="so-lead-card" key={lead.id}>
+              <button type="button" className="so-lead-card-main" onClick={() => void openLead(lead)}>
+                <span className="so-lead-card-top"><span className="so-lead-identity"><strong>{lead.name}</strong><small>Lead #{String(lead.id).padStart(6, "0")}</small></span><span className={`sales-status ${displayStatusClass(lead)}`}>{displayStatus(lead)}</span></span>
+                <span className="so-lead-meta"><span><small>Mobile</small><b>{lead.phone}</b></span><span><small>Source</small><b>{lead.source}</b></span></span>
+                <span className="so-lead-open">Open lead <b aria-hidden="true">→</b></span>
+              </button>
+              <a className="so-lead-call" href={`tel:${lead.phone}`} aria-label={`Call ${lead.name} at ${lead.phone}`}><span aria-hidden="true">☎</span> Call</a>
+            </article>
           )) : <div className="sales-empty"><strong>No leads in this view.</strong><span>New assignments and follow-ups will appear here automatically.</span></div>}
         </div>
       </section>

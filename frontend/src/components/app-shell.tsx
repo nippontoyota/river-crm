@@ -7,6 +7,7 @@ import { cacheCurrentUser, clearCachedCurrentUser, getCachedCurrentUser, getCurr
 import { ServiceBell } from "@/components/service-bell";
 import { canAddService } from "@/lib/service";
 import { FeedbackBell } from "@/components/feedback-bell";
+import { LeadNotifications, unsubscribePhonePush } from "@/components/lead-notifications";
 import { formatDate, formatWeekday } from "@/lib/dates";
 
 type AppShellProps = { children: ReactNode; role: "Meta Uploader" | "Service Department" | "CEO" | "Admin" | "Sales officer" | "Sales manager" | "Receptionist" | "Feedback Caller" };
@@ -106,7 +107,10 @@ export function AppShell({ children, role }: AppShellProps) {
   const links = role === "Meta Uploader" ? uploadLinks : role === "Service Department" ? serviceLinks : role === "Feedback Caller" ? feedbackLinks : role === "CEO" ? ceoLinks : role === "Admin" ? adminLinks : role === "Sales manager" ? managerLinks : role === "Sales officer" ? user?.role === "CRE" ? creLinks : user?.role === "COMPLAINTS" ? complaintLinks : officerLinks : receptionistLinks;
   const shellRoleClass = role === "Feedback Caller" ? "feedback-shell" : role === "CEO" ? "ceo-shell" : role === "Sales manager" ? "manager-shell" : role === "Sales officer" ? user?.role === "SO" ? "ps-shell" : user?.role === "COMPLAINTS" ? "complaints-shell" : "cre-shell" : role === "Receptionist" ? "receptionist-shell" : "";
   const signOut = async () => {
-    try { await logout(); }
+    try {
+      if (user?.role === "SO" || sessionConflict?.role === "SO") await unsubscribePhonePush().catch(() => undefined);
+      await logout();
+    }
     finally { clearCachedCurrentUser(); router.replace("/"); }
   };
 
@@ -159,7 +163,7 @@ export function AppShell({ children, role }: AppShellProps) {
       </div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><div><b><span className="mobile-product">ITS · </span>{role === "Meta Uploader" ? "Bulk lead uploads" : role === "Service Department" ? "Branch services" : role === "CEO" ? "Company performance" : role === "Admin" ? "Lead control" : role === "Sales manager" ? "Branch command" : role === "Receptionist" ? "Front Desk" : user?.role === "COMPLAINTS" ? "Complaint queue" : user?.role === "SO" ? displayName : role === "Feedback Caller" ? "Customer feedback" : `${workspaceRole} pipeline`}</b><small>{formatWeekday(new Date())}, {formatDate(new Date())}</small></div><div className="top-actions">{user && canAddService(user) && <button className="button primary" onClick={() => pathname === "/services" ? window.dispatchEvent(new Event("service:create")) : router.push("/services?addService=1")}>＋ Add service</button>}{user && ["SERVICE", "CRE"].includes(user.role) && <ServiceBell />}{user && ["FEEDBACK", "ADMIN", "SALES_MANAGER"].includes(user.role) && <FeedbackBell />}{role === "Admin" && pathname !== "/complaints" && <button className="button primary" onClick={() => ["/leads", "/all-leads"].includes(pathname) ? window.dispatchEvent(new Event("incheon:add-lead")) : router.push("/leads?addLead=1")}>＋ Add lead</button>}<button className="mobile-signout" onClick={() => void signOut()} aria-label="Sign out" title="Sign out">↪</button></div></header>
+      <header className="topbar"><div><b><span className="mobile-product">ITS · </span>{role === "Meta Uploader" ? "Bulk lead uploads" : role === "Service Department" ? "Branch services" : role === "CEO" ? "Company performance" : role === "Admin" ? "Lead control" : role === "Sales manager" ? "Branch command" : role === "Receptionist" ? "Front Desk" : user?.role === "COMPLAINTS" ? "Complaint queue" : user?.role === "SO" ? displayName : role === "Feedback Caller" ? "Customer feedback" : `${workspaceRole} pipeline`}</b><small>{formatWeekday(new Date())}, {formatDate(new Date())}</small></div><div className="top-actions">{user && canAddService(user) && <button className="button primary" onClick={() => pathname === "/services" ? window.dispatchEvent(new Event("service:create")) : router.push("/services?addService=1")}>＋ Add service</button>}{user?.role === "SO" && <LeadNotifications />}{user && ["SERVICE", "CRE"].includes(user.role) && <ServiceBell />}{user && ["FEEDBACK", "ADMIN", "SALES_MANAGER"].includes(user.role) && <FeedbackBell />}{role === "Admin" && pathname !== "/complaints" && <button className="button primary" onClick={() => ["/leads", "/all-leads"].includes(pathname) ? window.dispatchEvent(new Event("incheon:add-lead")) : router.push("/leads?addLead=1")}>＋ Add lead</button>}<button className="mobile-signout" onClick={() => void signOut()} aria-label="Sign out" title="Sign out">↪</button></div></header>
       {children}
     </main>
   </div>;
