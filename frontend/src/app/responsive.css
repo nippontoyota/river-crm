@@ -1387,11 +1387,23 @@ input[type="radio"] {
   border: 0;
   background: transparent;
   padding: clamp(16px, 4vw, 22px);
-  cursor: pointer;
   text-align: left;
 }
 
-.ps-shell .so-lead-card-main:focus-visible,
+.ps-shell .so-lead-card-details,
+.ps-shell .so-lead-open {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.ps-shell .so-lead-card-details { display: block; width: 100%; }
+
+.ps-shell .so-lead-card-details:focus-visible,
+.ps-shell .so-lead-open:focus-visible,
+.sales-workspace .phone-link:focus-visible,
 .ps-shell .so-lead-call:focus-visible {
   outline: 3px solid #d90000;
   outline-offset: -3px;
@@ -1433,6 +1445,7 @@ input[type="radio"] {
 
 .ps-shell .so-lead-meta > span { min-width: min(160px, 45%); }
 .ps-shell .so-lead-meta b { overflow-wrap: anywhere; font-size: 13px; }
+.sales-workspace .phone-link { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .ps-shell .so-lead-open { font-size: 12px; font-weight: 700; }
 .ps-shell .so-lead-open b { color: #d90000; font-size: 17px; }
 
