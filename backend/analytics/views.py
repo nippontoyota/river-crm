@@ -296,32 +296,41 @@ def role_rows(users, lead_relation, branch, start, end, scoped_leads=None):
         lead_filter &= Q(**{f"{lead_relation}__enquiry_date__gte": start})
     if end:
         lead_filter &= Q(**{f"{lead_relation}__enquiry_date__lte": end})
-    call_filter = Q(call_logs__lead__deleted_at__isnull=True) & choice_q("call_logs__lead__branch", branch)
-    follow_filter = Q(follow_ups__lead__deleted_at__isnull=True) & choice_q("follow_ups__lead__branch", branch)
-    if start:
-        call_filter &= Q(call_logs__created_at__date__gte=start)
-        follow_filter &= Q(follow_ups__scheduled_for__date__gte=start)
-    if end:
-        call_filter &= Q(call_logs__created_at__date__lte=end)
-        follow_filter &= Q(follow_ups__scheduled_for__date__lte=end)
     if scoped_leads is not None:
         lead_ids = scoped_leads.values("pk")
         lead_filter &= Q(**{f"{lead_relation}__pk__in": lead_ids})
-        call_filter &= Q(call_logs__lead__pk__in=lead_ids)
-        follow_filter &= Q(follow_ups__lead__pk__in=lead_ids)
+
+    activity_filter = Q(lead__deleted_at__isnull=True) & choice_q("lead__branch", branch)
+    if scoped_leads is not None:
+        activity_filter &= Q(lead__pk__in=scoped_leads.values("pk"))
+    calls = CallLog.objects.filter(activity_filter)
+    followups = FollowUp.objects.filter(activity_filter)
+    if start:
+        calls = calls.filter(created_at__date__gte=start)
+        followups = followups.filter(scheduled_for__date__gte=start)
+    if end:
+        calls = calls.filter(created_at__date__lte=end)
+        followups = followups.filter(scheduled_for__date__lte=end)
+    # Separate one-to-many aggregates avoid a leads × calls × follow-ups join.
+    calls_by_user = {
+        row["so_id"]: row
+        for row in calls.values("so_id").annotate(calls=Count("id"), last_activity=Max("created_at"))
+    }
+    followups_by_user = dict(followups.values_list("so_id").annotate(total=Count("id")))
+
     rows = []
     for user in users.annotate(
-        total=Count(lead_relation, filter=lead_filter, distinct=True),
-        untouched=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__pk__in": untouched_leads.values("pk")}), distinct=True),
-        qualified=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__status": Lead.Status.QUALIFIED}), distinct=True),
-        booked=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__sales_outcome": Lead.SalesOutcome.BOOKED}), distinct=True),
-        retailed=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__sales_outcome": Lead.SalesOutcome.RETAILED}), distinct=True),
-        lost=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__status__in": [Lead.Status.LOST, Lead.Status.UNQUALIFIED]}), distinct=True),
-        calls=Count("call_logs", filter=call_filter, distinct=True),
-        followups=Count("follow_ups", filter=follow_filter, distinct=True),
-        last_activity=Max("call_logs__created_at", filter=call_filter),
+        total=Count(lead_relation, filter=lead_filter),
+        untouched=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__pk__in": untouched_leads.values("pk")})),
+        qualified=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__status": Lead.Status.QUALIFIED})),
+        booked=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__sales_outcome": Lead.SalesOutcome.BOOKED})),
+        retailed=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__sales_outcome": Lead.SalesOutcome.RETAILED})),
+        lost=Count(lead_relation, filter=lead_filter & Q(**{f"{lead_relation}__status__in": [Lead.Status.LOST, Lead.Status.UNQUALIFIED]})),
     ):
-        if not (user.total or user.calls or user.followups or user.location.strip().casefold() == branch.casefold()):
+        call_data = calls_by_user.get(user.id, {})
+        call_count = call_data.get("calls", 0)
+        followup_count = followups_by_user.get(user.id, 0)
+        if not (user.total or call_count or followup_count or user.location.strip().casefold() == branch.casefold()):
             continue
         rows.append({
             "id": user.id,
@@ -334,9 +343,9 @@ def role_rows(users, lead_relation, branch, start, end, scoped_leads=None):
             "booked": user.booked,
             "retailed": user.retailed,
             "lost": user.lost,
-            "calls": user.calls,
-            "followups": user.followups,
-            "last_activity": user.last_activity,
+            "calls": call_count,
+            "followups": followup_count,
+            "last_activity": call_data.get("last_activity"),
             "conversion_rate": percent(user.retailed, user.total),
             "qualification_rate": percent(user.qualified, user.total),
         })

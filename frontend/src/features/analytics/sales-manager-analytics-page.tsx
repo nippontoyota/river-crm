@@ -163,8 +163,8 @@ export function SalesManagerAnalyticsPage() {
   const drilldownFilters: Record<string, string> = { ...(["today", "mtd"].includes(range) && data?.date_from ? { date_from: String(data.date_from), date_to: String(data.date_to || data.date_from) } : {}), ...(range === "custom" && validDateFrom && data?.date_from ? { date_from: String(data.date_from) } : {}), ...(range === "custom" && validDateTo && data?.date_to ? { date_to: String(data.date_to) } : {}), ...(source ? { source } : {}), ...(color ? { color } : {}), ...(ps ? { ps } : {}) };
   const load = useCallback(async (fresh = false) => { const request = ++requestId.current; setLoading(true); setError(""); try { const result = await getSalesManagerAnalytics({ ...params, include: "filters,ps,source,lost", ...(fresh ? { refresh: "1" } : {}) }); if (request === requestId.current) { setData(result); setDataVersion(version => version + 1); } } catch (err) { if (request === requestId.current) setError(err instanceof Error ? err.message : "Unable to load sales manager analytics."); } finally { if (request === requestId.current) setLoading(false); } }, [params]);
   useEffect(() => { void getSystemConfig().then(config => { setConfiguredSources(config.lists.sources || ["WALKIN"]); setConfiguredColors(config.lists.colorVariants || []); }).catch(() => { setConfiguredSources(["WALKIN"]); setConfiguredColors([]); }); }, []);
-  useEffect(() => { const timer = window.setTimeout(() => void load(range === "mtd"), 0); return () => window.clearTimeout(timer); }, [load, range]);
-  useCrmRefresh(() => load(true));
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
+  useCrmRefresh(() => load());
   const sources = configuredSources;
   const psOptions = data?.filters?.ps || data?.ps || [];
   const exportSection = (section: string) => { setError(""); void exportSalesManagerAnalytics(section, params).catch(err => setError(err instanceof Error ? err.message : "Export failed.")); };

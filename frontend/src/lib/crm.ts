@@ -93,13 +93,6 @@ async function csrf() {
 
 export async function api<T>(path: string, options: ApiOptions = {}, didRefresh = false): Promise<T> {
   const method = options.method?.toUpperCase() || "GET";
-  // Live dashboards must read committed data even across separate cache workers.
-  if (method === "GET" && /^\/api\/(analytics|ceo)\//.test(path)) {
-    const [pathname, search = ""] = path.split("?");
-    const query = new URLSearchParams(search);
-    query.set("refresh", "1");
-    path = `${pathname}?${query}`;
-  }
   const headers = new Headers(options.headers);
   const { skipCsrf, ...fetchOptions } = options;
   if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
