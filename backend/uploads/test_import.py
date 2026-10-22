@@ -16,7 +16,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from accounts.models import User
 from ceo.models import Milestone, OperationEvent
 from intake.models import Connection, IntakeForm, Submission
-from leads.models import Lead, LeadAudit, SystemConfig
+from leads.models import Lead, LeadAudit, LeadQualification, SystemConfig
 from leads.rtos import KERALA_RTO_CHOICES, normalize_rto
 from .models import UploadBatch
 from .tasks import HEADINGS, COLUMNS
@@ -122,6 +122,7 @@ class BulkImportTests(TestCase):
                 self.assertEqual(row.answers, [])
                 self.assertEqual(self.commit(batch).data, {'created': 1, 'overwritten': 0, 'skipped': 0})
                 lead = Lead.objects.get(phone=row.normalized_phone)
+                self.assertEqual(lead.qualification.variant, "No Preference")
                 self.assertEqual((lead.status, lead.assigned_so_id, lead.assigned_ps_id), ('FRESH', None, None))
                 self.assertEqual(lead.enquiry_date, timezone.localdate())
                 self.assertEqual((lead.name, lead.email, lead.source), ('Customer', 'rider@example.com', 'WEBSITE'))
@@ -144,6 +145,7 @@ class BulkImportTests(TestCase):
                     self.assertEqual((row.data['city'], row.data['pincode']), ('Kochi / കൊച്ചി', '682001'))
                     self.assertEqual(self.commit(batch).data['created'], 1)
                     lead = Lead.objects.get(phone=row.normalized_phone)
+                    self.assertEqual(lead.qualification.variant, "No Preference")
                     self.assertEqual((lead.city, lead.pincode), ('Kochi / കൊച്ചി', '682001'))
                     self.client.force_authenticate(self.admin)
                     pool = self.client.get(f'/api/leads/?unassigned=true&q={lead.phone}').data['results'][0]
@@ -237,6 +239,7 @@ class BulkImportTests(TestCase):
 
     def test_crm_duplicate_requires_admin_approval_and_updates_same_lead(self):
         lead = Lead.objects.create(name='Existing', phone='9876543210', rto='KL-08', assigned_so=self.admin, status='QUALIFIED', profession='Engineer', branch='Kochi', email='old@example.com', model_interest='River Indie', campaign='Launch', city='Kochi')
+        LeadQualification.objects.create(lead=lead, variant="Blue")
         batch = self.upload([self.customer(name='Updated', phone='+91 98765-43210')])
         row = batch.rows.get()
         self.assertEqual(row.resolution, 'PENDING')
@@ -247,6 +250,7 @@ class BulkImportTests(TestCase):
         lead.refresh_from_db()
         self.assertEqual((lead.name, lead.status, lead.assigned_so_id, lead.rto, lead.profession, lead.email, lead.branch), ('Updated', 'QUALIFIED', self.admin.pk, 'KL-08', 'Engineer', 'old@example.com', 'Kochi'))
         self.assertEqual((lead.model_interest, lead.campaign, lead.city), ('River Indie', 'Launch', 'Kochi'))
+        self.assertEqual(lead.qualification.variant, "Blue")
         self.assertEqual(Lead.objects.count(), 1)
 
     def test_file_duplicates_choose_exactly_one_row_per_normalized_phone(self):

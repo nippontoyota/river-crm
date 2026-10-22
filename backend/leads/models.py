@@ -135,7 +135,7 @@ class FollowUp(models.Model):
 
 class LeadQualification(models.Model):
     lead = models.OneToOneField(Lead, on_delete=models.CASCADE, related_name="qualification")
-    variant = models.CharField(max_length=120, blank=True)
+    variant = models.CharField(max_length=120, blank=True, default="No Preference")
     buying_timeline = models.CharField(max_length=80, blank=True)
     finance_type = models.CharField(max_length=80, blank=True)
     trade_in = models.BooleanField(null=True, blank=True)

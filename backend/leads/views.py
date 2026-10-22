@@ -1,3 +1,4 @@
+from .choices import color_q
 import csv
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -58,7 +59,7 @@ def apply_lead_filters(queryset, filters):
         if value := filters.get(key):
             queryset = queryset.filter(choice_q(key, value))
     if value := filters.get("color"):
-        queryset = queryset.filter(choice_q("qualification__variant", value))
+        queryset = queryset.filter(color_q("qualification__variant", value))
     if value := filters.get("source_label"):
         queryset = queryset.filter(Q(source_label__icontains=value) | Q(campaign__icontains=value))
     if value := filters.get("q"):

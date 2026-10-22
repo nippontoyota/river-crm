@@ -138,12 +138,12 @@ class ReportFilters:
 
     def workload(self, queryset):
         from leads.metrics import CE_HANDLING_FILTERS, PS_HANDLING_FILTERS, actionable_followups, with_ce_handling, with_ps_handling
+        active = ~Q(status__in=["WON", "LOST", "UNQUALIFIED"]) & ~Q(sales_outcome__in=["RETAILED", "LOST"])
         if self.params.get("followup") == "untouched_ce":
-            return with_ce_handling(queryset).filter(CE_HANDLING_FILTERS["untouched"])
+            return with_ce_handling(queryset).filter(active, CE_HANDLING_FILTERS["untouched"])
         if self.params.get("followup") == "untouched_ps":
-            return with_ps_handling(queryset).filter(PS_HANDLING_FILTERS["untouched"])
+            return with_ps_handling(queryset).filter(active, PS_HANDLING_FILTERS["untouched"])
         today = timezone.localdate()
-        active = ~Q(status__in=["WON", "LOST", "UNQUALIFIED"])
         open_followups = actionable_followups()
         if self.params.get("age"):
             low, high = AGE_BANDS[self.params["age"]]

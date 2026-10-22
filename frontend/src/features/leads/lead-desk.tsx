@@ -356,6 +356,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
 
   const saveCustomerDetails = async () => {
     if (!activeLead) return;
+    if (!editDetails.variant) { setError("Choose a colour or No Preference."); return; }
     if (!editDetails.model) { setError("Select a vehicle model from Admin Lists."); return; }
     setSavingDetails(true);
     try {
@@ -605,7 +606,7 @@ export function LeadDesk({ officerMode = false, followUpsOnly = false, adminMode
               <label>Customer name<input value={editDetails.name} onChange={e => setEditDetails({ ...editDetails, name: e.target.value })} maxLength={160} /></label>
               <label>Mobile<input value={editDetails.phone} onChange={e => setEditDetails({ ...editDetails, phone: e.target.value.replace(/\D/g, "") })} maxLength={10} /></label>
               <label>Model<select value={editDetails.model} onChange={e => setEditDetails({ ...editDetails, model: e.target.value })} disabled={!models.length && !editDetails.model}><option value="">{models.length ? "Select model" : "Add models in Lists first"}</option>{optionsWithCurrent(models, editDetails.model).map(model => <option key={model} value={model}>{model}</option>)}</select></label>
-              <label>Color variant<select value={editDetails.variant} onChange={e => setEditDetails({ ...editDetails, variant: e.target.value })} disabled={!colorVariantOptions.length && !editDetails.variant}><option value="">{colorVariantOptions.length ? "Select color variant" : "Add color variants in Lists first"}</option>{optionsWithCurrent(colorVariantOptions, editDetails.variant).map(option => <option key={option} value={option}>{option}</option>)}</select></label>
+              <label>Color variant *<select required value={editDetails.variant} onChange={e => setEditDetails({ ...editDetails, variant: e.target.value })} disabled={!colorVariantOptions.length && !editDetails.variant}><option value="">{colorVariantOptions.length ? "Select color variant" : "Add color variants in Lists first"}</option>{optionsWithCurrent(colorVariantOptions, editDetails.variant).map(option => <option key={option} value={option}>{option}</option>)}</select></label>
               <label>Trade-in<select value={editDetails.trade_in === true ? "true" : editDetails.trade_in === false ? "false" : ""} onChange={e => setEditDetails({ ...editDetails, trade_in: e.target.value === "true" ? true : e.target.value === "false" ? false : null })}><option value="">—</option><option value="true">Yes</option><option value="false">No</option></select></label>
               <label>Category<select value={editDetails.category} onChange={e => setEditDetails({ ...editDetails, category: e.target.value })}><option value="HOT">Hot</option><option value="WARM">Warm</option><option value="COLD">Cold</option></select></label>
               <div style={{ gridColumn: "1 / -1", display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}><button type="button" className="filter" onClick={() => setEditingCustomer(false)}>Cancel</button><button type="button" className="button primary" disabled={savingDetails} onClick={() => void saveCustomerDetails()}>{savingDetails ? "Saving…" : "Save details"}</button></div>

@@ -40,3 +40,21 @@ def merge_choice_counts(rows, field, options=()):
             if name != field:
                 group[name] = group.get(name, 0) + count
     return sorted(groups.values(), key=lambda row: (-row.get("total", 0), choice_key(row[field])))
+
+
+NO_COLOR_PREFERENCE = "No Preference"
+MISSING_COLOR_LABELS = {"", "color not set", "colour not set"}
+
+
+def color_choices(options):
+    return unique_choices([NO_COLOR_PREFERENCE, *[value for value in options
+        if choice_key(value) not in MISSING_COLOR_LABELS | {choice_key(NO_COLOR_PREFERENCE)}]])
+
+
+def color_q(field, value):
+    if choice_key(value) == choice_key(NO_COLOR_PREFERENCE):
+        result = Q(**{field + "__isnull": True})
+        for label in (*MISSING_COLOR_LABELS, NO_COLOR_PREFERENCE):
+            result |= choice_q(field, label)
+        return result
+    return choice_q(field, value)

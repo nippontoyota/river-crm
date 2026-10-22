@@ -73,7 +73,7 @@ def lead_rows(queryset):
         ordered_ids = [lead.pk for lead in queryset]
         queryset = Lead.objects.filter(pk__in=ordered_ids)
     queryset = classified_leads(queryset).select_related("assigned_so", "assigned_ps").annotate(
-        next_follow_up=Min("follow_ups__scheduled_for", filter=Q(follow_ups__resolved_at__isnull=True)),
+        next_follow_up=Min("follow_ups__scheduled_for", filter=Q(follow_ups__resolved_at__isnull=True) & ~Q(status__in=["WON", "LOST", "UNQUALIFIED"]) & ~Q(sales_outcome__in=["RETAILED", "LOST"])),
         calls=Count("call_logs", distinct=True), last_call=Max("call_logs__created_at"))
     rows = [{"id": lead.id, "name": lead.name, "phone": lead.phone, "branch": lead.branch, "rto": lead.rto,
         "status": lead.status, "analysis_status": lead.analysis_status, "loss_reason": lead.loss_reason,

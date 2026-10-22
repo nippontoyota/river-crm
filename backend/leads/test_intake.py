@@ -20,7 +20,7 @@ class ActivityIntakeTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         for i, (user, endpoint, source) in enumerate([(self.admin, "/api/leads/", "WEBSITE"), (self.receptionist, "/api/leads/", "WALKIN"), (self.so, "/api/leads/so-create/", "WEBSITE")]):
             self.client.force_authenticate(user)
-            response = self.client.post(endpoint, {"rto": "KL-07", "name": "Roadshow enquiry", "phone": f"987654321{i}", "source": source, "activity": "Roadshow", "sub_activity": "Kochi", "model_interest": "River Indie", "enquiry_date": timezone.localdate().isoformat()}, format="json")
+            response = self.client.post(endpoint, {"qualification_input": {"variant": "No Preference"}, "rto": "KL-07", "name": "Roadshow enquiry", "phone": f"987654321{i}", "source": source, "activity": "Roadshow", "sub_activity": "Kochi", "model_interest": "River Indie", "enquiry_date": timezone.localdate().isoformat()}, format="json")
             self.assertEqual(response.status_code, 201, response.data)
             self.assertEqual(response.data["sub_activity"], "Kochi")
             self.assertEqual(Lead.objects.get(pk=response.data["id"]).activity, "Roadshow")
@@ -29,7 +29,7 @@ class ActivityIntakeTests(TestCase):
     def test_invalid_pairs_and_retired_values(self):
         payload = {"rto": "KL-07", "name": "Enquiry", "phone": "9876543210", "source": "WEBSITE"}
         for fields in [{"activity": "Roadshow", "sub_activity": "Thrissur"}, {"sub_activity": "Kochi"}, {"activity": "Unknown"}]:
-            self.assertEqual(self.client.post("/api/leads/", {**payload, **fields}, format="json").status_code, 400)
+            self.assertEqual(self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"}, **payload, **fields}, format="json").status_code, 400)
         lead = Lead.objects.create(**payload, activity="Retired", sub_activity="Old location")
         response = self.client.patch(f"/api/leads/{lead.id}/so-update/", {"name": "Updated", "activity": "Retired", "sub_activity": "Old location"}, format="json")
         self.assertEqual(response.status_code, 200, response.data)
@@ -38,16 +38,17 @@ class ActivityIntakeTests(TestCase):
         self.assertEqual(response.data["sub_activity"], "")
         self.assertEqual(self.client.put("/api/system-config/", {"lists": {"activities": ["Roadshow"], "subActivities": {"Missing": ["Kochi"]}}}, format="json").status_code, 400)
 
-    def test_receptionist_can_capture_without_color_or_timeline(self):
+    def test_receptionist_can_capture_no_preference_without_timeline(self):
         self.client.force_authenticate(self.receptionist)
-        response = self.client.post("/api/leads/", {"rto": "KL-07", "name": "Walk-in enquiry", "phone": "9876543210", "source": "WALKIN", "model_interest": "River Indie", "ps_officer_id": self.so.pk}, format="json")
+        response = self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"}, "rto": "KL-07", "name": "Walk-in enquiry", "phone": "9876543210", "source": "WALKIN", "model_interest": "River Indie", "ps_officer_id": self.so.pk}, format="json")
         self.assertEqual(response.status_code, 201, response.data)
         lead = Lead.objects.get(pk=response.data["id"])
         self.assertEqual(lead.source, Lead.Source.WALKIN)
         self.assertEqual(lead.status, Lead.Status.QUALIFIED)
         self.assertEqual(lead.assigned_ps, self.so)
         self.assertEqual(lead.model_interest, "River Indie")
-        self.assertIsNone(response.data["qualification"])
+        self.assertEqual(response.data["qualification"]["variant"], "No Preference")
+        self.assertEqual(response.data["qualification"]["buying_timeline"], "")
 
     def test_model_seed_preserves_configuration_and_is_idempotent(self):
         from importlib import import_module
@@ -90,7 +91,7 @@ class ConfiguredLeadFieldsTests(TestCase):
                 self.assertEqual(response.data["branch"], "Kochi")
                 for fields in [{"model_interest": "Typo"}, {"source": "Typo"},
                                {"qualification_input": {"variant": "Typo"}}, {"sub_activity": "Expo"}]:
-                    rejected = self.client.post(endpoint, {**payload, **fields}, format="json")
+                    rejected = self.client.post(endpoint, {"qualification_input": {"variant": "No Preference"}, **payload, **fields}, format="json")
                     self.assertEqual(rejected.status_code, 400, rejected.data)
                 self.config.lists = {}
                 self.config.save()
@@ -101,7 +102,7 @@ class ConfiguredLeadFieldsTests(TestCase):
                 self.set_config()
         self.client.force_authenticate(self.ce)
         payload["phone"] = "9000000003"
-        self.assertEqual(self.client.post("/api/leads/", {**payload, "branch": "Typo"}, format="json").status_code, 400)
+        self.assertEqual(self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"}, **payload, "branch": "Typo"}, format="json").status_code, 400)
         self.ps.location = "Unconfigured branch"
         self.ps.save()
         self.client.force_authenticate(self.ps)

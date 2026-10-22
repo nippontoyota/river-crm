@@ -2,8 +2,8 @@ import csv
 from calendar import monthrange
 from datetime import date, datetime, timedelta
 
-from django.db.models import Count, Exists, IntegerField, Max, OuterRef, Q, Subquery, Value
-from django.db.models.functions import Coalesce, NullIf, Trim, TruncMonth
+from django.db.models import Case, When, Count, Exists, IntegerField, Max, OuterRef, Q, Subquery, Value
+from django.db.models.functions import Coalesce, Trim, TruncMonth
 from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -15,7 +15,8 @@ from accounts.permissions import IsAdmin, IsSalesManager
 from analytics.cache import cache_analytics
 from leads.metrics import CE_HANDLING_FILTERS, PS_HANDLING_FILTERS, actionable_followups, etbr_aggregates, lost_reason_groups, with_ce_handling, with_ps_handling
 from leads.models import CallLog, FollowUp, Lead, LeadAudit
-from leads.choices import choice_q, merge_choice_counts, unique_choices
+from leads.choices import choice_q, merge_choice_counts, unique_choices, color_q, NO_COLOR_PREFERENCE
+from leads.metrics import lost_lead_filter
 from leads.serializers import configured_values
 
 
@@ -39,6 +40,7 @@ def metrics(queryset):
     counts = queryset.aggregate(
         **etbr_aggregates(),
         total_assigned=Count("id"),
+        active_pipeline=Count("id", filter=~Q(status__in=["WON", "LOST", "UNQUALIFIED"]) & ~Q(sales_outcome__in=["RETAILED", "LOST"])),
         total_called=Count("id", filter=~Q(status=Lead.Status.FRESH)),
         untouched_by_ce=Count("id", filter=CE_HANDLING_FILTERS["untouched"]),
         untouched_by_ps=Count("id", filter=PS_HANDLING_FILTERS["untouched"]),
@@ -62,10 +64,12 @@ def team_metrics(users, lead_relation):
     is_ce = lead_relation == "assigned_leads"
     handled = with_ce_handling(Lead.objects.all()) if is_ce else with_ps_handling(Lead.objects.all())
     untouched = handled.filter((CE_HANDLING_FILTERS if is_ce else PS_HANDLING_FILTERS)["untouched"])
+    active_untouched = untouched.exclude(status__in=["WON", "LOST", "UNQUALIFIED"]).exclude(sales_outcome__in=["RETAILED", "LOST"])
     called = handled.filter(**{("_ce_called" if is_ce else "_ps_called"): True})
     rows = []
     for user in users.annotate(
         total_assigned=Count(lead_relation, filter=active_leads, distinct=True),
+        followup_untouched=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__pk__in": active_untouched.values("pk")}), distinct=True),
         total_called=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__pk__in": called.values("pk")}), distinct=True),
         untouched=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__pk__in": untouched.values("pk")}), distinct=True),
         qualified=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__status": Lead.Status.QUALIFIED}), distinct=True),
@@ -81,6 +85,7 @@ def team_metrics(users, lead_relation):
             "total_assigned": user.total_assigned,
             "total_called": user.total_called,
             "untouched": user.untouched,
+            "followup_untouched": user.followup_untouched,
             "calls_today": daily_calls.get(user.pk, 0),
             "qualified": user.qualified,
             "walkins": user.walkins,
@@ -140,7 +145,7 @@ def manager_base_queryset(request, include_ps=True):
     if value := request.query_params.get("model"):
         queryset = queryset.filter(model_interest__icontains=value.strip())
     if value := request.query_params.get("color"):
-        queryset = queryset.filter(choice_q("qualification__variant", value))
+        queryset = queryset.filter(color_q("qualification__variant", value))
     if value := request.query_params.get("category"):
         queryset = queryset.filter(category=value)
     if value := request.query_params.get("status"):
@@ -152,7 +157,7 @@ def manager_base_queryset(request, include_ps=True):
 
 def ps_followup_queryset(request):
     _, start, end = period_bounds(request)
-    queryset = with_period(manager_base_queryset(request, include_ps=False), start, end).filter(assigned_ps__isnull=False)
+    queryset = with_period(manager_base_queryset(request, include_ps=False), start, end).filter(assigned_ps__isnull=False).exclude(lost_lead_filter())
     if priority := request.query_params.get("priority", "").upper():
         if priority in {choice for choice, _ in Lead.Category.choices}:
             queryset = queryset.filter(category=priority)
@@ -284,7 +289,7 @@ def model_rows(queryset):
 
 
 def color_rows(queryset):
-    color = Coalesce(NullIf(Trim("qualification__variant"), Value("")), Value("Color not set"))
+    color = Case(When(color_q("qualification__variant", NO_COLOR_PREFERENCE), then=Value(NO_COLOR_PREFERENCE)), default=Trim("qualification__variant"))
     rows = list(queryset.annotate(color=color).values("color").annotate(total=Count("id"), qualified=Count("id", filter=Q(status=Lead.Status.QUALIFIED)), booked=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.BOOKED)), retailed=Count("id", filter=Q(sales_outcome=Lead.SalesOutcome.RETAILED)), lost=Count("id", filter=Q(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED]))).order_by("-total", "color"))
     rows = merge_choice_counts(rows, "color", configured_values("colorVariants"))
     for row in rows:
@@ -568,7 +573,7 @@ class SalesManagerAnalyticsExportView(APIView):
         writer = csv.writer(response)
         rows = data.get(section, [])
         if section in {"ps", "source", "models", "colors", "lost_reasons", "stale_leads"} and isinstance(rows, list) and rows:
-            keys = [key for key in rows[0] if "qualif" not in key]
+            keys = [key for key in rows[0] if "qualif" not in key and not (section == "ps" and key == "calls")]
             writer.writerow(keys)
             for row in rows:
                 writer.writerow([manager_csv_value(key, row.get(key, "")) for key in keys])

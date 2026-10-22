@@ -75,7 +75,7 @@ class ConfiguredChoiceTests(TestCase):
         self.assertEqual(ReportFilters(query).events().count(), 3)
 
     def test_configured_validation_accepts_case_and_preserves_linked_options(self):
-        data = {"name": "New", "phone": "9000000110", "rto": "KL-07", "source": " META ", "branch": "kochi",
+        data = {"qualification_input": {"variant": "No Preference"}, "name": "New", "phone": "9000000110", "rto": "KL-07", "source": " META ", "branch": "kochi",
                 "model_interest": "INDIE", "activity": "bank display", "sub_activity": "LAUNCH"}
         serializer = LeadSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
@@ -92,7 +92,7 @@ class ConfiguredChoiceTests(TestCase):
         self.assertEqual(config.validated_data["lists"]["branches"], ["Kochi"])
         self.assertEqual(config.validated_data["lists"]["sources"], ["WALKIN", "Meta"])
         self.assertEqual(config.validated_data["lists"]["models"], ["Indie"])
-        self.assertEqual(config.validated_data["lists"]["colorVariants"], ["Blue"])
+        self.assertEqual(config.validated_data["lists"]["colorVariants"], ["No Preference", "Blue"])
         self.assertEqual(config.validated_data["lists"]["subActivities"], {"Bank Display": ["Launch", "Second Event"]})
         invalid = LeadSerializer(data={**data, "sub_activity": "Not configured"})
         self.assertFalse(invalid.is_valid())

@@ -1,3 +1,5 @@
+from leads.models import LeadQualification
+from leads.choices import NO_COLOR_PREFERENCE
 from pathlib import Path
 
 from django.db import transaction
@@ -178,6 +180,7 @@ class UploadBatchViewSet(viewsets.GenericViewSet):
                 overwritten += 1
             else:
                 lead = Lead.objects.create(**data, assigned_so=None, assigned_ps=None, generated_by=None, status=Lead.Status.FRESH)
+                LeadQualification.objects.create(lead=lead, variant=NO_COLOR_PREFERENCE)
                 LeadAudit.objects.create(lead=lead, actor=request.user, event='imported')
                 created += 1
         batch.status = UploadBatch.Status.COMMITTED

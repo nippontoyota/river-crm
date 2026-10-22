@@ -22,7 +22,7 @@ class ReceptionistBranchTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.client.force_authenticate(self.receptionist)
-        self.lead_data = {"name": "Walk-in", "phone": "9876543210", "rto": "KL-07", "source": "WALKIN"}
+        self.lead_data = {"qualification_input": {"variant": "No Preference"}, "name": "Walk-in", "phone": "9876543210", "rto": "KL-07", "source": "WALKIN"}
         self.complaint_data = {
             "customer_name": "Walk-in", "customer_phone": "9876543210", "branch": "Kochi",
             "category": "SERVICE_DELAY", "subtype": "Repair delayed", "subject": "Delayed repair",

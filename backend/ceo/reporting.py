@@ -38,16 +38,19 @@ def milestone_counts(queryset):
 def current_counts(queryset):
     open_followups = actionable_followups()
     queryset = with_ce_handling(with_ps_handling(queryset))
+    active = ~Q(status__in=CLOSED) & ~Q(sales_outcome__in=["RETAILED", "LOST"])
     return queryset.aggregate(
+        followup_untouched_by_ce=Count("id", filter=active & CE_HANDLING_FILTERS["untouched"], distinct=True),
+        followup_untouched_by_ps=Count("id", filter=active & PS_HANDLING_FILTERS["untouched"], distinct=True),
         untouched_by_ce=Count("id", filter=CE_HANDLING_FILTERS["untouched"], distinct=True),
         untouched_by_ps=Count("id", filter=PS_HANDLING_FILTERS["untouched"], distinct=True),
-        leads=Count("id", distinct=True), active=Count("id", filter=~Q(status__in=CLOSED), distinct=True),
+        leads=Count("id", distinct=True), active=Count("id", filter=active, distinct=True),
         booked=Count("id", filter=Q(sales_outcome="BOOKED"), distinct=True),
         retailed=Count("id", filter=Q(sales_outcome="RETAILED"), distinct=True),
         lost=Count("id", filter=Q(status__in=["LOST", "UNQUALIFIED"]), distinct=True),
-        overdue=Count("id", filter=Q(pk__in=open_followups.filter(scheduled_for__lt=timezone.now()).values("lead_id")) & ~Q(status__in=CLOSED), distinct=True),
-        unassigned=Count("id", filter=(Q(assigned_so__isnull=True, assigned_ps__isnull=True) | Q(status="QUALIFIED", assigned_ps__isnull=True)) & ~Q(status__in=CLOSED), distinct=True),
-        missing_next_action=Count("id", filter=~Q(pk__in=open_followups.values("lead_id")) & ~Q(status__in=CLOSED), distinct=True),
+        overdue=Count("id", filter=Q(pk__in=open_followups.filter(scheduled_for__lt=timezone.now()).values("lead_id")) & active, distinct=True),
+        unassigned=Count("id", filter=(Q(assigned_so__isnull=True, assigned_ps__isnull=True) | Q(status="QUALIFIED", assigned_ps__isnull=True)) & active, distinct=True),
+        missing_next_action=Count("id", filter=~Q(pk__in=open_followups.values("lead_id")) & active, distinct=True),
         reassignment=Count("id", filter=Q(needs_cre_reassignment=True) | Q(needs_so_reassignment=True), distinct=True),
         incomplete=Count("id", filter=Q(rto="") | Q(branch=""), distinct=True),
         flagged=Count("id", filter=Q(flagged_to_manager=True), distinct=True),

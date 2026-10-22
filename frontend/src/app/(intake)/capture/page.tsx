@@ -28,6 +28,7 @@ export default function CaptureLeadPage() {
     profession: "",
     rto: "",
     source: "WALKIN",
+    variant: "",
     model_interest: "",
     assigned_ps_id: "",
   });
@@ -53,6 +54,7 @@ export default function CaptureLeadPage() {
     setFormData({
       activity: "", sub_activity: "",
       name: "", phone: "", email: "", profession: "", rto: "", source: "WALKIN",
+      variant: "",
       model_interest: "", assigned_ps_id: ""
     });
     setError("");
@@ -68,6 +70,7 @@ export default function CaptureLeadPage() {
     try {
       if (!branch) throw new Error("Ask your admin to assign your branch before capturing leads.");
       if (!formData.model_interest) throw new Error("Select a vehicle model from Admin Lists.");
+      if (!formData.variant) throw new Error("Choose a colour or No Preference.");
       const payload = {
         name: formData.name,
         phone: formData.phone,
@@ -78,6 +81,7 @@ export default function CaptureLeadPage() {
         activity: formData.activity, sub_activity: formData.sub_activity,
         status: "QUALIFIED",
         model_interest: formData.model_interest,
+        qualification_input: { variant: formData.variant, buying_timeline: "", finance_type: "", trade_in: null, test_drive: "", notes: "" },
         ps_officer_id: formData.assigned_ps_id ? parseInt(formData.assigned_ps_id) : undefined,
       };
       
@@ -172,6 +176,7 @@ export default function CaptureLeadPage() {
                 ))}
               </select>
             </label>
+            <label>Colour interested *<select name="variant" required value={formData.variant} onChange={handleChange}><option value="">Select colour</option>{(config?.lists.colorVariants || []).map(colour => <option key={colour} value={colour}>{colour}</option>)}</select></label>
             <label>
               Assign to Sales Executive (PS) *
               <select name="assigned_ps_id" value={formData.assigned_ps_id} onChange={handleChange} required disabled={!officers.length}>

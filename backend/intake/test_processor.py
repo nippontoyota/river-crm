@@ -128,6 +128,7 @@ class ProcessorTests(TestCase):
             self.run_processor()
         lead = Lead.objects.get()
         self.assertEqual(lead.status, 'FRESH')
+        self.assertEqual(lead.qualification.variant, 'No Preference')
         self.assertIsNone(lead.assigned_so_id)
         self.assertEqual(Submission.objects.get().campaign_name, 'Test campaign')
         with patch('intake.meta.graph') as graph:

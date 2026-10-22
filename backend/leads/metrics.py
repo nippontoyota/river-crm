@@ -9,7 +9,7 @@ def actionable_followups():
     return FollowUp.objects.filter(
         resolved_at__isnull=True, origin="OUTBOUND", reminder_held=False,
         lead__deleted_at__isnull=True, so__is_active=True, so__deleted_at__isnull=True,
-    ).exclude(lead__status__in=[Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED]).filter(
+    ).exclude(Q(lead__status__in=[Lead.Status.WON, Lead.Status.LOST, Lead.Status.UNQUALIFIED]) | Q(lead__sales_outcome__in=["RETAILED", "LOST"])).filter(
         Q(so__role="SO", so_id=F("lead__assigned_ps_id"))
         | Q(so__role="CRE", so_id=F("lead__assigned_so_id"))
     )
@@ -85,3 +85,7 @@ def lost_reason_groups(queryset):
         group = groups.setdefault(reason.casefold(), {"reason": reason, "ids": []})
         group["ids"].append(lead_id)
     return sorted(groups.values(), key=lambda group: (-len(group["ids"]), group["reason"].casefold()))
+
+
+def lost_lead_filter(prefix=""):
+    return Q(**{prefix + "status__in": [Lead.Status.LOST, Lead.Status.UNQUALIFIED]}) | Q(**{prefix + "sales_outcome": Lead.SalesOutcome.LOST})

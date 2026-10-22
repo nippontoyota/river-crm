@@ -164,7 +164,7 @@ class LeadAccessTests(TestCase):
 
     def test_admin_can_add_an_unassigned_lead(self):
         self.client.force_authenticate(self.admin)
-        response = self.client.post("/api/leads/", {"rto": "KL-07", "name": "Manual lead", "phone": "7006682392", "source": Lead.Source.WEBSITE, "model_interest": "R8 Lite", "city": "Srinagar"}, format="json")
+        response = self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"}, "rto": "KL-07", "name": "Manual lead", "phone": "7006682392", "source": Lead.Source.WEBSITE, "model_interest": "R8 Lite", "city": "Srinagar"}, format="json")
         self.assertEqual(response.status_code, 201)
         lead = Lead.objects.get(pk=response.data["id"])
         self.assertIsNone(lead.assigned_so)
@@ -172,7 +172,7 @@ class LeadAccessTests(TestCase):
 
     def test_directly_created_lead_notifies_selected_ps(self):
         self.client.force_authenticate(self.admin)
-        response = self.client.post("/api/leads/", {
+        response = self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"},
             "rto": "KL-07", "name": "Mobile enquiry", "phone": "7006682398",
             "source": Lead.Source.WALKIN, "model_interest": "River Indie",
             "branch": "Kochi", "ps_officer_id": self.ps_so.id,
@@ -363,7 +363,7 @@ class LeadAccessTests(TestCase):
                 self.assertEqual(len(options), 86)
                 self.assertIn({"value": "KL-07", "label": "KL07 - Ernakulam"}, options)
                 self.assertIn({"value": "KL-86", "label": "KL86 - Payyannur"}, options)
-                created = self.client.post("/api/leads/", {
+                created = self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"},
                     "name": "RTO enquiry", "phone": "7006682399", "source": Lead.Source.WEBSITE,
                     "rto": "KL-07", "ps_officer_id": self.ps_so.id,
                 }, format="json")
@@ -378,7 +378,7 @@ class LeadAccessTests(TestCase):
         self.client.force_authenticate(self.admin)
         for rto in ("KL-99", "TN-01", "Ernakulam"):
             with self.subTest(rto=rto):
-                response = self.client.post("/api/leads/", {
+                response = self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"},
                     "name": "Invalid RTO", "phone": "7006682399", "source": Lead.Source.WEBSITE, "rto": rto,
                 }, format="json")
                 self.assertEqual(response.status_code, 400)
@@ -392,7 +392,7 @@ class LeadAccessTests(TestCase):
                         "name": "RTO unknown", "phone": "7006682399", "source": Lead.Source.WEBSITE,
                     }
                     payload.pop("rto", None)
-                    response = self.client.post(endpoint, {**payload, **selection}, format="json")
+                    response = self.client.post(endpoint, {"qualification_input": {"variant": "No Preference"}, **payload, **selection}, format="json")
                     self.assertEqual(response.status_code, 400, response.data)
                     self.assertIn("rto", response.data)
         self.client.force_authenticate(self.admin)
@@ -409,8 +409,8 @@ class LeadAccessTests(TestCase):
         config.save(update_fields=["lists"])
         self.client.force_authenticate(self.admin)
 
-        accepted = self.client.post("/api/leads/", {"rto": "KL-07", "name": "Configured source", "phone": "7006682397", "source": "meta"}, format="json")
-        rejected = self.client.post("/api/leads/", {"rto": "KL-07", "name": "Removed source", "phone": "7006682398", "source": Lead.Source.WEBSITE}, format="json")
+        accepted = self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"}, "rto": "KL-07", "name": "Configured source", "phone": "7006682397", "source": "meta"}, format="json")
+        rejected = self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"}, "rto": "KL-07", "name": "Removed source", "phone": "7006682398", "source": Lead.Source.WEBSITE}, format="json")
         updated = self.client.put("/api/system-config/", {"lists": {"sources": ["Meta", "walk-in", "Meta"]}}, format="json")
 
         self.assertEqual(accepted.status_code, 201, accepted.data)
@@ -438,9 +438,9 @@ class LeadAccessTests(TestCase):
     def test_admin_models_limit_new_lead_models(self):
         SystemConfig.objects.update_or_create(id=1, defaults={"lists": {"models": ["r7"], "sources": [Lead.Source.WEBSITE]}})
         self.client.force_authenticate(self.admin)
-        response = self.client.post("/api/leads/", {"rto": "KL-07", "name": "Invalid model", "phone": "7006682310", "source": Lead.Source.WEBSITE, "model_interest": "R8 Pro"}, format="json")
+        response = self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"}, "rto": "KL-07", "name": "Invalid model", "phone": "7006682310", "source": Lead.Source.WEBSITE, "model_interest": "R8 Pro"}, format="json")
         self.assertEqual(response.status_code, 400)
-        response = self.client.post("/api/leads/", {"rto": "KL-07", "name": "Valid model", "phone": "7006682311", "source": Lead.Source.WEBSITE, "model_interest": "r7"}, format="json")
+        response = self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"}, "rto": "KL-07", "name": "Valid model", "phone": "7006682311", "source": Lead.Source.WEBSITE, "model_interest": "r7"}, format="json")
         self.assertEqual(response.status_code, 201)
 
     def test_admin_color_variants_limit_qualification_variants(self):
@@ -453,14 +453,14 @@ class LeadAccessTests(TestCase):
 
     def test_admin_cannot_add_a_lead_with_future_enquiry_date(self):
         self.client.force_authenticate(self.admin)
-        response = self.client.post("/api/leads/", {"rto": "KL-07", "name": "Future lead", "phone": "7006682393", "source": Lead.Source.WEBSITE, "enquiry_date": (timezone.localdate() + timedelta(days=1)).isoformat()}, format="json")
+        response = self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"}, "rto": "KL-07", "name": "Future lead", "phone": "7006682393", "source": Lead.Source.WEBSITE, "enquiry_date": (timezone.localdate() + timedelta(days=1)).isoformat()}, format="json")
         self.assertEqual(response.status_code, 400)
 
     def test_admin_can_add_a_lead_for_current_ist_date(self):
         self.client.force_authenticate(self.admin)
         fixed_now = datetime(2026, 8, 28, 4, 7, tzinfo=datetime_timezone.utc)
         with patch("django.utils.timezone.now", return_value=fixed_now):
-            response = self.client.post("/api/leads/", {"rto": "KL-07", "name": "IST Today", "phone": "7006682396", "source": Lead.Source.WEBSITE, "enquiry_date": "2026-08-28"}, format="json")
+            response = self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"}, "rto": "KL-07", "name": "IST Today", "phone": "7006682396", "source": Lead.Source.WEBSITE, "enquiry_date": "2026-08-28"}, format="json")
         self.assertEqual(response.status_code, 201, response.data)
 
     def test_admin_cannot_assign_a_lead_twice(self):
@@ -770,7 +770,7 @@ class LeadAccessTests(TestCase):
 
     def test_full_admin_to_cre_to_ps_lead_journey_with_five_followups(self):
         self.client.force_authenticate(self.admin)
-        create = self.client.post("/api/leads/", {
+        create = self.client.post("/api/leads/", {"qualification_input": {"variant": "No Preference"},
             "rto": "KL-07", "name": "Nisha Random",
             "phone": "8123456789",
             "email": "nisha.random@example.com",

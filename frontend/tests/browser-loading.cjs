@@ -64,11 +64,16 @@ async function main() {
     assert.equal(request.method, "GET", "Browser checks must not mutate application data");
     let body = page([]);
     if (url.pathname === "/api/auth/me/") body = { user: user(role) };
-    if (url.pathname === "/api/system-config/") body = { lists: { branches: ["Kochi"], sources: ["WEBSITE"], models: ["Indie"], colorVariants: ["Blue"] }, rto_options: [], complaint_subtypes: {}, so_lead_sources: ["WEBSITE"] };
+    if (url.pathname === "/api/system-config/") body = { lists: { branches: ["Kochi"], sources: ["WEBSITE"], models: ["Indie"], colorVariants: ["No Preference", "Blue"] }, rto_options: [], complaint_subtypes: {}, so_lead_sources: ["WEBSITE"] };
     if (["/api/auth/cre-users/", "/api/auth/sales-officers/"].includes(url.pathname)) body = page([user("CRE")]);
     if (url.pathname === "/api/leads/") body = page([lead("Performance fixture")]);
     if (url.pathname === "/api/leads/my-dashboard/") body = { summary, section: "fresh", results: [lead(url.searchParams.get("q") || "Performance fixture")] };
     if (url.pathname === "/api/analytics/admin/") body = { summary, source: [], cre: [], officers: [] };
+    if (url.pathname === "/api/analytics/sales-manager/") body = { range: "mtd", branch: "Kochi", summary: { ...summary, delta: {} },
+      ps: [{ ...summary, id: 1, name: "Officer fixture", email: "ps@example.invalid", calls: 88 }], cre: [], source: [], models: [],
+      colors: [{ ...summary, color: "No Preference" }], status: [], categories: [], monthly: [], funnel: [], lost_reasons: [], stale_leads: [],
+      followups: { due: 0, overdue: 0, by_owner: [] }, filters: { ps: [{ id: 1, name: "Officer fixture" }], source: [], models: [], cre: [] } };
+    if (url.pathname === "/api/analytics/sales-manager/ps-followups/") body = { rows: [], leads: [] };
     if (url.pathname.endsWith("unread_count/")) body = { count: 0 };
     if ((holdAnalytics && url.pathname === "/api/analytics/admin/") || (holdOldSearch && url.searchParams.get("q") === "old")) {
       held.push(status => respond(requestId, status === 500 ? { detail: "Analytics unavailable" } : body, status).catch(() => {}));
@@ -129,6 +134,32 @@ async function main() {
     await sleep(300);
     assert.equal(await evaluate(`document.querySelector('tbody').innerText.includes('old')`), false);
     console.log("PASS superseded search cannot overwrite newer results");
+
+    const assertColourRequired = async () => {
+      await until(`[...document.querySelectorAll('form select')].some(s => [...s.options].some(o => o.value === 'No Preference'))`, "Colour options should load");
+      const field = `[...document.querySelectorAll('form select')].find(s => [...s.options].some(o => o.value === 'No Preference'))`;
+      assert.equal(await evaluate(`${field}.required`), true, "Colour selection is required");
+      assert.equal(await evaluate(`${field}.value`), "", "Staff must explicitly choose a colour");
+      assert.equal(await evaluate(`${field}.checkValidity()`), false, "Blank colour is invalid");
+      assert.equal(await evaluate(`${field}.innerText.includes('Color not set')`), false);
+      await evaluate(`(() => { const select = ${field}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'No Preference'); select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+      assert.equal(await evaluate(`${field}.checkValidity()`), true, "No Preference is valid");
+    };
+    await navigate("RECEPTIONIST", "/capture", "Capture");
+    await assertColourRequired();
+    console.log("PASS receptionist capture requires explicit colour or No Preference");
+    for (const nextRole of ["CRE", "SO"]) {
+      await navigate(nextRole, "/my-leads", "Performance fixture");
+      await evaluate(`[...document.querySelectorAll('button')].find(b => /add.*lead/i.test(b.textContent)).click()`);
+      await assertColourRequired();
+      console.log(`PASS ${nextRole} lead creation requires explicit colour or No Preference`);
+    }
+    await navigate("SALES_MANAGER", "/manager/analytics", "Officer fixture");
+    const headers = await evaluate(`[...document.querySelector('.manager-table thead').querySelectorAll('th')].map(th => th.textContent)`);
+    assert.equal(headers.includes("Calls"), false);
+    assert.equal(headers.includes("Last call"), true);
+    assert.equal(await evaluate(`[...document.querySelectorAll('tr')].find(row => row.innerText.includes('No Preference')).getAttribute('role')`), "link");
+    console.log("PASS SM performance omits Calls and No Preference remains clickable");
 
     await navigate("ADMIN", "/my-leads", "SESSION CONFLICT");
     assert.equal(requests.some(path => path.startsWith("/api/leads/my-dashboard/")), false);

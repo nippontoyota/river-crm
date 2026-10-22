@@ -104,3 +104,28 @@ regression tests pass. The broader suite has the same 13 failure reports, two
 errors, and 21 skips on both versions; it is not fully green. Frontend lint has
 the same five existing errors and four warnings on both versions. Typecheck and
 the production build pass. No deployment was performed.
+
+## Follow-up and colour reporting rules
+
+Lost and Not Interested leads are excluded from SM follow-up summaries, buckets,
+exports, and active Admin/CEO follow-up workload. Historical calls/follow-ups and
+sales conversion totals remain available. SM's PS/SO performance table and CSV
+omit the Calls column; the API retains its field for existing consumers.
+
+Manual lead creation requires `qualification_input.variant` to contain a configured
+colour or `No Preference`. Explicit blank/not-set colours are rejected on edits;
+unrelated partial updates remain valid. `No Preference` is always provided by
+System Config. Spreadsheet and automated intake default missing colour to that
+value, preserving an existing colour on duplicate updates.
+
+Migration `leads.0026_normalize_lead_colors` normalizes existing missing/not-set
+colours and creates missing qualification records in batches without fabricating
+staff activity. Other qualification fields remain unchanged. Rollback retains the
+normalized data. The existing backend build runs `manage.py migrate --noinput`;
+run that command when deploying through another path. Deploy backend and frontend
+together because older manual-entry clients may omit the now-required colour.
+
+Regression checks are in `leads.test_business_rules`,
+`analytics.tests.FollowupBusinessRulesTests`, and `frontend/tests/browser-loading.cjs`.
+The loading benchmark above records the earlier performance-only changes; reporting
+payloads intentionally change under these new business rules.

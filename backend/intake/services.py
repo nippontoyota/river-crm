@@ -1,3 +1,5 @@
+from leads.models import LeadQualification
+from leads.choices import NO_COLOR_PREFERENCE
 import hashlib
 import hmac
 import json
@@ -135,6 +137,7 @@ def create_lead(receipt, data, separate=False, actor=None):
     lead = Lead.objects.create(**data, source=receipt.source, status=Lead.Status.FRESH,
         assigned_so=None, assigned_ps=None, generated_by=None, duplicate_flag=separate,
         flagged_to_manager=False, needs_cre_reassignment=False, needs_so_reassignment=False)
+    LeadQualification.objects.create(lead=lead, variant=NO_COLOR_PREFERENCE)
     receipt.lead = lead
     receipt.mapped_values = data
     finish(receipt, Submission.State.IMPORTED)

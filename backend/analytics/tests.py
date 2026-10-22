@@ -60,9 +60,9 @@ class SalesManagerAnalyticsTests(TestCase):
 
         response = self.client.get("/api/analytics/sales-manager/?range=today&include=source")
         colors = {row["color"]: row for row in response.data["colors"]}
-        self.assertEqual(set(colors), {"Blue", "Color not set"})
+        self.assertEqual(set(colors), {"Blue", "No Preference"})
         self.assertEqual((colors["Blue"]["total"], colors["Blue"]["booked"], colors["Blue"]["retailed"], colors["Blue"]["conversion_rate"]), (2, 1, 1, 50.0))
-        self.assertEqual(colors["Color not set"]["total"], 2)
+        self.assertEqual(colors["No Preference"]["total"], 2)
         self.assertEqual(self.client.get("/api/analytics/sales-manager/?range=today&include=colors").data["colors"], response.data["colors"])
         filtered = self.client.get("/api/analytics/sales-manager/?range=today&include=ps,source,lost&color=Blue")
         self.assertEqual(filtered.data["summary"]["total"], 2)
@@ -561,3 +561,53 @@ class SalesManagerAnalyticsTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(followups.status_code, 403)
+
+
+class FollowupBusinessRulesTests(TestCase):
+    setUp = SalesManagerAnalyticsTests.setUp
+    def test_lost_leads_are_excluded_from_all_followup_buckets_and_exports(self):
+        from ceo.views import lead_rows
+        active = self.branch_lead
+        lost = Lead.objects.create(name="Closed lost", phone="9000000091", branch="Mount Road", enquiry_date=timezone.localdate(), assigned_so=self.cre, assigned_ps=self.ps, status="LOST")
+        uninterested = Lead.objects.create(name="Closed uninterested", phone="9000000092", branch="Mount Road", enquiry_date=timezone.localdate(), assigned_so=self.cre, assigned_ps=self.ps, status="UNQUALIFIED")
+        for lead in (active, lost, uninterested):
+            FollowUp.objects.create(lead=lead, so=self.ps, scheduled_for=timezone.now() - timedelta(days=1))
+            LeadQualification.objects.create(lead=lead, variant="No Preference", test_drive="Yes")
+        self.client.force_authenticate(self.manager)
+        base = "/api/analytics/sales-manager/ps-followups/"
+        response = self.client.get(base, {"range": "all"})
+        self.assertEqual(response.status_code, 200, response.data)
+        row = next(row for row in response.data["rows"] if row["id"] == self.ps.pk)
+        self.assertEqual((row["total_leads"], row["f1"], row["overdue"]), (2, 1, 1))  # Retailed cohort behavior retained.
+        for bucket in ("total", "test_drive", "unattended", "overdue", "f1", "f2", "f3", "f4", "f5"):
+            data = self.client.get(base, {"range": "all", "ps": self.ps.pk, "bucket": bucket}).data
+            self.assertTrue({lost.pk, uninterested.pk}.isdisjoint({lead["id"] for lead in data["leads"]}))
+        csv = self.client.get("/api/analytics/sales-manager/export/", {"section": "ps_followups", "range": "all", "ps": self.ps.pk, "bucket": "f1"}).content.decode()
+        self.assertIn("Branch lead", csv)
+        self.assertNotIn("Closed lost", csv)
+        self.assertNotIn("Closed uninterested", csv)
+        self.assertTrue(all(row["next_follow_up"] is None for row in lead_rows(Lead.objects.filter(pk__in=[lost.pk, uninterested.pk]))))
+        self.client.force_authenticate(self.admin)
+        analytics = self.client.get("/api/analytics/admin/").data
+        officer = next(row for row in analytics["officers"] if row["id"] == self.ps.pk)
+        self.assertGreater(officer["untouched"], officer["followup_untouched"])
+        self.assertEqual(analytics["summary"]["lost"], 2)
+        self.assertEqual(FollowUp.objects.filter(lead__in=[lost, uninterested]).count(), 2)
+        ceo = User.objects.create_user("ceo-rules@example.com", role="CEO")
+        self.client.force_authenticate(ceo)
+        for bucket in ("due", "overdue", "untouched_ce", "untouched_ps", "missing"):
+            response = self.client.get("/api/ceo/leads/", {"range": "all", "scope": "workload", "followup": bucket})
+            self.assertEqual(response.status_code, 200, response.data)
+            self.assertTrue({lost.pk, uninterested.pk}.isdisjoint({row["id"] for row in response.data["results"]}))
+        export = self.client.get("/api/ceo/export/leads/", {"range": "all", "scope": "workload", "followup": "overdue"})
+        text = b"".join(export.streaming_content).decode("utf-8-sig")
+        self.assertNotIn("Closed lost", text)
+        self.assertNotIn("Closed uninterested", text)
+
+    def test_sm_export_omits_calls_and_no_preference_drills_into_missing_colours(self):
+        self.client.force_authenticate(self.manager)
+        export = self.client.get("/api/analytics/sales-manager/export/", {"section": "ps", "range": "all"})
+        self.assertNotIn("calls", export.content.decode().splitlines()[0].split(","))
+        response = self.client.get("/api/analytics/sales-manager/", {"range": "all", "color": "No Preference"})
+        self.assertEqual(response.data["summary"]["total"], 2)
+        self.assertEqual(response.data["colors"][0]["color"], "No Preference")

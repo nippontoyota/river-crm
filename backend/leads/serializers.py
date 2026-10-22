@@ -7,7 +7,7 @@ from accounts.models import User
 from .models import CallLog, FollowUp, Lead, LeadAudit, LeadQualification, SystemConfig
 from .outcomes import PS_CALL_OUTCOME_STATUS_OPTIONS, outcome_policy, validate_sales_call
 from .rtos import KERALA_RTO_CHOICES
-from .choices import activity_children, choice_key, matching_choice, unique_choices
+from .choices import activity_children, choice_key, matching_choice, unique_choices, color_choices, MISSING_COLOR_LABELS
 
 def normalize_sources(values):
     sources = [Lead.Source.WALKIN]
@@ -25,7 +25,7 @@ def normalize_sources(values):
 def configured_values(name):
     lists = SystemConfig.objects.filter(id=1).values_list("lists", flat=True).first() or {}
     values = [str(value).strip() for value in lists.get(name, []) if str(value).strip()] if isinstance(lists.get(name, []), list) else []
-    return normalize_sources(values) if name == "sources" else unique_choices(values)
+    return normalize_sources(values) if name == "sources" else color_choices(values) if name == "colorVariants" else unique_choices(values)
 
 
 def configured_source(value):
@@ -94,7 +94,11 @@ CALL_OUTCOME_STATUS_OPTIONS = {
 
 
 class QualificationSerializer(serializers.ModelSerializer):
+    variant = serializers.CharField(max_length=120, required=False, allow_blank=False)
+
     def validate_variant(self, value):
+        if choice_key(value) in MISSING_COLOR_LABELS:
+            raise serializers.ValidationError("Choose a colour or No Preference.")
         lead = self.context.get("lead") or self.root.instance
         qualification = self.instance or getattr(lead, "qualification", None)
         return validate_configured_choice(value, "colorVariants", "color variant", getattr(qualification, "variant", ""))
@@ -114,10 +118,14 @@ class LeadSerializer(serializers.ModelSerializer):
     qualification_input = QualificationSerializer(required=False, write_only=True)
 
     def validate(self, attrs):
+        if not self.instance and not attrs.get("qualification_input", {}).get("variant"):
+            raise serializers.ValidationError({"qualification_input": {"variant": "Choose a colour or No Preference."}})
         if attrs.get("status") == Lead.Status.WALKIN:
             raise serializers.ValidationError({"status": "Walk-in is a lead source. Choose it in Source; record Booking Done only after a booking."})
         if (not self.instance or "rto" in attrs) and not attrs.get("rto"):
             raise serializers.ValidationError({"rto": "Choose an RTO."})
+        if self.instance and "qualification_input" in attrs:
+            raise serializers.ValidationError({"qualification_input": "Use the authorized qualification update action."})
         if self.instance and any(field in attrs and attrs[field] != getattr(self.instance, field) for field in ("status", "sales_outcome")):
             raise serializers.ValidationError({"status": "Use the lead outcome update action to change sales progress."})
         if not self.instance and (attrs.get("status") == "WON" or attrs.get("sales_outcome") == "RETAILED"):
@@ -125,6 +133,9 @@ class LeadSerializer(serializers.ModelSerializer):
         return validate_activity_pair(attrs, self.instance)
 
     def get_next_follow_up(self, obj):
+        from .outcomes import is_closed
+        if is_closed(obj):
+            return None
         if hasattr(obj, "_next_follow_up"):
             return obj._next_follow_up
         follow_ups = getattr(obj, "_open_followups", None)
@@ -514,6 +525,7 @@ class SystemConfigSerializer(serializers.ModelSerializer):
                 if not isinstance(value[name], list) or any(not isinstance(item, str) or not item.strip() for item in value[name]):
                     raise serializers.ValidationError(f"{name} must be a list of non-empty names.")
                 result[name] = unique_choices(value[name])
+        result["colorVariants"] = color_choices(result.get("colorVariants", []))
         return result
 
     def to_representation(self, instance):
@@ -525,6 +537,7 @@ class SystemConfigSerializer(serializers.ModelSerializer):
                 lists[name] = unique_choices(lists[name])
         parents = unique_choices([*lists.get("activities", []), *lists.get("subActivities", {})])
         lists["subActivities"] = {parent: activity_children(lists, parent) for parent in parents}
+        lists["colorVariants"] = color_choices(lists.get("colorVariants", []))
         data["lists"] = lists
         return data
 
