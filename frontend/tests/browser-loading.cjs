@@ -74,6 +74,11 @@ async function main() {
       colors: [{ ...summary, color: "No Preference" }], status: [], categories: [], monthly: [], funnel: [], lost_reasons: [], stale_leads: [],
       followups: { due: 0, overdue: 0, by_owner: [] }, filters: { ps: [{ id: 1, name: "Officer fixture" }], source: [], models: [], cre: [] } };
     if (url.pathname === "/api/analytics/sales-manager/ps-followups/") body = { rows: [], leads: [] };
+    if (url.pathname === "/api/ceo/options/") body = { branches: [{ value: "kochi", label: "Kochi" }], employees: [], roles: [], rtos: [], statuses: [], source: [], campaign: [], model_interest: [], activities: [], sub_activities: {} };
+    if (url.pathname === "/api/ceo/branch-sales/") body = page([{ key: "kochi", label: "Kochi", total: 10, booked: 3, retailed: 2, lost: 1, conversion: 20, last_call: "2026-10-22T06:00:00Z", last_call_lead_id: 1 }]);
+    if (url.pathname === "/api/ceo/leads/") body = page([{ ...lead("Branch drilldown fixture"), branch: "Kochi" }]);
+    if (url.pathname === "/api/ceo/leads/1/") body = { ...lead("Branch call fixture"), related_complaints: [], milestones: [] };
+    if (url.pathname === "/api/ceo/leads/1/history/") body = page([]);
     if (url.pathname.endsWith("unread_count/")) body = { count: 0 };
     if ((holdAnalytics && url.pathname === "/api/analytics/admin/") || (holdOldSearch && url.searchParams.get("q") === "old")) {
       held.push(status => respond(requestId, status === 500 ? { detail: "Analytics unavailable" } : body, status).catch(() => {}));
@@ -160,6 +165,26 @@ async function main() {
     assert.equal(headers.includes("Last call"), true);
     assert.equal(await evaluate(`[...document.querySelectorAll('tr')].find(row => row.innerText.includes('No Preference')).getAttribute('role')`), "link");
     console.log("PASS SM performance omits Calls and No Preference remains clickable");
+
+    const branchPath = "/ceo/branches?range=custom&date_from=2026-10-01&date_to=2026-10-22&source=WEBSITE";
+    await navigate("CEO", branchPath, "Branch performance");
+    await until(`document.querySelector('.ceo-table-card tbody')?.innerText.includes('Kochi')`, "CEO branch rows should load");
+    assert.deepEqual(await evaluate(`[...document.querySelectorAll('.ceo-table-card th')].map(th => th.textContent)`), ["Branch", "Total", "Booked", "Retailed", "Lost", "Conv.", "Last call"]);
+    assert.equal(await evaluate(`!!document.querySelector('.ceo-columns')`), false);
+    for (const [column, metric] of [[0, "total"], [1, "total"], [2, "booked"], [3, "retailed"], [4, "lost"], [5, "retailed"]]) {
+      if (column) { await navigate("CEO", branchPath, "Branch performance"); await until(`document.querySelector('.ceo-table-card tbody')?.innerText.includes('Kochi')`, "Branch row should reload"); }
+      await evaluate(`document.querySelector('.ceo-table-card tbody tr').children[${column}].querySelector('button').click()`);
+      await until(`location.pathname === '/ceo/leads' && document.body.innerText.includes('Branch drilldown fixture')`, "Branch metric should open matching leads");
+      const query = new URLSearchParams(await evaluate("location.search"));
+      assert.equal(query.get("branch"), "kochi"); assert.equal(query.get("branch_metric"), metric);
+      assert.equal(query.get("source"), "WEBSITE"); assert.equal(query.get("date_from"), "2026-10-01"); assert.equal(query.get("date_to"), "2026-10-22");
+    }
+    await navigate("CEO", branchPath, "Branch performance");
+    await until(`document.querySelector('.ceo-table-card tbody')?.innerText.includes('Kochi')`, "Branch row should reload for history");
+    await evaluate(`document.querySelector('.ceo-table-card tbody tr').children[6].querySelector('button').click()`);
+    await until(`document.querySelector('dialog[open]')?.innerText.includes('Lead history')`, "Last call should open customer history");
+    assert.equal(requests.some(path => path.startsWith('/api/ceo/leads/1/history/')), true);
+    console.log("PASS CEO branch columns, all metric links, preserved filters, and Last call history");
 
     await navigate("ADMIN", "/my-leads", "SESSION CONFLICT");
     assert.equal(requests.some(path => path.startsWith("/api/leads/my-dashboard/")), false);

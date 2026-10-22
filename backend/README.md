@@ -129,3 +129,17 @@ Regression checks are in `leads.test_business_rules`,
 `analytics.tests.FollowupBusinessRulesTests`, and `frontend/tests/browser-loading.cjs`.
 The loading benchmark above records the earlier performance-only changes; reporting
 payloads intentionally change under these new business rules.
+
+## CEO branch sales table
+
+The CEO overview and Branch performance page show Branch, Total, Booked, Retailed,
+Lost, Conv., and Last call. Counts use current sales status for enquiries received
+in the selected dates, matching SM semantics. Lost includes Not Interested;
+conversion is retailed / total. Last call uses calls within those dates for the
+same enquiry cohort and opens the customer's history.
+
+`GET /api/ceo/branch-sales/` and `/api/ceo/export/branch-sales/` serve this view.
+Lead lists/exports accept `branch_metric=total|booked|retailed|lost` alongside the
+existing branch, date and customer filters. The overview adds `branch_sales`;
+existing milestone-based `branches` responses remain compatible. Latest calls
+are selected with one database window query across branches. No migration is needed.

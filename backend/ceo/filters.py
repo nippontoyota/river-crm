@@ -59,6 +59,8 @@ class ReportFilters:
             raise ValidationError({"category": "Choose a valid category."})
         if params.get("age") and params["age"] not in AGE_BANDS:
             raise ValidationError({"age": "Choose a valid lead age band."})
+        if params.get("branch_metric") and params["branch_metric"] not in {"total", "booked", "retailed", "lost"}:
+            raise ValidationError({"branch_metric": "Choose Total, Booked, Retailed or Lost."})
         if params.get("metric") and params["metric"] not in {"E", "T", "B", "R"}:
             raise ValidationError({"metric": "Choose E, T, B or R."})
         if params.get("followup") and params["followup"] not in {"overdue", "due", "missing", "unassigned", "reassignment", "untouched", "untouched_ce", "untouched_ps", "flagged", "incomplete"}:
@@ -189,7 +191,20 @@ class ReportFilters:
             queryset = queryset.filter(kind=self.params["metric"])
         return queryset.distinct()
 
+    def branch_sales_leads(self, metric="total"):
+        from .lead_analysis import filter_analysis
+        queryset = filter_analysis(self.period(self.base_leads(), "enquiry_date"), self.params)
+        if metric == "booked":
+            return queryset.filter(sales_outcome="BOOKED")
+        if metric == "retailed":
+            return queryset.filter(sales_outcome="RETAILED")
+        if metric == "lost":
+            return queryset.filter(status__in=["LOST", "UNQUALIFIED"])
+        return queryset
+
     def leads(self):
+        if self.params.get("branch_metric"):
+            return self.branch_sales_leads(self.params["branch_metric"])
         if self.params.get("ce_metric"):
             from .ce_performance import ce_matching_leads
             return ce_matching_leads(self)

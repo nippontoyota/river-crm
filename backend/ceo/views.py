@@ -26,7 +26,7 @@ from .ce_performance import ce_performance
 from .finance import FinanceInput, TargetInput, save_finance, save_target, target_data
 from .models import FinancialEntry, Milestone, OperationEvent, SalesTarget
 from .lead_analysis import classified_leads
-from .reporting import account_row, branch_options, complaint_queryset, complaint_summary, financial_accounts, financial_summary, people_queryset, people_rows, segment_rows, summary
+from .reporting import branch_sales_rows, account_row, branch_options, complaint_queryset, complaint_summary, financial_accounts, financial_summary, people_queryset, people_rows, segment_rows, summary
 
 
 class CEOReadPermission(BasePermission):
@@ -120,7 +120,7 @@ class CEOOptionsView(CEOView):
 
 
 class CEOReportView(CEOView):
-    @cache_analytics("ceo-operational-report-ps-handling", max_ttl=60)
+    @cache_analytics("ceo-operational-report-branch-sales", max_ttl=60)
     def get(self, request, section="overview"):
         filters = ReportFilters(request.query_params)
         if section == "ce-performance":
@@ -128,9 +128,12 @@ class CEOReportView(CEOView):
         if section == "overview":
             payload = summary(filters)
             payload["branches"] = segment_rows(filters)
+            payload["branch_sales"] = branch_sales_rows(filters)
             return Response(payload)
         if section == "branches":
             return Response({**filters.metadata(), "results": segment_rows(filters)})
+        if section == "branch-sales":
+            return Response({**filters.metadata(), "results": branch_sales_rows(filters)})
         if section == "segments":
             dimension = request.query_params.get("dimension", "rto")
             if dimension not in DIMENSIONS:
@@ -257,6 +260,10 @@ class CEOExportView(CEOView):
                 for offset in range(0, queryset.count(), 500):
                     yield from lead_rows(queryset[offset:offset + 500])
             rows = lead_export()
+        elif section == "branch-sales":
+            rows = iter({"Branch": row["label"], "Total": row["total"], "Booked": row["booked"],
+                         "Retailed": row["retailed"], "Lost": row["lost"], "Conv.": row["conversion"],
+                         "Last call": row["last_call"]} for row in branch_sales_rows(filters))
         elif section in {"branches", "segments"}:
             dimension = "branch" if section == "branches" else request.query_params.get("dimension", "rto")
             if dimension not in ("branch", *DIMENSIONS):

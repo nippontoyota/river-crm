@@ -2,13 +2,13 @@ from calendar import monthrange
 from datetime import timedelta
 from decimal import Decimal
 
-from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, Min, Q, Sum
-from django.db.models.functions import Lower, Trim, TruncMonth
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, Min, Q, Sum, Window
+from django.db.models.functions import Lower, RowNumber, Trim, TruncMonth
 from django.utils import timezone
 
 from accounts.models import User
 from complaints.models import Complaint
-from leads.models import FollowUp, Lead, SystemConfig
+from leads.models import CallLog, FollowUp, Lead, SystemConfig
 from .finance import signed_amount
 from .filters import AGE_BANDS, ROLES, ReportFilters
 from .models import FinancialEntry, Milestone, OperationEvent, SaleAccount, SalesTarget
@@ -352,3 +352,34 @@ def people_rows(filters, users):
             row["performance_scope"] = "captured" if user.role == "RECEPTIONIST" else "complaints" if user.role == "COMPLAINTS" else "assigned"
         result.append(row)
     return result
+
+
+def branch_sales_rows(filters):
+    """Current sales position for the selected enquiry cohort, matching SM semantics."""
+    cohort = filters.branch_sales_leads()
+    calls = filters.period(CallLog.objects.filter(lead__in=cohort), "created_at__date").annotate(
+        branch_key=Lower(Trim("lead__branch")))
+    latest_calls = {row["branch_key"]: row for row in calls.order_by().annotate(
+        latest_rank=Window(expression=RowNumber(), partition_by=[F("branch_key")],
+                           order_by=[F("created_at").desc(), F("pk").desc()]),
+    ).filter(latest_rank=1).values("branch_key", "created_at", "lead_id")}
+    rows = list(cohort.annotate(group_key=Lower(Trim("branch"))).values("group_key").annotate(
+        group_label=Min(Trim("branch")), total=Count("pk", distinct=True),
+        booked=Count("pk", filter=Q(sales_outcome="BOOKED"), distinct=True),
+        retailed=Count("pk", filter=Q(sales_outcome="RETAILED"), distinct=True),
+        lost=Count("pk", filter=Q(status__in=["LOST", "UNQUALIFIED"]), distinct=True),
+    ).order_by())
+    labels = branch_options()
+    present = {row["group_key"] for row in rows}
+    for key, label in labels.items():
+        if key not in present and (not filters.branches or key in filters.branches):
+            rows.append({"group_key": key, "group_label": label, "total": 0, "booked": 0,
+                         "retailed": 0, "lost": 0, "last_call": None, "last_call_lead_id": None})
+    for row in rows:
+        key = row.pop("group_key") or ""
+        label = row.pop("group_label") or "Not recorded"
+        latest = latest_calls.get(key, {})
+        row.update(last_call=latest.get("created_at"), last_call_lead_id=latest.get("lead_id"))
+        row.update(key=key or "__unknown__", label=labels.get(key, label),
+                   conversion=round(row["retailed"] * 100 / row["total"], 1) if row["total"] else 0)
+    return sorted(rows, key=lambda row: (-row["total"], row["label"]))
