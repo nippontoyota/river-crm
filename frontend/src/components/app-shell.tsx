@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { cacheCurrentUser, clearCachedCurrentUser, getCachedCurrentUser, getCurrentUser, logout, type CurrentUser } from "@/lib/crm";
 import { ServiceBell } from "@/components/service-bell";
 import { canAddService } from "@/lib/service";
@@ -10,7 +10,10 @@ import { FeedbackBell } from "@/components/feedback-bell";
 import { LeadNotifications, unsubscribePhonePush } from "@/components/lead-notifications";
 import { formatDate, formatWeekday } from "@/lib/dates";
 
-type AppShellProps = { children: ReactNode; role: "Meta Uploader" | "Service Department" | "CEO" | "Admin" | "Sales officer" | "Sales manager" | "Receptionist" | "Feedback Caller" };
+type AppShellProps = { children: ReactNode; initialUser?: CurrentUser; role: "Meta Uploader" | "Service Department" | "CEO" | "Admin" | "Sales officer" | "Sales manager" | "Receptionist" | "Feedback Caller" };
+
+const WorkspaceUser = createContext<CurrentUser | null>(null);
+export const useWorkspaceUser = () => useContext(WorkspaceUser);
 
 function roleType(user: CurrentUser) {
   if (user.role === "META_UPLOADER") return "Meta Uploader";
@@ -74,16 +77,24 @@ const receptionistLinks = [
   ["/complaints", "Complaints", "⚑"],
 ] as const;
 
-export function AppShell({ children, role }: AppShellProps) {
+export function AppShell({ children, role, initialUser }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
+  // A parent route may have just verified this session. Consume it once;
+  // subsequent navigation still checks the server for role/session changes.
+  const initialSession = useRef(initialUser ? { user: initialUser, pathname } : null);
   const cachedUser = getCachedCurrentUser();
   const cachedUserMatches = cachedUser && roleType(cachedUser) === role;
   const [user, setUser] = useState<CurrentUser | null>(cachedUserMatches ? cachedUser : null);
   const [checkingAccess, setCheckingAccess] = useState(true);
   const [sessionConflict, setSessionConflict] = useState<CurrentUser | null>(null);
   useEffect(() => {
-    void getCurrentUser().then(result => {
+    let active = true;
+    const session = initialSession.current;
+    initialSession.current = null;
+    const request = session?.pathname === pathname ? Promise.resolve({ user: session.user }) : getCurrentUser();
+    void request.then(result => {
+      if (!active) return;
       const actual = result.user;
       cacheCurrentUser(actual);
       if (role === "Sales officer" && actual.role === "SO" && pathname === "/complaints") {
@@ -99,7 +110,8 @@ export function AppShell({ children, role }: AppShellProps) {
       } else {
         setUser(actual);
       }
-    }).catch(() => { clearCachedCurrentUser(); router.replace("/"); }).finally(() => setCheckingAccess(false));
+    }).catch(() => { if (active) { clearCachedCurrentUser(); router.replace("/"); } }).finally(() => { if (active) setCheckingAccess(false); });
+    return () => { active = false; };
   }, [pathname, role, router]);
   const displayName = user ? `${user.first_name} ${user.last_name}`.trim() || user.email : "Sign in";
   const initials = user ? `${user.first_name[0] || ""}${user.last_name[0] || ""}` || user.email.slice(0, 2).toUpperCase() : "?";
@@ -164,7 +176,7 @@ export function AppShell({ children, role }: AppShellProps) {
     </aside>
     <main className="main-content">
       <header className="topbar"><div><b><span className="mobile-product">ITS · </span>{role === "Meta Uploader" ? "Bulk lead uploads" : role === "Service Department" ? "Branch services" : role === "CEO" ? "Company performance" : role === "Admin" ? "Lead control" : role === "Sales manager" ? "Branch command" : role === "Receptionist" ? "Front Desk" : user?.role === "COMPLAINTS" ? "Complaint queue" : user?.role === "SO" ? displayName : role === "Feedback Caller" ? "Customer feedback" : `${workspaceRole} pipeline`}</b><small>{formatWeekday(new Date())}, {formatDate(new Date())}</small></div><div className="top-actions">{user && canAddService(user) && <button className="button primary" onClick={() => pathname === "/services" ? window.dispatchEvent(new Event("service:create")) : router.push("/services?addService=1")}>＋ Add service</button>}{user?.role === "SO" && <LeadNotifications />}{user && ["SERVICE", "CRE"].includes(user.role) && <ServiceBell />}{user && ["FEEDBACK", "ADMIN", "SALES_MANAGER"].includes(user.role) && <FeedbackBell />}{role === "Admin" && pathname !== "/complaints" && <button className="button primary" onClick={() => ["/leads", "/all-leads"].includes(pathname) ? window.dispatchEvent(new Event("incheon:add-lead")) : router.push("/leads?addLead=1")}>＋ Add lead</button>}<button className="mobile-signout" onClick={() => void signOut()} aria-label="Sign out" title="Sign out">↪</button></div></header>
-      {children}
+      <WorkspaceUser.Provider value={user}>{children}</WorkspaceUser.Provider>
     </main>
   </div>;
 }

@@ -7,7 +7,9 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:loading": "node --test tests/loading.test.cjs",
+    "test:browser-loading": "node tests/browser-loading.cjs"
   },
   "dependencies": {
     "next": "latest",

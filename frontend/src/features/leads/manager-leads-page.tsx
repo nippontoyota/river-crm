@@ -46,6 +46,7 @@ export function ManagerLeadsPage({ initialQuery = "" }: { initialQuery?: string 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const requestId = useRef(0);
+  const listController = useRef<AbortController | null>(null);
   const query = useMemo(() => {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
@@ -56,10 +57,10 @@ export function ManagerLeadsPage({ initialQuery = "" }: { initialQuery?: string 
     return params.toString();
   }, [filters]);
   const setFilter = (key: keyof typeof filters, value: string) => setFilters(current => ({ ...current, [key]: value }));
-  const load = useCallback(async () => { const request = ++requestId.current; setLoading(true); setError(""); try { const result = await getManagerLeads(query); if (request === requestId.current) setPage(result); } catch (err) { if (request === requestId.current) setError(err instanceof Error ? err.message : "Unable to load branch leads."); } finally { if (request === requestId.current) setLoading(false); } }, [query]);
+  const load = useCallback(async () => { listController.current?.abort(); const controller = new AbortController(); listController.current = controller; const request = ++requestId.current; setLoading(true); setError(""); try { const result = await getManagerLeads(query, controller.signal); if (request === requestId.current && !controller.signal.aborted) setPage(result); } catch (err) { if (request === requestId.current && !controller.signal.aborted) setError(err instanceof Error ? err.message : "Unable to load branch leads."); } finally { if (request === requestId.current && !controller.signal.aborted) setLoading(false); } }, [query]);
   useEffect(() => { void getSystemConfig().then(config => { setModelOptions(config.lists.models || []); setColorOptions(config.lists.colorVariants || []); setSourceOptions(config.lists.sources || ["WALKIN"]); }).catch(() => { setModelOptions([]); setColorOptions([]); setSourceOptions(["WALKIN"]); }); }, []);
   useCrmRefresh(load);
-  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
+  useEffect(() => { const timer = window.setTimeout(() => void load(), filters.q ? 250 : 0); return () => { window.clearTimeout(timer); listController.current?.abort(); }; }, [load, filters.q]);
   useEffect(() => { const suffix = query ? `?${query}` : ""; window.history.replaceState(null, "", `/manager/leads${suffix}`); }, [query]);
   const openLead = (lead: Lead) => void getLeadDetail(lead.id).then(setDetail).catch(err => setError(err instanceof Error ? err.message : "Unable to load lead details."));
 

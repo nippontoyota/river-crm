@@ -70,6 +70,21 @@ class ServiceWorkflowTests(APITestCase):
         self.assertEqual(len(history), 2)
         self.assertEqual(history[0]["resolution_notes"], "Adjusted brake; road tested")
 
+    def test_list_does_not_load_event_history_but_detail_preserves_it(self):
+        row = self.create_request(self.service).data
+        for _ in range(3):
+            self.action(row, "note", note="Preserved service history")
+        self.client.force_authenticate(self.service)
+        with self.assertNumQueries(3):
+            response = self.client.get("/api/service-requests/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        self.assertTrue(response.data["results"][0]["branch_staff_available"])
+        detail = self.client.get(f'/api/service-requests/{row["id"]}/')
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(sum(event["note"] == "Preserved service history" for event in detail.data["events"]), 3)
+        self.assertEqual(detail.data["events"], detail.data["history"][0]["events"])
+
     def test_roles_branch_scope_and_cross_branch_history_are_read_only(self):
         row = self.create_request(self.service).data
         self.client.force_authenticate(self.other_ce)

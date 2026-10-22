@@ -10,23 +10,33 @@ export function useCrmRefresh(refresh: () => unknown, enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     let busy = false;
-    const run = () => {
-      if (busy || document.visibilityState !== "visible") return;
+    let pendingChange = false;
+    let active = true;
+    const run = (changed = false) => {
+      if (!active || document.visibilityState !== "visible") return;
+      if (busy) { pendingChange ||= changed; return; }
       busy = true;
-      void Promise.resolve().then(() => latest.current()).catch(() => {}).finally(() => { busy = false; });
+      pendingChange = false;
+      void Promise.resolve().then(() => { if (active) return latest.current(); }).catch(() => {}).finally(() => {
+        busy = false;
+        if (pendingChange) run();
+      });
     };
-    const changed = (event: StorageEvent) => { if (event.key === "crm-data-changed") run(); };
-    const timer = window.setInterval(run, 30_000);
-    window.addEventListener("crm-data-changed", run);
+    const refreshVisible = () => run();
+    const refreshChanged = () => run(true);
+    const changed = (event: StorageEvent) => { if (event.key === "crm-data-changed") refreshChanged(); };
+    const timer = window.setInterval(refreshVisible, 30_000);
+    window.addEventListener("crm-data-changed", refreshChanged);
     window.addEventListener("storage", changed);
-    window.addEventListener("focus", run);
-    document.addEventListener("visibilitychange", run);
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
     return () => {
+      active = false;
       window.clearInterval(timer);
-      window.removeEventListener("crm-data-changed", run);
+      window.removeEventListener("crm-data-changed", refreshChanged);
       window.removeEventListener("storage", changed);
-      window.removeEventListener("focus", run);
-      document.removeEventListener("visibilitychange", run);
+      window.removeEventListener("focus", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
     };
   }, [enabled]);
 }

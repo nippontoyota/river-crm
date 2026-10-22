@@ -87,6 +87,22 @@ class LeadAccessTests(TestCase):
         self.assertEqual(dashboard.status_code, 200)
         self.assertIn("Server-Timing", dashboard)
 
+    def test_list_history_counts_do_not_multiply_and_ignore_resolved_followups(self):
+        now = timezone.now()
+        for _ in range(3):
+            CallLog.objects.create(lead=self.first_lead, so=self.first_so, status="PENDING")
+        for offset in (1, 2):
+            FollowUp.objects.create(lead=self.first_lead, so=self.first_so, scheduled_for=now + timedelta(days=offset))
+        FollowUp.objects.create(lead=self.first_lead, so=self.first_so, scheduled_for=now - timedelta(days=1), resolved_at=now)
+        self.client.force_authenticate(self.admin)
+        response = self.client.get("/api/leads/?ordering=enquiry_date")
+        rows = {row["id"]: row for row in response.json()["results"]}
+        self.assertEqual(response.data["count"], 2)
+        self.assertEqual(rows[self.first_lead.pk]["call_count"], 3)
+        self.assertEqual(datetime.fromisoformat(rows[self.first_lead.pk]["next_follow_up"]), now + timedelta(days=1))
+        self.assertEqual(rows[self.second_lead.pk]["call_count"], 0)
+        self.assertIsNone(rows[self.second_lead.pk]["next_follow_up"])
+
     def test_admin_auto_assigns_unowned_leads(self):
         unowned = Lead.objects.create(name="Danish", phone="7006682391")
         self.client.force_authenticate(self.admin)

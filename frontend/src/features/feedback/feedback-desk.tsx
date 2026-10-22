@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { FeedbackManagement } from "./feedback-requests";
 import { FeedbackIssuePanel } from "./feedback-issue";
+import { useWorkspaceUser } from "@/components/app-shell";
 import { getCurrentUser, type CurrentUser } from "@/lib/crm";
 import { formatDate, formatDateTime, todayInIST } from "@/lib/dates";
 import { callOutcomes, exportFeedback, feedbackBuckets, feedbackNames, getFeedback, getFeedbackDetail, getFeedbackOptions, getFeedbackReport, reassignFeedback, recordFeedback, type FeedbackDetail, type FeedbackOptions, type FeedbackPage, type FeedbackReport, type FeedbackTask } from "@/lib/feedback";
@@ -22,7 +23,9 @@ export function FeedbackDesk({ currentUser }: { currentUser?: CurrentUser }) {
   const taskParams = new URLSearchParams(query);
   taskParams.delete("task");
   const taskQuery = taskParams.toString();
-  const [user, setUser] = useState(currentUser);
+  const workspaceUser = useWorkspaceUser();
+  const verifiedUser = workspaceUser ?? currentUser;
+  const [user, setUser] = useState(verifiedUser);
   const [options, setOptions] = useState<FeedbackOptions | null>(null);
   const [report, setReport] = useState<FeedbackReport | null>(null);
   const [page, setPage] = useState<FeedbackPage | null>(null);
@@ -55,19 +58,22 @@ export function FeedbackDesk({ currentUser }: { currentUser?: CurrentUser }) {
   };
   useEffect(() => {
     let active = true;
-    void Promise.all([currentUser ? Promise.resolve({ user: currentUser }) : getCurrentUser(), getFeedbackOptions()])
+    void Promise.all([verifiedUser ? Promise.resolve({ user: verifiedUser }) : getCurrentUser(), getFeedbackOptions()])
       .then(([session, data]) => { if (active) { setUser(session.user); setOptions(data); } })
       .catch(e => { if (active) setError(errorText(e)); });
     return () => { active = false; };
-  }, [currentUser]);
+  }, [verifiedUser]);
   useEffect(() => {
     const controller = new AbortController();
+    let busy = false;
     const refresh = () => {
+      if (busy || controller.signal.aborted) return;
+      busy = true;
       setLoading(true);
       void getFeedback(taskQuery, controller.signal)
         .then(tasks => { if (!controller.signal.aborted) { setPage(tasks); setPageQuery(taskQuery); setError(""); } })
         .catch(e => { if (!controller.signal.aborted && e.name !== "AbortError") { setError(errorText(e)); setPage(null); } })
-        .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+        .finally(() => { busy = false; if (!controller.signal.aborted) setLoading(false); });
     };
     refresh();
     const timer = window.setInterval(refresh, 30000);
@@ -77,10 +83,14 @@ export function FeedbackDesk({ currentUser }: { currentUser?: CurrentUser }) {
     const controller = new AbortController();
     setReport(null);
     setReportError("");
+    let busy = false;
     const refreshReport = () => {
+      if (busy || controller.signal.aborted) return;
+      busy = true;
       void getFeedbackReport(reportQuery, controller.signal)
         .then(data => { if (!controller.signal.aborted) { setReport(data); setReportError(""); } })
-        .catch(e => { if (!controller.signal.aborted && e.name !== "AbortError") setReportError(errorText(e)); });
+        .catch(e => { if (!controller.signal.aborted && e.name !== "AbortError") setReportError(errorText(e)); })
+        .finally(() => { busy = false; });
     };
     refreshReport();
     const timer = window.setInterval(refreshReport, 30000);

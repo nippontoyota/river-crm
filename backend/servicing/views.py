@@ -113,7 +113,9 @@ class ServiceRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mi
         return RequestDetailSerializer if self.action == "retrieve" else RequestSerializer
 
     def get_queryset(self):
-        rows = visible_requests(self.request.user).select_related("vehicle", "vehicle__related_lead", "created_by").prefetch_related("events__actor")
+        rows = visible_requests(self.request.user).select_related("created_by")
+        if self.action != "list":
+            rows = rows.select_related("vehicle", "vehicle__related_lead").prefetch_related("events__actor")
         params = self.request.query_params
         if self.action != "list":
             return rows

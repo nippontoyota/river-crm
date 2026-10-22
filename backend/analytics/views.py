@@ -54,6 +54,10 @@ def metrics(queryset):
 
 def team_metrics(users, lead_relation):
     today = timezone.localdate()
+    # Count calls independently: joining both user leads and user calls multiplies
+    # their rows before every DISTINCT aggregate, even though neither count needs it.
+    daily_calls = dict(CallLog.objects.filter(so__in=users, created_at__date=today,
+        lead__deleted_at__isnull=True).order_by().values("so_id").annotate(total=Count("id")).values_list("so_id", "total"))
     active_leads = Q(**{f"{lead_relation}__deleted_at__isnull": True})
     is_ce = lead_relation == "assigned_leads"
     handled = with_ce_handling(Lead.objects.all()) if is_ce else with_ps_handling(Lead.objects.all())
@@ -64,7 +68,6 @@ def team_metrics(users, lead_relation):
         total_assigned=Count(lead_relation, filter=active_leads, distinct=True),
         total_called=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__pk__in": called.values("pk")}), distinct=True),
         untouched=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__pk__in": untouched.values("pk")}), distinct=True),
-        calls_today=Count("call_logs", filter=Q(call_logs__created_at__date=today, call_logs__lead__deleted_at__isnull=True), distinct=True),
         qualified=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__status": Lead.Status.QUALIFIED}), distinct=True),
         walkins=Count(lead_relation, filter=active_leads & choice_q(f"{lead_relation}__source", Lead.Source.WALKIN), distinct=True),
         booked=Count(lead_relation, filter=active_leads & Q(**{f"{lead_relation}__sales_outcome": Lead.SalesOutcome.BOOKED}), distinct=True),
@@ -78,7 +81,7 @@ def team_metrics(users, lead_relation):
             "total_assigned": user.total_assigned,
             "total_called": user.total_called,
             "untouched": user.untouched,
-            "calls_today": user.calls_today,
+            "calls_today": daily_calls.get(user.pk, 0),
             "qualified": user.qualified,
             "walkins": user.walkins,
             "booked": user.booked,

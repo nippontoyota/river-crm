@@ -16,5 +16,5 @@ export default function CallCenterPage() {
     }).catch(() => router.replace("/"));
   }, [router]);
   if (!user) return null;
-  return <AppShell role={user.role === "ADMIN" ? "Admin" : "Sales officer"}><CallCenterWorkspace user={user} /></AppShell>;
+  return <AppShell initialUser={user} role={user.role === "ADMIN" ? "Admin" : "Sales officer"}><CallCenterWorkspace user={user} /></AppShell>;
 }

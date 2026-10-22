@@ -176,10 +176,12 @@ export function ServiceDesk({ user }: { user: CurrentUser }) {
   }, []);
   useEffect(() => {
     const controller = new AbortController();
+    let busy = false;
     const refresh = () => {
-      if (document.hidden) return;
+      if (document.hidden || busy || controller.signal.aborted) return;
+      busy = true;
       const params = new URLSearchParams({ page: String(page), status, branch, q: query, date_from: dateFrom, date_to: dateTo });
-      api<Page<ServiceRequest>>(`/api/service-requests/?${params}`, { signal: controller.signal }).then(data => { setRows(data); setError(""); }).catch(e => { if (e.name !== "AbortError") setError(e.message); }).finally(() => setLoading(false));
+      api<Page<ServiceRequest>>(`/api/service-requests/?${params}`, { signal: controller.signal }).then(data => { if (!controller.signal.aborted) { setRows(data); setError(""); } }).catch(e => { if (!controller.signal.aborted && e.name !== "AbortError") setError(e.message); }).finally(() => { busy = false; if (!controller.signal.aborted) setLoading(false); });
     };
     const debounce = window.setTimeout(refresh, 200);
     const timer = window.setInterval(refresh, 30000);

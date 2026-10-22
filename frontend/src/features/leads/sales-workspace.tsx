@@ -1,4 +1,5 @@
 "use client";
+import { useWorkspaceUser } from "@/components/app-shell";
 import { useCrmRefresh } from "@/lib/use-crm-refresh";
 
 import { matchingChoice, uniqueChoices } from "@/lib/choices";
@@ -16,7 +17,7 @@ import { ActivityFields } from "@/components/activity-fields";
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createLead, getCurrentUser, getLeadDetail, getMyDashboard, getOfficers, sourceName, toOfficer, updateMyLead, type CurrentUser, type LeadDetail, type LeadInput, type SystemConfig, type LeadQualification, type Officer, type SalesDashboard, type SalesLead, getSystemConfig } from "@/lib/crm";
+import { createLead, getLeadDetail, getMyDashboard, getOfficers, sourceName, toOfficer, updateMyLead, type LeadDetail, type LeadInput, type SystemConfig, type LeadQualification, type Officer, type SalesDashboard, type SalesLead, getSystemConfig } from "@/lib/crm";
 import { InboundCallbacks } from "./call-center-actions";
 import { LeadOwnershipPanel, ownerState } from "./lead-ownership";
 import { SOLeadForm } from "@/features/leads/so-lead-form";
@@ -166,8 +167,7 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const [newLead, setNewLead] = useState<LeadInput>(emptyLead());
   const [addLeadError, setAddLeadError] = useState("");
   const [submittedLead, setSubmittedLead] = useState<string | null>(null);
-  const [user, setUser] = useState<CurrentUser | null>(null);
-  const [authChecked, setAuthChecked] = useState(false);
+  const user = useWorkspaceUser();
   const [psOptions, setPsOptions] = useState<Officer[]>([]);
   const [psLoading, setPsLoading] = useState(false);
   const [config, setConfig] = useState<SystemConfig | null>(null);
@@ -180,18 +180,13 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
   const sourceOptions = (config?.lists.sources || []).map(value => ({ value, label: sourceName(value) }));
   const [addLeadPsOptions, setAddLeadPsOptions] = useState<Officer[]>([]);
   const dashboardRequest = useRef(0);
+  const dashboardController = useRef<AbortController | null>(null);
   const openedInitialLead = useRef<number | null>(null);
   const isPs = user?.role === "SO";
   const psVisibleOutcomes = detail && draft ? detail.outcomePolicy.outcomes[draft.call_status] || [] : [];
   const selectedPsOutcome = psVisibleOutcomes.find(option => option.label === draft?.call_outcome);
   const activeOutcomeLabels = isPs ? psOutcomeLabels : outcomeLabels;
   const selectedLocation = draft ? draft.city.trim() : "";
-
-  useEffect(() => {
-    void getCurrentUser().then(result => {
-      setUser(result.user);
-    }).catch(() => setUser(null)).finally(() => setAuthChecked(true));
-  }, [followUpsOnly]);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,16 +213,19 @@ export function SalesWorkspace({ followUpsOnly = false, allLeadsOnly = false, in
 
   const loadDashboard = useCallback(async () => {
     if (!user) return;
+    dashboardController.current?.abort();
+    const controller = new AbortController();
+    dashboardController.current = controller;
     const request = ++dashboardRequest.current;
     setLoading(true); setError("");
-    try { const result = await getMyDashboard({ section, range, ...(category ? { category } : {}), ...(source ? { source } : {}), ...(query ? { q: query } : {}) }); if (request === dashboardRequest.current) setDashboard(result); }
-    catch (requestError) { if (request === dashboardRequest.current) setError(requestError instanceof Error ? requestError.message : "Unable to load your leads."); }
-    finally { if (request === dashboardRequest.current) setLoading(false); }
+    try { const result = await getMyDashboard({ section, range, ...(category ? { category } : {}), ...(source ? { source } : {}), ...(query ? { q: query } : {}) }, controller.signal); if (request === dashboardRequest.current && !controller.signal.aborted) setDashboard(result); }
+    catch (requestError) { if (request === dashboardRequest.current && !controller.signal.aborted) setError(requestError instanceof Error ? requestError.message : "Unable to load your leads."); }
+    finally { if (request === dashboardRequest.current && !controller.signal.aborted) setLoading(false); }
   }, [category, query, range, section, source, user]);
 
-  useCrmRefresh(loadDashboard, authChecked && Boolean(user));
+  useCrmRefresh(loadDashboard, Boolean(user));
 
-  useEffect(() => { if (!authChecked || !user) return; const timer = window.setTimeout(() => void loadDashboard(), query ? 250 : 0); return () => window.clearTimeout(timer); }, [authChecked, loadDashboard, query, user]);
+  useEffect(() => { if (!user) return; const timer = window.setTimeout(() => void loadDashboard(), query ? 250 : 0); return () => { window.clearTimeout(timer); dashboardController.current?.abort(); }; }, [loadDashboard, query, user]);
 
   useEffect(() => {
     let cancelled = false;

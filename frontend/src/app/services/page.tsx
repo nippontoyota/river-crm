@@ -15,5 +15,5 @@ export default function ServicesPage() {
     else router.replace("/");
   }).catch(() => router.replace("/")); }, [router]);
   if (!user) return null;
-  return <AppShell role={user.role === "SERVICE" ? "Service Department" : user.role === "CEO" ? "CEO" : user.role === "ADMIN" ? "Admin" : "Sales officer"}><ServiceDesk user={user} /></AppShell>;
+  return <AppShell initialUser={user} role={user.role === "SERVICE" ? "Service Department" : user.role === "CEO" ? "CEO" : user.role === "ADMIN" ? "Admin" : "Sales officer"}><ServiceDesk user={user} /></AppShell>;
 }

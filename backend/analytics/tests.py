@@ -212,7 +212,8 @@ class SalesManagerAnalyticsTests(TestCase):
 
     def test_other_analytics_query_budgets(self):
         self.client.force_authenticate(self.admin)
-        with self.assertNumQueries(4):
+        # Two small grouped call queries avoid multiplying leads by call history.
+        with self.assertNumQueries(6):
             admin = self.client.get("/api/analytics/admin/")
 
         self.client.force_authenticate(self.cre)
@@ -230,6 +231,24 @@ class SalesManagerAnalyticsTests(TestCase):
         self.assertEqual(admin["X-Cache"], "BYPASS")
         self.assertEqual(personal["X-Cache"], "BYPASS")
         self.assertEqual(reception["X-Cache"], "BYPASS")
+
+    def test_team_call_totals_include_handled_leads_without_current_ownership(self):
+        from analytics.views import team_metrics
+        # Employee activity is independent of current ownership, but excludes
+        # deleted leads and calls outside today. Multiple calls remain multiple.
+        orphan = User.objects.create_user("unassigned-caller@test.local", role="CRE")
+        for _ in range(3):
+            CallLog.objects.create(lead=self.branch_lead, so=orphan, status="PENDING")
+        old = CallLog.objects.create(lead=self.branch_lead, so=orphan, status="PENDING")
+        CallLog.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(days=2))
+        deleted = Lead.objects.create(name="Deleted", phone="9000000999", deleted_at=timezone.now())
+        CallLog.objects.create(lead=deleted, so=orphan, status="PENDING")
+        users = User.objects.filter(pk__in=[self.cre.pk, orphan.pk])
+        rows = {row["id"]: row for row in team_metrics(users, "assigned_leads")}
+        self.assertEqual(rows[orphan.pk]["calls_today"], 3)
+        self.assertEqual(rows[orphan.pk]["total_assigned"], 0)
+        self.assertEqual(rows[self.cre.pk]["calls_today"], 0)
+        self.assertEqual(rows[self.cre.pk]["total_assigned"], 2)
 
     def test_admin_analytics_hide_deleted_test_accounts_only(self):
         hidden = User.objects.create_user(

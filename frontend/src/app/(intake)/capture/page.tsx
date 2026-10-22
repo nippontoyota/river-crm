@@ -1,10 +1,11 @@
 "use client";
 
+import { useWorkspaceUser } from "@/components/app-shell";
 import { ActivityFields } from "@/components/activity-fields";
 import { RtoField } from "@/components/rto-field";
 
 import { useEffect, useState, FormEvent } from "react";
-import { createLead, getCurrentUser, getSystemConfig, getOfficers, toOfficer, sourceName, type Officer, type SystemConfig, type CurrentUser } from "@/lib/crm";
+import { createLead, getSystemConfig, getOfficers, toOfficer, sourceName, type Officer, type SystemConfig } from "@/lib/crm";
 import { CustomerLookup } from "@/features/leads/customer-lookup";
 
 export default function CaptureLeadPage() {
@@ -14,8 +15,9 @@ export default function CaptureLeadPage() {
 
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [officers, setOfficers] = useState<Officer[]>([]);
-  const [branch, setBranch] = useState("");
-  const [userRole, setUserRole] = useState<string>("");
+  const user = useWorkspaceUser();
+  const branch = user?.location?.trim() || "";
+  const userRole = user?.role || "";
   const [showLookup, setShowLookup] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -32,15 +34,15 @@ export default function CaptureLeadPage() {
 
   useEffect(() => {
     getSystemConfig().then(setConfig).catch(() => setError("Unable to load enquiry options. Refresh the page to retry."));
-    getCurrentUser().then(async ({ user }) => {
-      setUserRole(user.role);
-      const location = user.location?.trim() || "";
-      setBranch(location);
-      if (!location) return;
-      const apiOfficers = await getOfficers(location);
-      setOfficers(apiOfficers.map(o => toOfficer(o)));
-    }).catch(() => setError("Unable to load your branch and sales executives. Refresh the page to retry."));
   }, []);
+
+  useEffect(() => {
+    if (!branch) return;
+    let active = true;
+    void getOfficers(branch).then(records => { if (active) setOfficers(records.map(record => toOfficer(record))); })
+      .catch(() => { if (active) setError("Unable to load your branch and sales executives. Refresh the page to retry."); });
+    return () => { active = false; };
+  }, [branch]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;

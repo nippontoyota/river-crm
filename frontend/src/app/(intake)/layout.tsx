@@ -2,13 +2,15 @@
 
 import { AppShell } from "@/components/app-shell";
 import { useEffect, useState } from "react";
-import { getCurrentUser } from "@/lib/crm";
+import { getCurrentUser, type CurrentUser } from "@/lib/crm";
 
 export default function IntakeLayout({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<CurrentUser>();
   const [role, setRole] = useState<any>(null);
 
   useEffect(() => {
     getCurrentUser().then(({ user }) => {
+      setUser(user);
       setRole(user.role === "RECEPTIONIST" ? "Receptionist" : "Sales officer");
     }).catch(() => {
       // Fallback
@@ -18,5 +20,5 @@ export default function IntakeLayout({ children }: { children: React.ReactNode }
 
   if (!role) return null;
 
-  return <AppShell role={role}>{children}</AppShell>;
+  return <AppShell initialUser={user} role={role}>{children}</AppShell>;
 }

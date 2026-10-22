@@ -24,7 +24,7 @@ export default function ComplaintsPage() {
   if (!user) return null;
 
   return (
-    <AppShell role={user.role === "ADMIN" ? "Admin" : user.role === "RECEPTIONIST" ? "Receptionist" : "Sales officer"}>
+    <AppShell initialUser={user} role={user.role === "ADMIN" ? "Admin" : user.role === "RECEPTIONIST" ? "Receptionist" : "Sales officer"}>
       <ComplaintDesk adminView={user.role === "ADMIN"} currentUser={user} />
     </AppShell>
   );

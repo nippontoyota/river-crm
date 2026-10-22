@@ -3,7 +3,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from django.db import transaction
-from django.db.models import Count, Min, Q
+from django.db.models import Count, OuterRef, Q, Subquery, Value
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -80,9 +81,11 @@ class LeadViewSet(viewsets.ModelViewSet):
     shared_call_center = False
 
     def get_queryset(self):
+        calls = CallLog.objects.filter(lead_id=OuterRef("pk")).order_by().values("lead_id").annotate(total=Count("id"))
+        followups = FollowUp.objects.filter(lead_id=OuterRef("pk"), resolved_at__isnull=True).order_by("scheduled_for")
         queryset = Lead.objects.filter(deleted_at__isnull=True).select_related("assigned_so", "assigned_ps", "qualification").annotate(
-            _call_count=Count("call_logs", distinct=True),
-            _next_follow_up=Min("follow_ups__scheduled_for", filter=Q(follow_ups__resolved_at__isnull=True)),
+            _call_count=Coalesce(Subquery(calls.values("total")[:1]), Value(0)),
+            _next_follow_up=Subquery(followups.values("scheduled_for")[:1]),
         )
         if not self.request.user.is_admin and self.request.user.role == User.Role.CRE:
             queryset = queryset.filter(assigned_so=self.request.user)

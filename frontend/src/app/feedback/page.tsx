@@ -16,5 +16,5 @@ export default function FeedbackPage() {
     }).catch(() => router.replace("/"));
   }, [router]);
   if (!user) return null;
-  return <AppShell role={user.role === "ADMIN" ? "Admin" : user.role === "SALES_MANAGER" ? "Sales manager" : "Feedback Caller"}><Suspense fallback={<p className="page">Loading feedback…</p>}><FeedbackDesk currentUser={user} /></Suspense></AppShell>;
+  return <AppShell initialUser={user} role={user.role === "ADMIN" ? "Admin" : user.role === "SALES_MANAGER" ? "Sales manager" : "Feedback Caller"}><Suspense fallback={<p className="page">Loading feedback…</p>}><FeedbackDesk currentUser={user} /></Suspense></AppShell>;
 }
