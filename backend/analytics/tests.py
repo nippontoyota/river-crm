@@ -404,15 +404,21 @@ class SalesManagerAnalyticsTests(TestCase):
         self.assertEqual({lead["id"] for lead in ps.data["results"]}, expected)
 
     def test_manager_lead_flagged_filter_keeps_branch_scope(self):
+        today = timezone.localdate()
         self.branch_lead.flagged_to_manager = True
         self.branch_lead.save(update_fields=["flagged_to_manager"])
+        self.retailed.flagged_to_manager = True
+        self.retailed.save(update_fields=["flagged_to_manager"])
+        old = Lead.objects.create(name="Old flagged lead", phone="9000000004", branch="Mount Road", enquiry_date=today - timedelta(days=45), flagged_to_manager=True)
         self.other_branch_lead.flagged_to_manager = True
         self.other_branch_lead.save(update_fields=["flagged_to_manager"])
         self.client.force_authenticate(self.manager)
 
         response = self.client.get("/api/leads/manager-leads/?flagged=true")
+        open_response = self.client.get(f"/api/leads/manager-leads/?flagged=true&status_group=open&date_from={today.replace(day=1)}&date_to={today}")
 
-        self.assertEqual({lead["id"] for lead in response.data["results"]}, {self.branch_lead.id})
+        self.assertEqual({lead["id"] for lead in response.data["results"]}, {self.branch_lead.id, self.retailed.id, old.id})
+        self.assertEqual({lead["id"] for lead in open_response.data["results"]}, {self.branch_lead.id})
 
     def test_manager_lead_overdue_filter_keeps_branch_scope(self):
         now = timezone.now()

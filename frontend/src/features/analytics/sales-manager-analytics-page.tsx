@@ -38,6 +38,31 @@ function PerformanceTable({ title, section, labelKey, rows, filters, onExport }:
   return <article className="panel manager-table-card"><header className="manager-card-head"><div><p className="eyebrow">CONVERSION MIX</p><h2>{title}</h2></div><button className="filter" onClick={() => onExport(section)}>Export CSV</button></header><div className="manager-table-scroll"><table className="sales-table manager-table"><thead><tr><th>{labelKey === "source" ? "Source" : "Color"}</th><th>Total</th><th>Booked</th><th>Retailed</th><th>Lost</th><th>Conv.</th></tr></thead><tbody>{rows.length ? rows.map(row => { const name = String(row[labelKey] || "Unknown"); const href = leadHref(filters, { [labelKey]: name }); return <tr className="manager-clickable-row" key={name} role="link" tabIndex={0} onClick={() => router.push(href)} onKeyDown={event => { if (event.key === "Enter") router.push(href); }}><td><b>{labelKey === "source" ? sourceName(name) : name}</b></td><td>{row.total}</td><td>{row.booked}</td><td>{row.retailed}</td><td>{row.lost}</td><td><span className="manager-rate">{row.conversion_rate}%</span></td></tr>; }) : <tr><td colSpan={6} className="sales-empty">No rows for this period.</td></tr>}</tbody></table></div></article>;
 }
 
+function FlaggedLeadsSection({ query, refreshKey }: { query: string; refreshKey: number }) {
+  const [page, setPage] = useState<{ count: number; next: string | null; previous: string | null; results: Lead[] } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      void getManagerLeads(query, controller.signal)
+        .then(result => { setPage(result); setError(""); })
+        .catch(err => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Unable to load flagged leads."); })
+        .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    }, 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query, refreshKey]);
+  const reviewHref = (lead?: Lead) => { const params = new URLSearchParams(query); if (lead) params.set("q", lead.phone); return `/manager/leads?${params}`; };
+  const rows = page?.results.slice(0, 8) || [];
+  return <section id="manager-section-flagged" className="panel manager-table-card manager-flagged-card manager-section">
+    <header className="manager-card-head"><div><p className="eyebrow">ACTION QUEUE</p><h2><span className="manager-flagged-mark" aria-hidden="true">⚑</span> Open flagged leads</h2><p className="subtext">Manager attention requested and the lead is still active in this period.</p></div><Link prefetch={false} className="filter" href={reviewHref()}>Review all{page?.count ? ` · ${page.count}` : ""}</Link></header>
+    {error && <p className="manager-followups-error" role="alert">{error}</p>}
+    <div className="manager-table-scroll"><table className="sales-table manager-table manager-flagged-table"><thead><tr><th>Customer</th><th>Source</th><th>Model</th><th>PS/SO</th><th>Status</th><th>Enquiry</th><th>Action</th></tr></thead><tbody>{loading && !page ? <tr><td colSpan={7} className="sales-empty">Loading flagged leads...</td></tr> : rows.length ? rows.map(lead => <tr key={lead.id}><td><b>{lead.name}</b><small>#{String(lead.id).padStart(6, "0")} · {lead.phone}</small></td><td>{lead.source}</td><td>{lead.model}</td><td>{lead.assignedPsName || "—"}</td><td><span className={`sales-status ${lead.statusCode.toLowerCase()}`}>{managerStatusName(lead.statusCode)}</span></td><td>{lead.enquiredAt || "—"}</td><td><Link prefetch={false} className="sales-row-action" href={reviewHref(lead)}>Review</Link></td></tr>) : <tr><td colSpan={7} className="sales-empty"><strong>No open flagged leads.</strong><span>New manager flags for this period will appear here automatically.</span></td></tr>}</tbody></table></div>
+    {page && page.count > rows.length && <p className="manager-flagged-more">Showing {rows.length} of {page.count} open flagged leads.</p>}
+  </section>;
+}
+
 function LostLeadAnalysis({ total, reasons, filters, refreshKey }: { total: number; reasons: ManagerAnalytics["lost_reasons"]; filters: Record<string, string>; refreshKey: number }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
@@ -161,6 +186,7 @@ export function SalesManagerAnalyticsPage() {
   const params = useMemo(() => ({ range, ...(range === "custom" && validDateFrom ? { date_from: validDateFrom } : {}), ...(range === "custom" && validDateTo ? { date_to: validDateTo } : {}), ...(source ? { source } : {}), ...(color ? { color } : {}), ...(ps ? { ps } : {}) }), [color, ps, range, source, validDateFrom, validDateTo]);
   const followupFilters = useMemo<Record<string, string>>(() => ({ range, ...(range === "custom" && validDateFrom ? { date_from: validDateFrom } : {}), ...(range === "custom" && validDateTo ? { date_to: validDateTo } : {}), ...(source ? { source } : {}), ...(color ? { color } : {}) }), [color, range, source, validDateFrom, validDateTo]);
   const drilldownFilters: Record<string, string> = { ...(["today", "mtd"].includes(range) && data?.date_from ? { date_from: String(data.date_from), date_to: String(data.date_to || data.date_from) } : {}), ...(range === "custom" && validDateFrom && data?.date_from ? { date_from: String(data.date_from) } : {}), ...(range === "custom" && validDateTo && data?.date_to ? { date_to: String(data.date_to) } : {}), ...(source ? { source } : {}), ...(color ? { color } : {}), ...(ps ? { ps } : {}) };
+  const flaggedQuery = new URLSearchParams({ ...drilldownFilters, flagged: "true", status_group: "open" }).toString();
   const load = useCallback(async (fresh = false) => { const request = ++requestId.current; setLoading(true); setError(""); try { const result = await getSalesManagerAnalytics({ ...params, include: "filters,ps,source,lost", ...(fresh ? { refresh: "1" } : {}) }); if (request === requestId.current) { setData(result); setDataVersion(version => version + 1); } } catch (err) { if (request === requestId.current) setError(err instanceof Error ? err.message : "Unable to load sales manager analytics."); } finally { if (request === requestId.current) setLoading(false); } }, [params]);
   useEffect(() => { void getSystemConfig().then(config => { setConfiguredSources(config.lists.sources || ["WALKIN"]); setConfiguredColors(config.lists.colorVariants || []); }).catch(() => { setConfiguredSources(["WALKIN"]); setConfiguredColors([]); }); }, []);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
@@ -178,6 +204,7 @@ export function SalesManagerAnalyticsPage() {
       <section className="manager-kpi-grid" aria-label="Lead journey metrics"><EtbrTiles embedded data={data.summary} actions={{ etbr_enquired: () => router.push(leadHref(drilldownFilters)), etbr_retailed: () => router.push(leadHref(drilldownFilters, { sales_outcome: "RETAILED" })) }} /></section>
       <div className="manager-kpi-heading"><h2>Current position</h2><p>Booked here excludes retailed leads; lost includes not interested.</p></div>
       <section className="manager-kpi-grid" aria-label="Current position metrics">{[["Untouched by PS", data.summary.untouched, "untouched", "No call or customer action recorded by the assigned PS"], ["Currently booked", data.summary.booked, "booked", "Excludes retailed leads"], ["Lost / not interested", data.summary.lost, "lost", "Closed without a sale"], ["Lead to retail", `${data.summary.lead_to_retail_rate}%`, "conversion", "Retailed ÷ all enquiries"]].map(([label, value, key, description]) => <Link prefetch={false} className={`sales-metric manager-metric ${key}`} key={key} title={String(description)} href={leadHref(drilldownFilters, metricFilters[String(key)] || {})}><span>{label}</span><strong>{value}</strong><small>{data.range === "mtd" ? `${metricDelta(data.summary.delta?.[String(key)] as number)}${key === "conversion" ? " pp" : ""} vs previous MTD` : "Selected period"}</small></Link>)}</section>
+      <FlaggedLeadsSection query={flaggedQuery} refreshKey={dataVersion} />
       <section id="manager-section-ps" className="manager-section"><RoleTable rows={data.ps} filters={drilldownFilters} onExport={exportSection} /></section>
       <section id="manager-section-source" className="manager-two-col manager-section"><PerformanceTable title="Source conversion" section="source" labelKey="source" rows={data.source} filters={drilldownFilters} onExport={exportSection} /><PerformanceTable title="Color conversion" section="colors" labelKey="color" rows={data.colors} filters={drilldownFilters} onExport={exportSection} /></section>
       <PSFollowupsSection filters={followupFilters} primaryPs={ps} setPrimaryPs={setPs} officers={psOptions} refreshKey={dataVersion} />

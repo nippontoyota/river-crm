@@ -727,6 +727,37 @@
   padding: 16px 18px;
 }
 
+.manager-flagged-card {
+  border-top: 3px solid #a73f16;
+}
+
+.manager-flagged-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.manager-flagged-card .subtext {
+  margin: 5px 0 0;
+  font-size: 12px;
+}
+
+.manager-flagged-card .filter,
+.manager-flagged-card .sales-row-action {
+  text-decoration: none;
+}
+
+.manager-flagged-mark {
+  color: #a73f16;
+  font-size: 19px;
+}
+
+.manager-flagged-more {
+  margin: 12px 0 0;
+  color: #687b73;
+  font-size: 11px;
+}
+
 .manager-analytics-page .manager-card-head {
   margin-bottom: 12px;
 }

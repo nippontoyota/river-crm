@@ -310,7 +310,12 @@ class LeadViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(pk__in=actionable_followups().filter(so__role=User.Role.SALES_OFFICER, scheduled_for__lt=timezone.now()).values("lead_id"))
         if request.query_params.get("risk") == "stale":
             queryset = queryset.filter(status=Lead.Status.FRESH, created_at__date__lte=timezone.localdate() - timedelta(days=3))
-        if request.query_params.get("status_group") == "lost_or_unqualified":
+        if request.query_params.get("status_group") == "open":
+            queryset = queryset.exclude(
+                Q(status__in=CLOSED_STATUSES)
+                | Q(sales_outcome__in=[Lead.SalesOutcome.RETAILED, Lead.SalesOutcome.LOST])
+            )
+        elif request.query_params.get("status_group") == "lost_or_unqualified":
             queryset = queryset.filter(status__in=[Lead.Status.LOST, Lead.Status.UNQUALIFIED])
         if reason := request.query_params.get("lost_reason"):
             ids = next((group["ids"] for group in lost_reason_groups(queryset) if group["reason"].casefold() == reason.casefold()), [])
