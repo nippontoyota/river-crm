@@ -164,7 +164,7 @@ export function SalesManagerAnalyticsPage() {
   const load = useCallback(async (fresh = false) => { const request = ++requestId.current; setLoading(true); setError(""); try { const result = await getSalesManagerAnalytics({ ...params, include: "filters,ps,source,lost", ...(fresh ? { refresh: "1" } : {}) }); if (request === requestId.current) { setData(result); setDataVersion(version => version + 1); } } catch (err) { if (request === requestId.current) setError(err instanceof Error ? err.message : "Unable to load sales manager analytics."); } finally { if (request === requestId.current) setLoading(false); } }, [params]);
   useEffect(() => { void getSystemConfig().then(config => { setConfiguredSources(config.lists.sources || ["WALKIN"]); setConfiguredColors(config.lists.colorVariants || []); }).catch(() => { setConfiguredSources(["WALKIN"]); setConfiguredColors([]); }); }, []);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  useCrmRefresh(() => load());
+  useCrmRefresh(() => load(true));
   const sources = configuredSources;
   const psOptions = data?.filters?.ps || data?.ps || [];
   const exportSection = (section: string) => { setError(""); void exportSalesManagerAnalytics(section, params).catch(err => setError(err instanceof Error ? err.message : "Export failed.")); };
