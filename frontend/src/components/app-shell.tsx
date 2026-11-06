@@ -87,6 +87,7 @@ export function AppShell({ children, role, initialUser }: AppShellProps) {
   const cachedUserMatches = cachedUser && roleType(cachedUser) === role;
   const [user, setUser] = useState<CurrentUser | null>(cachedUserMatches ? cachedUser : null);
   const [checkingAccess, setCheckingAccess] = useState(true);
+  const [signingOut, setSigningOut] = useState(false);
   const [sessionConflict, setSessionConflict] = useState<CurrentUser | null>(null);
   useEffect(() => {
     let active = true;
@@ -119,12 +120,24 @@ export function AppShell({ children, role, initialUser }: AppShellProps) {
   const links = role === "Meta Uploader" ? uploadLinks : role === "Service Department" ? serviceLinks : role === "Feedback Caller" ? feedbackLinks : role === "CEO" ? ceoLinks : role === "Admin" ? adminLinks : role === "Sales manager" ? managerLinks : role === "Sales officer" ? user?.role === "CRE" ? creLinks : user?.role === "COMPLAINTS" ? complaintLinks : officerLinks : receptionistLinks;
   const shellRoleClass = role === "Feedback Caller" ? "feedback-shell" : role === "CEO" ? "ceo-shell" : role === "Sales manager" ? "manager-shell" : role === "Sales officer" ? user?.role === "SO" ? "ps-shell" : user?.role === "COMPLAINTS" ? "complaints-shell" : "cre-shell" : role === "Receptionist" ? "receptionist-shell" : "";
   const signOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
     try {
       if (user?.role === "SO" || sessionConflict?.role === "SO") await unsubscribePhonePush().catch(() => undefined);
       await logout();
     }
     finally { clearCachedCurrentUser(); router.replace("/"); }
   };
+
+  if (signingOut) return (
+    <main className="signout-screen">
+      <div role="status" aria-live="polite">
+        <span className="signout-spinner" aria-hidden="true" />
+        <h1>Signing out…</h1>
+        <p>Please wait while we finish signing you out.</p>
+      </div>
+    </main>
+  );
 
   if (checkingAccess) return null;
 

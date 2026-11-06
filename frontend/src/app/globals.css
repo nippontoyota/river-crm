@@ -122,3 +122,10 @@
 .rto-options > button { display: block; width: 100%; border: 0; padding: 10px; background: #fff; color: #25272b; text-align: left; font: inherit; font-size: 11px; cursor: pointer; }
 .rto-options > button[aria-selected="true"], .rto-options > button:hover { background: #e8f6ef; color: #166534; }
 .rto-options > p { padding: 10px; margin: 0; color: #666b71; font-size: 11px; }
+
+.signout-screen { min-height: 100svh; display: grid; place-items: center; padding: 24px; background: var(--paper); color: var(--ink); text-align: center; }
+.signout-screen h1 { margin: 24px 0 10px; font-size: 24px; letter-spacing: -.5px; }
+.signout-screen p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.signout-spinner { display: inline-block; width: 40px; height: 40px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: signout-spin .8s linear infinite; }
+@keyframes signout-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .signout-spinner { animation: none; } }
