@@ -478,6 +478,7 @@ export function TeamPage() {
           overflow: hidden;
         }
         .team-users-heading {
+          flex-shrink: 0;
           padding: 20px 20px 16px;
           border-bottom: 1px solid var(--line);
         }
@@ -488,6 +489,7 @@ export function TeamPage() {
         }
         .team-filters {
           display: grid;
+          flex-shrink: 0;
           grid-template-columns: minmax(220px, 1.4fr) minmax(130px, .8fr) minmax(150px, .9fr) minmax(110px, .65fr);
           gap: 10px;
           padding: 14px 20px;
@@ -501,6 +503,8 @@ export function TeamPage() {
           text-transform: uppercase;
         }
         .team-user-table {
+          display: flex;
+          flex-direction: column;
           min-height: 0;
         }
         .team-user-head,
@@ -511,6 +515,7 @@ export function TeamPage() {
           align-items: center;
         }
         .team-user-head {
+          flex-shrink: 0;
           padding: 12px 20px 10px;
           color: #94999f;
           font: 9px ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -519,8 +524,7 @@ export function TeamPage() {
           border-bottom: 1px solid #efeeeb;
         }
         .team-users-scroll {
-          max-height: calc(100vh - 334px);
-          min-height: 300px;
+          min-height: 0;
           overflow-y: auto;
         }
         .team-user-row {
