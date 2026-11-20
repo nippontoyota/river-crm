@@ -47,22 +47,25 @@ export default function ReceptionistDashboardPage() {
       </div>
 
       <h2>SO Assignment Breakdown</h2>
+      <p className="subtext">Your walk-in leads captured today and this calendar month, grouped by their current sales officer. Dates use India time.</p>
       <div className="panel" style={{ marginTop: "1rem" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid var(--border-color)", textAlign: "left" }}>
               <th style={{ padding: "1rem" }}>Sales Officer</th>
               <th style={{ padding: "1rem", textAlign: "right" }}>Leads Assigned Today</th>
+              <th style={{ padding: "1rem", textAlign: "right" }}>Leads Assigned This Month</th>
             </tr>
           </thead>
           <tbody>
             {analytics.so_breakdown.length === 0 ? (
-              <tr><td colSpan={2} style={{ padding: "1rem", textAlign: "center" }}>No leads assigned today.</td></tr>
+              <tr><td colSpan={3} style={{ padding: "1rem", textAlign: "center" }}>No leads captured this month.</td></tr>
             ) : (
-              analytics.so_breakdown.map((so, index) => (
-                <tr key={index} style={{ borderBottom: "1px solid var(--border-color)" }}>
+              analytics.so_breakdown.map(so => (
+                <tr key={so.so_id ?? "unassigned"} style={{ borderBottom: "1px solid var(--border-color)" }}>
                   <td style={{ padding: "1rem" }}>{so.name}</td>
                   <td style={{ padding: "1rem", textAlign: "right", fontWeight: "bold" }}>{so.count}</td>
+                  <td style={{ padding: "1rem", textAlign: "right", fontWeight: "bold" }}>{so.month_count}</td>
                 </tr>
               ))
             )}

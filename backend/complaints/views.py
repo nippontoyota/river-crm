@@ -18,6 +18,7 @@ from .permissions import ComplaintAnalyticsPermission, ComplaintPermission, visi
 from .serializers import (
     ComplaintCreateSerializer,
     ComplaintDetailSerializer,
+    ComplaintDetailsSerializer,
     ComplaintListSerializer,
     ComplaintNoteSerializer,
     ComplaintUpdateSerializer,
@@ -69,6 +70,8 @@ class ComplaintViewSet(ModelViewSet):
             return ComplaintDetailSerializer
         if self.action == "create":
             return ComplaintCreateSerializer
+        if self.action == "details":
+            return ComplaintDetailsSerializer
         return ComplaintListSerializer
 
     def perform_create(self, serializer):
@@ -132,6 +135,22 @@ class ComplaintViewSet(ModelViewSet):
 
     def partial_update(self, request, *args, **kwargs):
         return self.update(request, *args, **kwargs)
+
+    @action(detail=True, methods=["patch"], url_path="details", serializer_class=ComplaintDetailsSerializer)
+    @transaction.atomic
+    def details(self, request, pk=None):
+        visible = self.get_object()
+        complaint = Complaint.objects.select_for_update().get(pk=visible.pk)
+        serializer = ComplaintDetailsSerializer(complaint, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        changes = {key: value for key, value in serializer.validated_data.items() if value != getattr(complaint, key)}
+        if changes:
+            before = {key: getattr(complaint, key) for key in changes}
+            for key, value in changes.items():
+                setattr(complaint, key, value)
+            complaint.save(update_fields=[*changes, "updated_at"])
+            complaint_event(complaint, request.user, "complaint_updated", before, after=changes)
+        return Response(ComplaintDetailSerializer(complaint).data)
 
     @action(detail=True, methods=["post"], url_path="add-note")
     def add_note(self, request, pk=None):

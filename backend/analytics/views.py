@@ -501,21 +501,27 @@ class ReceptionistAnalyticsView(APIView):
         if getattr(request.user, "role", None) != "RECEPTIONIST":
             return Response(status=403)
         today = timezone.localdate()
-        # Find leads created by this receptionist today
-        created_lead_ids = LeadAudit.objects.filter(actor=request.user, event="created", created_at__date=today).values_list("lead_id", flat=True)
+        # Capture dates define these counts; current ownership defines the rows.
+        captures = LeadAudit.objects.filter(actor=request.user, event="created", created_at__date__gte=today.replace(day=1), created_at__date__lte=today)
+        created_lead_ids = captures.values_list("lead_id", flat=True)
+        today_lead_ids = captures.filter(created_at__date=today).values_list("lead_id", flat=True)
         queryset = Lead.objects.filter(choice_q("source", Lead.Source.WALKIN), id__in=created_lead_ids, deleted_at__isnull=True)
         branch = request.user.location.strip()
         queryset = queryset.filter(choice_q("branch", branch)) if branch else queryset.none()
-        summary = queryset.aggregate(**etbr_aggregates(), total=Count("id"), walkin=Count("id", filter=choice_q("source", Lead.Source.WALKIN)))
+        summary = queryset.filter(id__in=today_lead_ids).aggregate(**etbr_aggregates(), total=Count("id"), walkin=Count("id", filter=choice_q("source", Lead.Source.WALKIN)))
         total = summary["total"]
         walkins = summary["walkin"]
         digital = total - walkins
         # Breakdown by SO assignment
-        so_breakdown = list(queryset.values("assigned_ps__first_name", "assigned_ps__last_name", "assigned_ps__email").annotate(count=Count("id")).order_by("-count"))
+        so_breakdown = list(queryset.values("assigned_ps_id", "assigned_ps__first_name", "assigned_ps__last_name", "assigned_ps__email").annotate(
+            count=Count("id", filter=Q(id__in=today_lead_ids)), month_count=Count("id"),
+        ).order_by("-month_count", "-count", "assigned_ps_id"))
         formatted_so_breakdown = [
             {
+                "so_id": so["assigned_ps_id"],
                 "name": f"{so['assigned_ps__first_name'] or ''} {so['assigned_ps__last_name'] or ''}".strip() or so["assigned_ps__email"] or "Unassigned",
-                "count": so["count"]
+                "count": so["count"],
+                "month_count": so["month_count"],
             }
             for so in so_breakdown
         ]

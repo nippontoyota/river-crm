@@ -3,6 +3,8 @@
 import { useWorkspaceUser } from "@/components/app-shell";
 import { ActivityFields } from "@/components/activity-fields";
 import { RtoField } from "@/components/rto-field";
+import { DateInput } from "@/components/date-input";
+import { formatDate, parseDate, todayInIST } from "@/lib/dates";
 
 import { useEffect, useState, FormEvent } from "react";
 import { createLead, getSystemConfig, getOfficers, toOfficer, sourceName, type Officer, type SystemConfig } from "@/lib/crm";
@@ -21,6 +23,7 @@ export default function CaptureLeadPage() {
   const [showLookup, setShowLookup] = useState(false);
 
   const [formData, setFormData] = useState({
+    enquiry_date: formatDate(new Date()),
     activity: "", sub_activity: "",
     name: "",
     phone: "",
@@ -52,6 +55,7 @@ export default function CaptureLeadPage() {
 
   const handleClear = () => {
     setFormData({
+      enquiry_date: formatDate(new Date()),
       activity: "", sub_activity: "",
       name: "", phone: "", email: "", profession: "", rto: "", source: "WALKIN",
       variant: "",
@@ -71,7 +75,11 @@ export default function CaptureLeadPage() {
       if (!branch) throw new Error("Ask your admin to assign your branch before capturing leads.");
       if (!formData.model_interest) throw new Error("Select a vehicle model from Admin Lists.");
       if (!formData.variant) throw new Error("Choose a colour or No Preference.");
+      const enquiryDate = parseDate(formData.enquiry_date);
+      if (!enquiryDate) throw new Error("Enter the enquiry date as DD/MM/YYYY.");
+      if (enquiryDate > todayInIST()) throw new Error("Enquiry date cannot be in the future.");
       const payload = {
+        enquiry_date: enquiryDate,
         name: formData.name,
         phone: formData.phone,
         email: formData.email || undefined,
@@ -143,6 +151,7 @@ export default function CaptureLeadPage() {
 
         <div className="capture-form-grid">
             <label>Branch<input value={branch} readOnly placeholder="Ask your admin to assign your branch" /></label>
+            <label>Enquiry date *<DateInput required value={formData.enquiry_date} max={todayInIST()} onChange={value => setFormData(current => ({ ...current, enquiry_date: value }))} ariaLabel="Enquiry date, DD/MM/YYYY" /></label>
             <RtoField options={rtoOptions} value={formData.rto} onChange={value => setFormData(current => ({ ...current, rto: value }))} />
         </div>
 

@@ -50,8 +50,8 @@ def record_audit(audit):
                 "branch": snapshot["branch"], "snapshot": snapshot, "before": before, "after": after})
 
 
-def complaint_event(complaint, actor, kind, before=None):
+def complaint_event(complaint, actor, kind, before=None, after=None):
     OperationEvent.objects.create(complaint=complaint, lead=complaint.related_lead, actor=actor, kind=kind,
         occurred_at=timezone.now(), source_key=f"complaint:{complaint.pk}:{timezone.now().isoformat()}",
-        branch=branch_key(complaint.branch), before=before or {}, after={"status": complaint.status,
-        "priority": complaint.priority, "assigned_to_id": complaint.assigned_to_id})
+        branch=branch_key(complaint.branch), before=before or {}, after=after if after is not None else {
+            "status": complaint.status, "priority": complaint.priority, "assigned_to_id": complaint.assigned_to_id})

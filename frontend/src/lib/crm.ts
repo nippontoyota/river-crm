@@ -144,7 +144,7 @@ export const sourceName = (source: string) => sourceNames[source] || source;
 export const statusName = (status: string) => statusNames[status] || status;
 export const managerStatusName = (status: string) => status.toUpperCase() === "QUALIFIED" ? "Interested" : status.toUpperCase() === "UNQUALIFIED" ? "Not interested" : statusName(status);
 export const sourceClass = (source: string) => sourceName(source).toLowerCase().replaceAll(" ", "-");
-export const toLead = (lead: ApiLead): Lead => ({ ...lead, source: sourceName(lead.source), sourceCode: lead.source, model: lead.model_interest || "—", enquiryDate: lead.enquiry_date, enquiredAt: formatDate(lead.enquiry_date || lead.created_at), statusCode: lead.status, status: statusName(lead.status), category: lead.category, salesOutcome: lead.sales_outcome, nextFollowUp: lead.next_follow_up, callCount: lead.call_count, assignedSoId: lead.assigned_so, assignedSoName: lead.assigned_so_name, assignedPsId: lead.assigned_ps, assignedPsName: lead.assigned_ps_name, needsCreReassignment: lead.needs_cre_reassignment, needsSoReassignment: lead.needs_so_reassignment });
+export const toLead = (lead: ApiLead): Lead => ({ ...lead, source: sourceName(lead.source), sourceCode: lead.source, model: lead.model_interest || "—", enquiryDate: lead.enquiry_date, enquiredAt: formatDate(lead.enquiry_date) || "Not recorded", statusCode: lead.status, status: statusName(lead.status), category: lead.category, salesOutcome: lead.sales_outcome, nextFollowUp: lead.next_follow_up, callCount: lead.call_count, assignedSoId: lead.assigned_so, assignedSoName: lead.assigned_so_name, assignedPsId: lead.assigned_ps, assignedPsName: lead.assigned_ps_name, needsCreReassignment: lead.needs_cre_reassignment, needsSoReassignment: lead.needs_so_reassignment });
 const toSalesLead = (lead: ApiSalesLead): SalesLead => ({ ...lead, id: lead.id, name: lead.name, phone: lead.phone, source: sourceName(lead.source), sourceCode: lead.source, statusCode: lead.status, status: statusName(lead.status), flagged_to_manager: lead.flagged_to_manager });
 export const toLeadDetail = (lead: ApiLead & { ownership: LeadOwnership; call_history: CallHistory[]; follow_up_history: FollowUpHistory[]; audit_history: LeadDetail["auditHistory"]; outcome_policy: OutcomePolicy; whatsapp: WhatsAppSummary }): LeadDetail => ({ ...toLead(lead), email: lead.email, sourceLabel: lead.source_label, campaign: lead.campaign, qualification: lead.qualification, callHistory: lead.call_history, followUpHistory: lead.follow_up_history, auditHistory: lead.audit_history, outcomePolicy: lead.outcome_policy, whatsapp: lead.whatsapp, ownership: lead.ownership });
 export const toOfficer = (officer: ApiOfficer, metrics?: Metrics): Officer => ({ id: officer.id, name: `${officer.first_name} ${officer.last_name}`.trim() || officer.email, initials: `${officer.first_name[0] || ""}${officer.last_name[0] || ""}` || officer.email.slice(0, 2).toUpperCase(), color: colors[officer.id % colors.length], location: officer.location, assigned: metrics?.total_assigned || 0, calls: metrics?.calls_today || 0, qualified: metrics?.qualified || 0, won: metrics?.won || 0 });
@@ -242,7 +242,7 @@ export const enableUser = (userId: number) => api<CurrentUser>(`/api/auth/users/
 export const permanentlyDeleteUser = (userId: number, impactVersion: string, routes: OffboardingRoute[], reason: string) => api<{ status: string }>(`/api/auth/users/${userId}/permanent-delete/`, { method: "POST", body: JSON.stringify({ impact_version: impactVersion, routes, reason }) });
 export const reviewFollowUp = (followUpId: number, action: "APPROVE" | "RESOLVE", scheduledFor?: string) => api<FollowUpHistory>(`/api/follow-ups/${followUpId}/review/`, { method: "PATCH", body: JSON.stringify({ action, ...(scheduledFor ? { scheduled_for: scheduledFor } : {}) }) });
 
-export type ReceptionistAnalytics = { summary: EtbrMetrics & { total: number; walkin: number; digital: number }; so_breakdown: { name: string; count: number }[] };
+export type ReceptionistAnalytics = { summary: EtbrMetrics & { total: number; walkin: number; digital: number }; so_breakdown: { so_id: number | null; name: string; count: number; month_count: number }[] };
 export const getReceptionistAnalytics = () => api<ReceptionistAnalytics>("/api/analytics/receptionist/");
 
 // ── Complaints ────────────────────────────────────────────────────────────────
@@ -265,6 +265,7 @@ export type ComplaintInput = {
   category: string; subtype: string; priority: string; subject: string; description: string;
   model_interest?: string; branch: string; source?: string;
 };
+export type ComplaintDetailsInput = Pick<Complaint, "customer_name" | "customer_phone" | "customer_email" | "category" | "subtype" | "subject" | "description" | "source" | "model_interest">;
 export type ComplaintFilters = {
   status?: string; category?: string; priority?: string; source?: string;
   date_from?: string; date_to?: string; q?: string;
@@ -288,6 +289,8 @@ export const getComplaintDetail = (id: number) =>
   api<ComplaintDetail>(`/api/complaints/${id}/`);
 export const updateComplaint = (id: number, payload: Partial<{ status: string; priority: string; resolution_notes: string }>) =>
   api<ComplaintDetail>(`/api/complaints/${id}/`, { method: "PATCH", body: JSON.stringify(payload) });
+export const updateComplaintDetails = (id: number, payload: Partial<ComplaintDetailsInput>) =>
+  api<ComplaintDetail>(`/api/complaints/${id}/details/`, { method: "PATCH", body: JSON.stringify(payload) });
 export const addComplaintNote = (id: number, content: string) =>
   api<ComplaintNote>(`/api/complaints/${id}/add-note/`, { method: "POST", body: JSON.stringify({ content }) });
 export const getComplaintAnalytics = (range = "mtd", dateFrom = "", dateTo = "") => {

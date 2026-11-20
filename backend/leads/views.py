@@ -248,7 +248,11 @@ class LeadViewSet(viewsets.ModelViewSet):
             officer = serializer.validated_data.get("assigned_ps")
             if officer and officer.location.strip().casefold() != branch.casefold():
                 raise ValidationError({"ps_officer_id": "Choose a sales executive from your branch."})
-            lead = serializer.save(source=Lead.Source.WALKIN, status=Lead.Status.QUALIFIED, branch=branch, generated_by=self.request.user)
+            lead = serializer.save(
+                source=Lead.Source.WALKIN, status=Lead.Status.QUALIFIED, branch=branch,
+                generated_by=self.request.user,
+                enquiry_date=serializer.validated_data.get("enquiry_date") or timezone.localdate(),
+            )
         elif is_walkin:
             # Walk-in leads bypass CE – go directly to PS/SO as qualified
             kwargs = {"status": Lead.Status.QUALIFIED, "generated_by": self.request.user}

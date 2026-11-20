@@ -22,7 +22,7 @@ class ComplaintPermission(BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         if request.user.is_admin:
-            return view.action in {"list", "retrieve"}
+            return view.action in {"list", "retrieve", "details"}
         if request.user.role in {User.Role.CRE, User.Role.RECEPTIONIST}:
             return view.action in {"list", "retrieve", "create"}
         if request.user.role == User.Role.COMPLAINTS:

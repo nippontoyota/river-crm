@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 from rest_framework import serializers
 
 from leads.serializers import validate_configured_choice
@@ -100,4 +102,35 @@ class ComplaintUpdateSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     {"resolution_notes": "Remarks are required when resolving or closing a complaint."}
                 )
+        return attrs
+
+
+class ComplaintDetailsSerializer(serializers.ModelSerializer):
+    """Administrative corrections, separate from routing and resolution."""
+
+    class Meta:
+        model = Complaint
+        fields = ["customer_name", "customer_phone", "customer_email", "category", "subtype",
+                  "subject", "description", "source", "model_interest"]
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            return super().to_internal_value(data)
+        unsupported = set(data) - set(self.fields)
+        if unsupported:
+            raise serializers.ValidationError({field: "This field cannot be edited here." for field in unsupported})
+        return super().to_internal_value(data)
+
+    validate_customer_phone = ComplaintCreateSerializer.validate_customer_phone
+    validate_customer_email = ComplaintCreateSerializer.validate_customer_email
+
+    def validate_model_interest(self, value):
+        return validate_configured_choice(value, "models", "vehicle model", self.instance.model_interest)
+
+    def validate(self, attrs):
+        category = attrs.get("category", self.instance.category)
+        subtype = attrs.get("subtype", self.instance.subtype)
+        if (category, subtype) != (self.instance.category, self.instance.subtype):
+            if subtype not in COMPLAINT_SUBTYPES.get(category, []):
+                raise serializers.ValidationError({"subtype": "Choose a subtype belonging to the selected complaint type."})
         return attrs

@@ -81,6 +81,18 @@ def validate_activity_pair(attrs, current=None):
     return attrs
 
 
+def validate_enquiry_date(value, lead=None):
+    if value and value > timezone.localdate():
+        raise serializers.ValidationError("Enquiry date cannot be in the future.")
+    if value is None and lead and lead.enquiry_date:
+        receptionist_created = (
+            lead.generated_by_id and lead.generated_by.role == User.Role.RECEPTIONIST
+        ) or lead.audit_events.filter(event="created", actor__role=User.Role.RECEPTIONIST).exists()
+        if receptionist_created:
+            raise serializers.ValidationError("Enquiry date cannot be cleared for a receptionist lead.")
+    return value
+
+
 
 CALL_OUTCOME_STATUS_OPTIONS = {
     "PENDING": {Lead.Status.PENDING},
@@ -151,9 +163,7 @@ class LeadSerializer(serializers.ModelSerializer):
         return QualificationSerializer(qualification).data if qualification else None
 
     def validate_enquiry_date(self, value):
-        if value and value > timezone.localdate():
-            raise serializers.ValidationError("Enquiry date cannot be in the future.")
-        return value
+        return validate_enquiry_date(value, self.instance)
 
     def validate_model_interest(self, value):
         return validate_configured_choice(value, "models", "vehicle model", getattr(self.instance, "model_interest", ""))
@@ -396,6 +406,9 @@ class SOLeadUpdateSerializer(serializers.Serializer):
     ps_officer_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role=User.Role.SALES_OFFICER, is_active=True, deleted_at__isnull=True), source="ps_officer", required=False)
     flagged_to_manager = serializers.BooleanField(required=False)
 
+    def validate_enquiry_date(self, value):
+        return validate_enquiry_date(value, self.context.get("lead"))
+
     def validate_model_interest(self, value):
         return validate_configured_choice(value, "models", "vehicle model", getattr(self.context.get("lead"), "model_interest", ""))
 
@@ -407,9 +420,6 @@ class SOLeadUpdateSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         attrs = validate_activity_pair(attrs, self.context.get("lead"))
-        enquiry_date = attrs.get("enquiry_date")
-        if enquiry_date and enquiry_date > timezone.localdate():
-            raise serializers.ValidationError({"enquiry_date": "Enquiry date cannot be in the future."})
         user = self.context.get("user")
         if "whatsapp_agreed" in attrs:
             from notifications.whatsapp import may_record_agreement

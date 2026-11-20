@@ -59,7 +59,7 @@ class ReceptionistBranchTests(TestCase):
         self.assertEqual(self.client.get("/api/auth/sales-officers/").data["count"], 3)
 
     def test_capture_saves_branch_with_or_without_an_assignment(self):
-        for fields in ({}, {"ps_officer_id": self.kochi.pk}):
+        for fields in ({}, {"ps_officer_id": self.kochi.pk, "phone": "9876543211"}):
             response = self.client.post("/api/leads/", {**self.lead_data, **fields}, format="json")
             self.assertEqual(response.status_code, 201, response.data)
             lead = Lead.objects.get(pk=response.data["id"])
@@ -102,7 +102,7 @@ class ReceptionistBranchTests(TestCase):
         self.assertEqual(self.client.get("/api/analytics/receptionist/").data["summary"]["total"], 0)
         self.assertEqual(self.client.get("/api/complaints/").data["count"], 0)
         self.assertEqual(self.client.get(f'/api/complaints/{complaint.data["id"]}/').status_code, 404)
-        new_lead = self.client.post("/api/leads/", {**self.lead_data, "ps_officer_id": self.thrissur.pk}, format="json")
+        new_lead = self.client.post("/api/leads/", {**self.lead_data, "phone": "9876543211", "ps_officer_id": self.thrissur.pk}, format="json")
         self.assertEqual(new_lead.status_code, 201, new_lead.data)
         self.assertEqual(new_lead.data["branch"], "Thrissur")
         self.assertEqual(Lead.objects.get(pk=lead.data["id"]).branch, "Kochi")

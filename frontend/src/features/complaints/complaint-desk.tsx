@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createComplaint, getComplaintAnalytics, getComplaintDetail, getComplaints,
-  getSystemConfig, updateComplaint,
-  type Complaint, type ComplaintAnalytics, type ComplaintDetail, type ComplaintFilters, type ComplaintInput, type CurrentUser,
+  getSystemConfig, updateComplaint, updateComplaintDetails,
+  type Complaint, type ComplaintAnalytics, type ComplaintDetail, type ComplaintDetailsInput, type ComplaintFilters, type ComplaintInput, type CurrentUser,
 } from "@/lib/crm";
 import { formatDate, formatDateTime } from "@/lib/dates";
 
@@ -63,6 +63,7 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
   const assignedBranch = currentUser?.location?.trim() || "";
   const canCreate = userRole === "CRE" || userRole === "RECEPTIONIST";
   const canResolve = userRole === "COMPLAINTS";
+  const canEditDetails = userRole === "ADMIN";
   const canUseAnalytics = adminView || canResolve;
   const heading = adminView
     ? {
@@ -115,6 +116,7 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
   const [newPriority, setNewPriority] = useState("");
   const [resolutionNotes, setResolutionNotes] = useState("");
   const [detailError, setDetailError] = useState("");
+  const [editingDetails, setEditingDetails] = useState(false);
 
   // System config
   const [configError, setConfigError] = useState("");
@@ -203,6 +205,7 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
   // ── Open Detail ────────────────────────────────────────────────────────────
 
   const openComplaint = async (c: Complaint) => {
+    setEditingDetails(false);
     setActiveComplaint(c);
     setNewStatus(c.status);
     setNewPriority(c.priority);
@@ -518,8 +521,17 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
               {detailError && <p className="form-error" role="alert">{detailError}</p>}
 
               {/* Customer info card */}
-              <section className="sales-info-card">
-                <h3>Customer information</h3>
+              {editingDetails && canEditDetails ? <ComplaintDetailsForm
+                key={activeComplaint.id} id={activeComplaint.id} models={models} subtypes={subtypes} configError={configError}
+                onCancel={() => setEditingDetails(false)}
+                onSaved={updated => {
+                  setActiveComplaint(updated); setDetail(updated); setEditingDetails(false);
+                  setNotice("Complaint details updated.");
+                  void refresh();
+                  void getComplaintAnalytics(analyticsRange).then(setAnalytics).catch(() => null);
+                }}
+              /> : <section className="sales-info-card">
+                <h3>Customer information {canEditDetails && <button type="button" className="row-action" onClick={() => setEditingDetails(true)}>Edit details</button>}</h3>
                 <div className="complaint-info-grid">
                   <span><small>Name</small><b>{activeComplaint.customer_name}</b></span>
                   <span><small>Phone</small><b>{activeComplaint.customer_phone}</b></span>
@@ -535,7 +547,7 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
                   <small>Description</small>
                   <p>{activeComplaint.description}</p>
                 </div>
-              </section>
+              </section>}
 
               {/* Status update card */}
               {canResolve && <section className="sales-form-card">
@@ -594,4 +606,87 @@ export function ComplaintDesk({ adminView = false, currentUser }: { adminView?: 
       )}
     </section>
   );
+}
+
+function ComplaintDetailsForm({ id, models, subtypes, configError, onCancel, onSaved }: {
+  id: number; models: string[]; subtypes: Record<string, string[]>; configError: string;
+  onCancel: () => void; onSaved: (detail: ComplaintDetail) => void;
+}) {
+  const [original, setOriginal] = useState<ComplaintDetail | null>(null);
+  const [fields, setFields] = useState<ComplaintDetailsInput | null>(null);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    mounted.current = true;
+    void getComplaintDetail(id).then(record => {
+      if (!active) return;
+      setOriginal(record);
+      const { customer_name, customer_phone, customer_email, category, subtype, subject, description, source, model_interest } = record;
+      setFields({ customer_name, customer_phone, customer_email, category, subtype, subject, description, source, model_interest });
+    }).catch(e => { if (active) setError(e instanceof Error ? e.message : "Unable to load complaint details."); });
+    return () => { active = false; mounted.current = false; };
+  }, [id, retry]);
+
+  const update = (key: keyof ComplaintDetailsInput, value: string) => setFields(current => current ? { ...current, [key]: value } : current);
+  const save = async () => {
+    if (!fields || !original || saving) return;
+    const changes = Object.fromEntries(Object.entries(fields).filter(([key, value]) => value !== original[key as keyof ComplaintDetailsInput]));
+    if (!Object.keys(changes).length) { onCancel(); return; }
+    setSaving(true); setError("");
+    try {
+      const updated = await updateComplaintDetails(id, changes);
+      if (mounted.current) onSaved(updated);
+    } catch (e) {
+      if (mounted.current) setError(e instanceof Error ? e.message : "Unable to save complaint details.");
+    } finally { if (mounted.current) setSaving(false); }
+  };
+
+  if (!fields || !original) return <section className="sales-info-card">
+    <h3>Edit complaint details</h3>
+    {error ? <p className="form-error" role="alert">{error} <button type="button" onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button></p> : <p role="status">Loading current details…</p>}
+    <button type="button" className="filter" onClick={onCancel}>Cancel</button>
+  </section>;
+
+  const subtypeOptions = subtypes[fields.category] || [];
+  return <section className="sales-info-card">
+    <h3>Edit complaint details</h3>
+    <form className="complaint-form" onSubmit={event => { event.preventDefault(); void save(); }}>
+      <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0 }}>
+        <div className="form-grid">
+          <label>Customer name<input required maxLength={160} value={fields.customer_name} onChange={e => update("customer_name", e.target.value)} /></label>
+          <label>Phone number<input required inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={fields.customer_phone} onChange={e => update("customer_phone", e.target.value.replace(/\D/g, ""))} /></label>
+          <label>Email (optional)<input type="email" value={fields.customer_email} onChange={e => update("customer_email", e.target.value)} /></label>
+          <label>Branch<input readOnly value={original.branch} /></label>
+          <label>Complaint type<select required value={fields.category} onChange={e => setFields(current => current ? { ...current, category: e.target.value, subtype: "" } : current)}>
+            {CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select></label>
+          <label>Complaint subtype<select required={fields.category !== original.category || Boolean(original.subtype)} value={fields.subtype} onChange={e => update("subtype", e.target.value)}>
+            <option value="">Select subtype</option>
+            {fields.subtype && !subtypeOptions.includes(fields.subtype) && <option value={fields.subtype}>{fields.subtype}</option>}
+            {subtypeOptions.map(value => <option key={value} value={value}>{value}</option>)}
+          </select></label>
+          <label>Source<select required value={fields.source} onChange={e => update("source", e.target.value)}>
+            {SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select></label>
+          <label>Vehicle model (optional)<select value={fields.model_interest} onChange={e => update("model_interest", e.target.value)}>
+            <option value="">Select model</option>
+            {fields.model_interest && !models.includes(fields.model_interest) && <option value={fields.model_interest}>{fields.model_interest}</option>}
+            {models.map(value => <option key={value} value={value}>{value}</option>)}
+          </select></label>
+        </div>
+        <label className="complaint-full-label" style={{ marginTop: 14 }}>Subject<input required maxLength={200} value={fields.subject} onChange={e => update("subject", e.target.value)} /></label>
+        <label className="complaint-full-label" style={{ marginTop: 10 }}>Description<textarea required rows={4} value={fields.description} onChange={e => update("description", e.target.value)} /></label>
+        {configError && <p className="form-error" role="alert">{configError}</p>}
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <footer>
+          <button type="button" className="filter" onClick={onCancel}>Cancel</button>
+          <button className="button primary" disabled={saving}>{saving ? "Saving…" : "Save details"}</button>
+        </footer>
+      </fieldset>
+    </form>
+  </section>;
 }
